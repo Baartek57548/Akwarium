@@ -25,8 +25,11 @@ static BLECharacteristic *pCharCommand = nullptr;
 static BLECharacteristic *pCharSettings = nullptr;
 static bool deviceConnected = false;
 static bool oldDeviceConnected = false;
+static bool bleInitialized = false;
+static bool bleAdvertising = false;
 static unsigned long lastNotifyTime = 0;
 static const unsigned long NOTIFY_INTERVAL_MS = 2000;
+static const char *BLE_DEVICE_NAME = "Akwarium_BLE";
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) override {
@@ -250,8 +253,12 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
 };
 
 void BleManager::init() {
+  if (bleInitialized) {
+    return;
+  }
+
   Serial.println("[BLE] Inicjalizacja serwera...");
-  BLEDevice::init("Akwarium_BLE");
+  BLEDevice::init(BLE_DEVICE_NAME);
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
@@ -283,9 +290,51 @@ void BleManager::init() {
   // iOS requirements for min interval (ok. 20-30 ms)
   pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMaxPreferred(0x12);
-  BLEDevice::startAdvertising();
+  bleInitialized = true;
+  bleAdvertising = false;
+  Serial.println("[BLE] Serwer gotowy. Advertising uruchamiany z menu Bluetooth.");
+}
 
-  Serial.println("[BLE] Uruchomiono pomyślnie.");
+void BleManager::start() {
+  if (!bleInitialized) {
+    init();
+  }
+
+  if (bleAdvertising) {
+    return;
+  }
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  if (!pAdvertising) {
+    return;
+  }
+
+  pAdvertising->start();
+  bleAdvertising = true;
+  oldDeviceConnected = false;
+  lastNotifyTime = 0;
+  Serial.println("[BLE] Advertising wlaczony.");
+}
+
+void BleManager::stop() {
+  if (!bleInitialized || !bleAdvertising) {
+    return;
+  }
+
+  if (deviceConnected && pServer) {
+    pServer->disconnect(pServer->getConnId());
+    deviceConnected = false;
+  }
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  if (pAdvertising) {
+    pAdvertising->stop();
+  }
+
+  bleAdvertising = false;
+  oldDeviceConnected = false;
+  lastNotifyTime = 0;
+  Serial.println("[BLE] Advertising wylaczony.");
 }
 
 void BleManager::notifyStatus() {
@@ -327,6 +376,10 @@ void BleManager::notifyStatus() {
 }
 
 void BleManager::update() {
+  if (!bleAdvertising) {
+    return;
+  }
+
   if (deviceConnected) {
     if (millis() - lastNotifyTime >= NOTIFY_INTERVAL_MS) {
       notifyStatus();
@@ -338,6 +391,7 @@ void BleManager::update() {
   if (!deviceConnected && oldDeviceConnected) {
     delay(500);
     pServer->startAdvertising();
+    bleAdvertising = true;
     Serial.println("[BLE] Wznowiono advertising po rozłączeniu");
     oldDeviceConnected = deviceConnected;
   }
@@ -348,3 +402,6 @@ void BleManager::update() {
 }
 
 bool BleManager::isConnected() { return deviceConnected; }
+bool BleManager::isAdvertising() { return bleAdvertising; }
+uint8_t BleManager::getConnectedClients() { return deviceConnected ? 1 : 0; }
+const char *BleManager::getDeviceName() { return BLE_DEVICE_NAME; }

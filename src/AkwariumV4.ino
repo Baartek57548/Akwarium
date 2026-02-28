@@ -38,7 +38,8 @@ enum class UiState {
   SETTINGS_DATETIME,
   TESTS,
   FEEDING,
-  ACCESS_POINT
+  ACCESS_POINT,
+  BLUETOOTH
 };
 UiState uiState = UiState::HOME;
 
@@ -243,8 +244,10 @@ void updateUiState() {
     feedingUiActive = false;
     animation->setFeedingAnimation(false);
     if (uiState == UiState::FEEDING) {
-      if (uiStateBeforeFeeding == UiState::ACCESS_POINT &&
-          !AkwariumWifi::getIsAPMode()) {
+      if ((uiStateBeforeFeeding == UiState::ACCESS_POINT &&
+           !AkwariumWifi::getIsAPMode()) ||
+          (uiStateBeforeFeeding == UiState::BLUETOOTH &&
+           !BleManager::isAdvertising())) {
         uiState = UiState::HOME;
       } else {
         uiState = uiStateBeforeFeeding;
@@ -290,6 +293,9 @@ void updateUiState() {
       } else if (sel == 4) {
         AkwariumWifi::startAP();
         uiState = UiState::ACCESS_POINT;
+      } else if (sel == 5) {
+        BleManager::start();
+        uiState = UiState::BLUETOOTH;
       }
     }
     break;
@@ -313,6 +319,30 @@ void updateUiState() {
       AkwariumWifi::stopAP();
       uiState = UiState::MENU;
       maxClients = 0;
+    }
+    break;
+  }
+
+  case UiState::BLUETOOTH: {
+    static bool hasAnyClient = false;
+    bool connectedNow = BleManager::isConnected();
+
+    if (connectedNow) {
+      hasAnyClient = true;
+    }
+
+    // Auto-exit analogicznie do AP (po pierwszym polaczeniu i rozlaczeniu)
+    if (hasAnyClient && !connectedNow) {
+      BleManager::stop();
+      uiState = UiState::HOME;
+      hasAnyClient = false;
+    }
+
+    // Manual exit
+    if (upJustPressed) {
+      BleManager::stop();
+      uiState = UiState::MENU;
+      hasAnyClient = false;
     }
     break;
   }
@@ -555,6 +585,13 @@ void VideoTask(void *pvParameters) {
               AkwariumWifi::getAPPassword().c_str(),
               AkwariumWifi::getIP().c_str(),
               AkwariumWifi::getConnectedClients());
+          break;
+        case UiState::BLUETOOTH:
+          animation->drawBluetoothScreen(
+              BleManager::getDeviceName(),
+              BleManager::isAdvertising(),
+              BleManager::isConnected(),
+              BleManager::getConnectedClients());
           break;
         case UiState::FEEDING:
           animation->drawFeedingScreen();
