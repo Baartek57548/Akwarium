@@ -7,6 +7,7 @@
 #include "AkwariumWifi.h"
 #include "ApiHandlers.h"
 #include "AquariumAnimation.h"
+#include "BleManager.h"
 #include "ConfigManager.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
@@ -201,7 +202,8 @@ static void applyPendingUiChanges() {
     uint8_t day = constrain(localTime.day, 1, 31);
     uint8_t month = constrain(localTime.month, 1, 12);
     uint16_t year = constrain(localTime.year, 2024, 2099);
-    SystemController::rtc.adjust(DateTime(year, month, day, hour, minute, second));
+    SystemController::rtc.adjust(
+        DateTime(year, month, day, hour, minute, second));
   }
 }
 
@@ -508,7 +510,7 @@ void VideoTask(void *pvParameters) {
                                      cfg.aerationHourOff,
                                      cfg.aerationMinuteOff);
       animation->setFilterSchedule(cfg.filterHourOn, cfg.filterMinuteOn,
-                                cfg.filterHourOff, cfg.filterMinuteOff);
+                                   cfg.filterHourOff, cfg.filterMinuteOff);
       animation->setTargetTempSetting(static_cast<uint8_t>(cfg.targetTemp));
       char feedTime[6];
       snprintf(feedTime, sizeof(feedTime), "%02u:%02u", cfg.feedHour,
@@ -584,6 +586,7 @@ void setup() {
 
   setupApiEndpoints();
   AkwariumWifi::begin();
+  BleManager::init();
   SystemController::runFeederCalibrationOnPowerUp(&display);
 
   // Uruchomienie wyswietlania na Core 0 z mechanizmem SharedState Snapshot
@@ -599,10 +602,10 @@ void loop() {
   // Glowna petla obslugujaca sensory, decyzje i wykonawcze elementy na Core 1
   SystemController::update();
   OtaManager::update();
+  BleManager::update();
   // Wifi Server handle juz leci asynchronicznie lub poprzez dedykowany
   // handleClient, wiec upewnijmy sie ze w Wifi.cpp tak jet. Tu ewentualnie
   // dodac AkwariumWifi::handleClient() jesli brakuje.
 
   vTaskDelay(pdMS_TO_TICKS(10)); // Swobodne oddychanie dla taskow FreeRTOS
 }
-
