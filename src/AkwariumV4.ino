@@ -7,6 +7,7 @@
 #include "AkwariumWifi.h"
 #include "ApiHandlers.h"
 #include "AquariumAnimation.h"
+#include "BleManager.h"
 #include "ConfigManager.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
@@ -37,7 +38,8 @@ enum class UiState {
   SETTINGS_DATETIME,
   TESTS,
   FEEDING,
-  ACCESS_POINT
+  ACCESS_POINT,
+  BLUETOOTH
 };
 UiState uiState = UiState::HOME;
 
@@ -201,7 +203,8 @@ static void applyPendingUiChanges() {
     uint8_t day = constrain(localTime.day, 1, 31);
     uint8_t month = constrain(localTime.month, 1, 12);
     uint16_t year = constrain(localTime.year, 2024, 2099);
-    SystemController::rtc.adjust(DateTime(year, month, day, hour, minute, second));
+    SystemController::rtc.adjust(
+        DateTime(year, month, day, hour, minute, second));
   }
 }
 
@@ -241,8 +244,10 @@ void updateUiState() {
     feedingUiActive = false;
     animation->setFeedingAnimation(false);
     if (uiState == UiState::FEEDING) {
-      if (uiStateBeforeFeeding == UiState::ACCESS_POINT &&
-          !AkwariumWifi::getIsAPMode()) {
+      if ((uiStateBeforeFeeding == UiState::ACCESS_POINT &&
+           !AkwariumWifi::getIsAPMode()) ||
+          (uiStateBeforeFeeding == UiState::BLUETOOTH &&
+           !BleManager::isAdvertising())) {
         uiState = UiState::HOME;
       } else {
         uiState = uiStateBeforeFeeding;
@@ -288,6 +293,9 @@ void updateUiState() {
       } else if (sel == 4) {
         AkwariumWifi::startAP();
         uiState = UiState::ACCESS_POINT;
+      } else if (sel == 5) {
+        BleManager::start();
+        uiState = UiState::BLUETOOTH;
       }
     }
     break;
@@ -311,6 +319,30 @@ void updateUiState() {
       AkwariumWifi::stopAP();
       uiState = UiState::MENU;
       maxClients = 0;
+    }
+    break;
+  }
+
+  case UiState::BLUETOOTH: {
+    static bool hasAnyClient = false;
+    bool connectedNow = BleManager::isConnected();
+
+    if (connectedNow) {
+      hasAnyClient = true;
+    }
+
+    // Auto-exit analogicznie do AP (po pierwszym polaczeniu i rozlaczeniu)
+    if (hasAnyClient && !connectedNow) {
+      BleManager::stop();
+      uiState = UiState::HOME;
+      hasAnyClient = false;
+    }
+
+    // Manual exit
+    if (upJustPressed) {
+      BleManager::stop();
+      uiState = UiState::MENU;
+      hasAnyClient = false;
     }
     break;
   }
@@ -508,7 +540,7 @@ void VideoTask(void *pvParameters) {
                                      cfg.aerationHourOff,
                                      cfg.aerationMinuteOff);
       animation->setFilterSchedule(cfg.filterHourOn, cfg.filterMinuteOn,
-                                cfg.filterHourOff, cfg.filterMinuteOff);
+                                   cfg.filterHourOff, cfg.filterMinuteOff);
       animation->setTargetTempSetting(static_cast<uint8_t>(cfg.targetTemp));
       char feedTime[6];
       snprintf(feedTime, sizeof(feedTime), "%02u:%02u", cfg.feedHour,
@@ -554,6 +586,13 @@ void VideoTask(void *pvParameters) {
               AkwariumWifi::getIP().c_str(),
               AkwariumWifi::getConnectedClients());
           break;
+        case UiState::BLUETOOTH:
+          animation->drawBluetoothScreen(
+              BleManager::getDeviceName(),
+              BleManager::isAdvertising(),
+              BleManager::isConnected(),
+              BleManager::getConnectedClients());
+          break;
         case UiState::FEEDING:
           animation->drawFeedingScreen();
           break;
@@ -584,6 +623,7 @@ void setup() {
 
   setupApiEndpoints();
   AkwariumWifi::begin();
+  BleManager::init();
   SystemController::runFeederCalibrationOnPowerUp(&display);
 
   // Uruchomienie wyswietlania na Core 0 z mechanizmem SharedState Snapshot
@@ -599,10 +639,10 @@ void loop() {
   // Glowna petla obslugujaca sensory, decyzje i wykonawcze elementy na Core 1
   SystemController::update();
   OtaManager::update();
+  BleManager::update();
   // Wifi Server handle juz leci asynchronicznie lub poprzez dedykowany
   // handleClient, wiec upewnijmy sie ze w Wifi.cpp tak jet. Tu ewentualnie
   // dodac AkwariumWifi::handleClient() jesli brakuje.
 
   vTaskDelay(pdMS_TO_TICKS(10)); // Swobodne oddychanie dla taskow FreeRTOS
 }
-

@@ -179,6 +179,8 @@ public:
   void drawTests(bool btnBack, bool btnSelect, bool btnNext);
   void drawAccessPointScreen(const char *apName, const char *apPass,
                              const char *ip, uint8_t clients);
+  void drawBluetoothScreen(const char *bleName, bool advertising,
+                           bool connected, uint8_t clients);
 
   // Rysowanie samej animacji proceduralnej (Akcja karmienia)
   void drawFeedingScreen();
