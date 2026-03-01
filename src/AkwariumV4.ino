@@ -591,7 +591,8 @@ void VideoTask(void *pvParameters) {
               BleManager::getDeviceName(),
               BleManager::isAdvertising(),
               BleManager::isConnected(),
-              BleManager::getConnectedClients());
+              BleManager::getConnectedClients(),
+              BleManager::getPasskey());
           break;
         case UiState::FEEDING:
           animation->drawFeedingScreen();

@@ -22,6 +22,7 @@ Najwazniejsze moduly:
 - `Akwarium.ino` - setup, loop i UI state machine
 - `SystemController.*` - glowna logika sterowania i decyzje runtime
 - `AkwariumWifi.*` - WiFi STA/AP, HTTP server, captive portal DNS, OTA upload endpoint
+- `BleManager.*` - serwer BLE GATT (status, komendy, ustawienia)
 - `ApiHandlers.*` - endpointy `/api/status`, `/api/logs`, `/api/action`
 - `ConfigManager.*` + `ConfigData.h` - konfiguracja w Preferences (CRC32)
 - `ScheduleManager.*` - okna czasowe i auto-feeding
@@ -85,6 +86,17 @@ Start systemu:
 - po timeout pracuje offline (bez automatycznego AP)
 - AP uruchamia sie recznie z menu `Wifi`
 
+## 5.1 Bluetooth BLE
+
+- BLE uruchamiany recznie z menu `Bluetooth`
+- usluga GATT zawiera:
+  - status runtime (`READ + NOTIFY`)
+  - komendy sterujace (`WRITE`)
+  - ustawienia (`READ + WRITE`)
+  - rezultat ACK/ERR (`READ + NOTIFY`)
+- zapis/odczyt konfiguracji dziala analogicznie do AP/Web (`ConfigManager::save()`)
+- parowanie BLE wymaga szyfrowania i bondingu (PIN: `260225`)
+
 ## 6. Web panel i API
 
 HTTP:
@@ -110,7 +122,7 @@ Dozwolone akcje `action`:
 
 ## 7. UI i przyciski
 
-Menu glowne (OLED): `Harmonogramy`, `Logi`, `Data i Czas`, `Test`, `Wifi`.
+Menu glowne (OLED): `Harmonogramy`, `Logi`, `Data i Czas`, `Test`, `Wifi`, `Bluetooth`.
 
 Skrot zachowania:
 
@@ -119,6 +131,7 @@ Skrot zachowania:
 - Ekrany harmonogramow / czasu: `SELECT` edycja/nastepne pole, `DOWN` zmiana wartosci
 - LOGI: `DOWN` przewijanie
 - Wifi/AP: `UP` reczne wylaczenie AP i powrot do menu
+- Bluetooth: `UP` reczne wylaczenie BLE i powrot do menu; auto-exit po pierwszym polaczeniu i rozlaczeniu
 
 ## 8. Zasilanie i sleep
 
@@ -131,6 +144,7 @@ Warunki Deep Sleep (w skrocie):
 - grzalka wylaczona
 - OTA nie jest w trakcie
 - AP wylaczony i brak aktywnego polaczenia STA
+- BLE nie jest aktywne (brak advertising/polaczonego klienta)
 
 ## 9. Domyslna konfiguracja
 

@@ -1607,7 +1607,8 @@ void AquariumAnimation::drawAccessPointScreen(const char *apName,
 
 void AquariumAnimation::drawBluetoothScreen(const char *bleName,
                                             bool advertising, bool connected,
-                                            uint8_t clients) {
+                                            uint8_t clients,
+                                            uint32_t passkey) {
   if (!display)
     return;
   display->setFontMode(1);
@@ -1665,10 +1666,14 @@ void AquariumAnimation::drawBluetoothScreen(const char *bleName,
   snprintf(nameBuf, sizeof(nameBuf), "N:%.24s", bleName ? bleName : "");
   display->drawStr(3, 20, nameBuf);
 
-  const char *stateLabel = connected ? "CONNECTED" : "READY";
   const char *advLabel = advertising ? "ON" : "OFF";
   char statusBuf[32];
-  snprintf(statusBuf, sizeof(statusBuf), "S:%s A:%s", stateLabel, advLabel);
+  if (connected) {
+    snprintf(statusBuf, sizeof(statusBuf), "S:CONNECTED A:%s", advLabel);
+  } else {
+    snprintf(statusBuf, sizeof(statusBuf), "PIN:%06lu A:%s",
+             static_cast<unsigned long>(passkey), advLabel);
+  }
   display->drawStr(3, 30, statusBuf);
 }
 

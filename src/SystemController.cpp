@@ -1,6 +1,7 @@
 #include "SystemController.h"
 #include "AkwariumWifi.h"
 #include "AquariumAnimation.h"
+#include "BleManager.h"
 #include "ConfigManager.h"
 #include "LogManager.h"
 #include "OtaManager.h"
@@ -260,7 +261,8 @@ bool SystemController::isFeedingNow() { return feederController.isFeeding(); }
 
 void SystemController::setManualServo(int angle) {
   manualServoOverride = true;
-  manualServoAngle = angle;
+  manualServoAngle =
+      constrain(angle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
   manualServoTimer = millis();
 }
 
@@ -577,6 +579,21 @@ void SystemController::handlePowerManagement(U8G2 *display,
     }
     return;
   }
+
+  static bool sleepBlockedByBleLogged = false;
+  const bool bleSessionActive =
+      BleManager::isAdvertising() || BleManager::isConnected();
+  if (bleSessionActive) {
+    if (!sleepBlockedByBleLogged) {
+      LogManager::logInfo("Deep sleep zablokowany: aktywna sesja BLE.");
+      sleepBlockedByBleLogged = true;
+    }
+    if (display) {
+      display->setPowerSave(1);
+    }
+    return;
+  }
+  sleepBlockedByBleLogged = false;
 
   if (display) {
     display->clearBuffer();

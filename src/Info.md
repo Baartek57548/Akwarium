@@ -18,8 +18,9 @@ Kolejnosc startu (`setup()` w `Akwarium.ino`):
 3. Inicjalizacja OLED i `AquariumAnimation`.
 4. `setupApiEndpoints()` (endpointy REST).
 5. `AkwariumWifi::begin()` (osobny task WiFi/WebServer na Core 1).
-6. `SystemController::runFeederCalibrationOnPowerUp(...)`.
-7. Start `VideoTask` na Core 0.
+6. `BleManager::init()`.
+7. `SystemController::runFeederCalibrationOnPowerUp(...)`.
+8. Start `VideoTask` na Core 0.
 
 ## 2. Runtime i rdzenie
 
@@ -29,6 +30,7 @@ Core 1:
   - `applyPendingUiChanges()` (zapis zmian UI -> Config/RTC)
   - `SystemController::update()` (sensory, decyzje, wyjscia)
   - `OtaManager::update()`
+  - `BleManager::update()`
 
 Core 0:
 
@@ -140,6 +142,7 @@ oraz `servoController.update()` i `feederController.update()`.
   - OTA OFF
   - AP OFF
   - brak aktywnego WiFi STA
+  - BLE OFF (brak advertising i brak polaczonego klienta)
 - usypianie na 30 min
 - wakeup:
   - `ESP_EXT1_WAKEUP_ANY_LOW` (przyciski)
@@ -295,9 +298,37 @@ HTTP OTA:
   - po zakonczeniu `OtaManager::endOtaUpdate(success)`
 - po sukcesie restart ESP
 
-## 12. ApiHandlers - endpointy REST
+## 12. BleManager (Bluetooth LE)
 
-### 12.1 GET /api/status
+Publiczne API:
+
+- `init()`
+- `start()`
+- `stop()`
+- `update()`
+- `notifyStatus()`
+- `isConnected()`
+- `isAdvertising()`
+- `getConnectedClients()`
+- `getDeviceName()`
+- `getPasskey()`
+
+Charakterystyki GATT:
+
+- `status` (`READ + NOTIFY`) - zwięzly status runtime do cyklicznych powiadomien
+- `command` (`WRITE`) - akcje sterujace analogiczne do Web API
+- `settings` (`READ + WRITE`) - odczyt/zapis konfiguracji analogiczny do AP/Web
+- `result` (`READ + NOTIFY`) - ACK/ERR dla komend i zapisu ustawien
+
+Bezpieczenstwo:
+
+- wymagane szyfrowanie i bonding
+- parowanie z PIN (`getPasskey()`, domyslnie `260225`)
+- write/read na charakterystykach chronione uprawnieniami encrypted
+
+## 13. ApiHandlers - endpointy REST
+
+### 13.1 GET /api/status
 
 Zwraca JSON:
 
@@ -313,14 +344,14 @@ Zwraca JSON:
 - `feeding`: `hour`, `minute`, `freq`, `lastFeedEpoch`
 - `network`: `ip`, `apMode`
 
-### 12.2 GET /api/logs
+### 13.2 GET /api/logs
 
 Zwraca:
 
 - `normal`: logi z RAM
 - `critical`: logi trwale z Preferences
 
-### 12.3 POST /api/action
+### 13.3 POST /api/action
 
 Obslugiwane akcje:
 
@@ -368,18 +399,19 @@ Glowne ekrany:
 - data i czas
 - testy
 - ekran Access Point
+- ekran Bluetooth
 - animacja karmienia
 
-Menu glowne ma 5 pozycji:
+Menu glowne ma 6 pozycji:
 
 - `Harmonogramy`
 - `Logi`
 - `Data i Czas`
 - `Test`
 - `Wifi`
+- `Bluetooth`
 
 `Akwarium.ino` mapuje zapis zmian UI do:
 
 - `ConfigManager::getConfig()` + `ConfigManager::save()` (harmonogramy)
 - `SystemController::rtc.adjust(...)` (data/czas)
-
