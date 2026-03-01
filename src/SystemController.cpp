@@ -35,6 +35,8 @@ static bool configureButtonWakeup();
 static bool holdOutputsInOffState();
 
 static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
+static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
+static bool wokeFromButtonThisBoot = false;
 
 TemperatureController SystemController::tempController(ONE_WIRE_BUS,
                                                        HEATER_PIN);
@@ -119,6 +121,11 @@ void SystemController::init() {
   OtaManager::init();
   PowerManager::init(&batteryReader);
   ScheduleManager::init(&feederController);
+  if (wokeFromButtonThisBoot) {
+    PowerManager::registerActivity();
+    LogManager::logInfo(
+        "Wybudzenie przyciskiem GPIO14 - aktywne okno interakcji nocnej.");
+  }
 
   // Rejestracja biezacego zadania (loop) do Watchdoga
   esp_task_wdt_add(NULL);
@@ -299,6 +306,7 @@ static void logEspErr(const char *prefix, esp_err_t err) {
 }
 
 static void logWakeupCauseOnBoot() {
+  wokeFromButtonThisBoot = false;
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   switch (cause) {
   case ESP_SLEEP_WAKEUP_EXT1: {
@@ -307,10 +315,14 @@ static void logWakeupCauseOnBoot() {
     snprintf(msg, sizeof(msg), "Wakeup cause: EXT1 mask=0x%llX",
              static_cast<unsigned long long>(mask));
     LogManager::logInfo(msg);
+    if ((mask & (1ULL << static_cast<uint64_t>(BUTTON_DOWN_PIN))) != 0ULL) {
+      wokeFromButtonThisBoot = true;
+    }
     break;
   }
   case ESP_SLEEP_WAKEUP_EXT0:
     LogManager::logInfo("Wakeup cause: EXT0");
+    wokeFromButtonThisBoot = true;
     break;
   case ESP_SLEEP_WAKEUP_TIMER:
     LogManager::logInfo("Wakeup cause: TIMER");
@@ -647,10 +659,11 @@ void SystemController::handlePowerManagement(U8G2 *display,
   }
 
   if (!canEnterDeepSleep(nowMs, lastAction)) {
+    bool keepInteractive = ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
     if (display) {
-      display->setPowerSave(1);
+      display->setPowerSave(keepInteractive ? 0 : 1);
     }
-    PowerManager::setMode(MODE_LOW_POWER);
+    PowerManager::setMode(keepInteractive ? MODE_ACTIVE : MODE_LOW_POWER);
     return;
   }
 

@@ -1,5 +1,11 @@
 # Sterownik Akwarium PRO v5.1
 
+
+JAK PROGRAMOWAĆ ESP32s3 zero poprzez PlatformIO (wtyczka do VS code)
+1. Odłącz zasilanie
+2. Trzymając przycisk boot podłącz zasilanie
+3. Urządzenie jest przygotowane do programowania
+
 Dokumentacja tego pliku jest zaktualizowana pod aktualny kod w folderze `src/`.
 
 ## 1. Co robi projekt
