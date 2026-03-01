@@ -11,14 +11,14 @@ void BatteryReader::init() {
 
 float BatteryReader::readVoltageBlocking() {
   // Dummy read - odrzucenie pierwszego niedokladnego odczytu
-  analogRead(_pinAdc);
+  analogReadMilliVolts(_pinAdc);
 
   uint32_t sum = 0;
   for (uint8_t i = 0; i < SAMPLES; i++) {
-    sum += analogRead(_pinAdc);
+    sum += static_cast<uint32_t>(analogReadMilliVolts(_pinAdc));
   }
-  float rawAvg = (float)sum / SAMPLES;
-  return convertRawToVoltage(rawAvg);
+  float milliVoltsAvg = static_cast<float>(sum) / SAMPLES;
+  return convertMilliVoltsToVoltage(milliVoltsAvg);
 }
 
 // --- Asynchroniczny pomiar (non-blocking) ---
@@ -32,7 +32,7 @@ void BatteryReader::startMeasurement() {
   _measStartMs = millis();
   _measActive = true;
   // Dummy read przy starcie
-  analogRead(_pinAdc);
+  analogReadMilliVolts(_pinAdc);
 }
 
 bool BatteryReader::isMeasurementReady() {
@@ -41,7 +41,7 @@ bool BatteryReader::isMeasurementReady() {
 
   // Zbieraj probki az nie zbierzemy SAMPLES
   if (_measCount < SAMPLES) {
-    _measAccum += analogRead(_pinAdc);
+    _measAccum += static_cast<uint32_t>(analogReadMilliVolts(_pinAdc));
     _measCount++;
   }
   return (_measCount >= SAMPLES);
@@ -51,14 +51,13 @@ float BatteryReader::getLastMeasurement() {
   if (!_measActive || _measCount < SAMPLES)
     return NAN;
 
-  float rawAvg = (float)_measAccum / SAMPLES;
-  // to samo absolutne mapowanie dla odczytu pętli
-  _measResult = convertRawToVoltage(rawAvg);
+  float milliVoltsAvg = static_cast<float>(_measAccum) / SAMPLES;
+  _measResult = convertMilliVoltsToVoltage(milliVoltsAvg);
   _measActive = false;
   return _measResult;
 }
 
-float BatteryReader::convertRawToVoltage(float rawValue) const {
-  float pinVoltage = (rawValue * V_REF) / ADC_RESOLUTION;
-  return pinVoltage * DIVIDER_MULT;
+float BatteryReader::convertMilliVoltsToVoltage(float milliVolts) const {
+  float pinVoltage = milliVolts / 1000.0f;
+  return pinVoltage * INPUT_SCALE_MULT * CALIBRATION_MULT;
 }

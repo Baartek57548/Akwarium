@@ -258,7 +258,7 @@ Szczegoly:
 
 - ADC 12-bit, attenuation 11 dB
 - asynchroniczny pomiar: 30 probek
-- konwersja: `V = raw * 3.3 / 4095 * 1.57769`
+- konwersja: `V = analogReadMilliVolts()/1000 * INPUT_SCALE_MULT * CALIBRATION_MULT`
 
 `PowerManager`:
 
