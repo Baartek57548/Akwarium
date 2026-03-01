@@ -19,12 +19,13 @@ Sterownik pracuje na ESP32-S3 (FreeRTOS, dual core) i obsluguje:
 
 Najwazniejsze moduly:
 
-- `Akwarium.ino` - setup, loop i UI state machine
+- `AkwariumV4.ino` - setup, loop i UI state machine
 - `SystemController.*` - glowna logika sterowania i decyzje runtime
 - `AkwariumWifi.*` - WiFi STA/AP, HTTP server, captive portal DNS, OTA upload endpoint
 - `BleManager.*` - serwer BLE GATT (status, komendy, ustawienia)
 - `ApiHandlers.*` - endpointy `/api/status`, `/api/logs`, `/api/action`
 - `ConfigManager.*` + `ConfigData.h` - konfiguracja w Preferences (CRC32)
+- `ConfigValidation.*` - wspolna walidacja i clamp configu (UI/BLE/HTTP)
 - `ScheduleManager.*` - okna czasowe i auto-feeding
 - `PowerManager.*` + `BatteryReader.*` - bateria, aktywnosc, tryby zasilania
 - `TemperatureController.*` - DS18B20 i grzalka
@@ -75,16 +76,22 @@ pio device monitor
 
 ## 5. Konfiguracja WiFi/AP
 
-W `src/arduino_secrets.h` ustaw:
+Sekrety:
 
 - `SECRET_SSID`, `SECRET_PASS` - domowa siec WiFi (tryb STA)
 - `AP_SSID`, `AP_PASSWORD` - dane Access Point urzadzenia
+- `SECRET_BLE_PASSKEY` - PIN parowania BLE
 
 Start systemu:
 
 - urzadzenie probuje polaczyc sie jako STA przez 6 s
 - po timeout pracuje offline (bez automatycznego AP)
 - AP uruchamia sie recznie z menu `Wifi`
+
+Pliki:
+
+- `src/arduino_secrets.template.h` - bezpieczny template (fallback build/CI)
+- `src/arduino_secrets.h` - lokalny plik z prawdziwymi sekretami (ignorowany przez git)
 
 ## 5.1 Bluetooth BLE
 
@@ -94,8 +101,8 @@ Start systemu:
   - komendy sterujace (`WRITE`)
   - ustawienia (`READ + WRITE`)
   - rezultat ACK/ERR (`READ + NOTIFY`)
-- zapis/odczyt konfiguracji dziala analogicznie do AP/Web (`ConfigManager::save()`)
-- parowanie BLE wymaga szyfrowania i bondingu (PIN: `260225`)
+- zapis/odczyt konfiguracji dziala analogicznie do AP/Web (`ConfigManager::updateAndSave()`)
+- parowanie BLE wymaga szyfrowania i bondingu (PIN: `SECRET_BLE_PASSKEY`)
 
 ## 6. Web panel i API
 
@@ -143,8 +150,16 @@ Warunki Deep Sleep (w skrocie):
 
 - grzalka wylaczona
 - OTA nie jest w trakcie
-- AP wylaczony i brak aktywnego polaczenia STA
+- AP wylaczony
+- STA/radio calkowicie wylaczone
 - BLE nie jest aktywne (brak advertising/polaczonego klienta)
+- bezczynnosc > 5 min
+
+## 12. Smoke test manualny
+
+Checklista testow smoke znajduje sie w:
+
+- `docs/manual_smoke_test.md`
 
 ## 9. Domyslna konfiguracja
 

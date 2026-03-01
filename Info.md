@@ -139,7 +139,7 @@ oraz `servoController.update()` i `feederController.update()`.
   - grzalka OFF
   - OTA OFF
   - AP OFF
-  - brak aktywnego WiFi STA
+  - STA/radio OFF (wymagane `AkwariumWifi::isStaOff()`)
 - usypianie na 30 min
 - wakeup:
   - `ESP_EXT1_WAKEUP_ANY_LOW` (przyciski)
@@ -378,8 +378,7 @@ Menu glowne ma 5 pozycji:
 - `Test`
 - `Wifi`
 
-`Akwarium.ino` mapuje zapis zmian UI do:
+`AkwariumV4.ino` mapuje zapis zmian UI do:
 
-- `ConfigManager::getConfig()` + `ConfigManager::save()` (harmonogramy)
+- `ConfigManager::getCopy()` + `ConfigManager::updateAndSave()` (harmonogramy)
 - `SystemController::rtc.adjust(...)` (data/czas)
-

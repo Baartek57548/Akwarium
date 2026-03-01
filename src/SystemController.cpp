@@ -8,7 +8,6 @@
 #include "PowerManager.h"
 #include "ScheduleManager.h"
 #include "SharedState.h"
-#include <WiFi.h>
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 #include <esp_err.h>
@@ -31,11 +30,11 @@
 static void logWakeupCauseOnBoot();
 static void releaseDeepSleepHolds();
 static bool isNightTimeNow();
-static bool canEnterNightDeepSleep(unsigned long nowMs,
-                                   unsigned long lastActionMs);
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
 static bool configureExt0Wakeup();
 static bool holdOutputsInOffState();
+
+static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
 
 TemperatureController SystemController::tempController(ONE_WIRE_BUS,
                                                        HEATER_PIN);
@@ -45,10 +44,19 @@ ServoController SystemController::servoController(SERVO_PIN, 90);
 BatteryReader SystemController::batteryReader(BAT_ADC_PIN);
 RTC_DS3231 SystemController::rtc;
 
-DateTime getCurrentDateTime() { return SystemController::rtc.now(); }
+DateTime getCurrentDateTime() {
+  if (SystemController::isRtcReady()) {
+    return SystemController::rtc.now();
+  }
+  // Fallback bez RTC - monotoniczny czas oparty o millis, z neutralna data.
+  return DateTime(2025, 1, 1, 0, 0, 0) +
+         TimeSpan(static_cast<int32_t>(millis() / 1000UL));
+}
 
 void syncSystemTime(uint32_t epoch) {
-  SystemController::rtc.adjust(DateTime(epoch));
+  if (SystemController::isRtcReady()) {
+    SystemController::rtc.adjust(DateTime(epoch));
+  }
 }
 
 bool SystemController::manualServoOverride = false;
@@ -57,10 +65,13 @@ unsigned long SystemController::manualServoTimer = 0;
 
 uint8_t SystemController::tempInvalidReadCount = 0;
 bool SystemController::tempSensorErrorLogged = false;
+bool SystemController::rtcReady = false;
 
 unsigned long SystemController::lastTempCheckMs = 0;
 unsigned long SystemController::lastBatCheckMs =
     -600000UL; // Start pomiaru baterii natychmiast
+
+bool SystemController::isRtcReady() { return rtcReady; }
 
 void SystemController::hardwareSetup() {
   releaseDeepSleepHolds();
@@ -84,10 +95,14 @@ void SystemController::hardwareSetup() {
   batteryReader.init();
 
   if (!rtc.begin()) {
+    rtcReady = false;
     LogManager::logError("Nie znaleziono modulu RTC (DS3231)!");
   } else if (rtc.lostPower()) {
+    rtcReady = true;
     LogManager::logWarn("RTC zresetowany, przywracanie domyslnego czasu...");
     rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+  } else {
+    rtcReady = true;
   }
 }
 
@@ -96,8 +111,8 @@ void SystemController::init() {
   ConfigManager::init();
   LogManager::init();
 
-  logWakeupCauseOnBoot();
   hardwareSetup();
+  logWakeupCauseOnBoot();
 
   OtaManager::init();
   PowerManager::init(&batteryReader);
@@ -156,13 +171,13 @@ void SystemController::updateDecisions() {
   if (OtaManager::isOtaInProgress())
     return;
 
-  DateTime now = rtc.now();
+  DateTime now = getCurrentDateTime();
   SharedState::updateTime(now.hour(), now.minute(), now.second(), now.day(),
                           now.month(), now.year());
 
   ScheduleManager::update(now);
 
-  const Config cfg = ConfigManager::getConfigSnapshot();
+  const Config cfg = ConfigManager::getCopy();
   uint16_t nowMin = ScheduleManager::toMinutes(now.hour(), now.minute());
 
   bool isDay = ScheduleManager::isDayTime(nowMin);
@@ -310,14 +325,17 @@ static void releaseDeepSleepHolds() {
 }
 
 static bool isNightTimeNow() {
-  DateTime now = SystemController::rtc.now();
+  if (!SystemController::isRtcReady()) {
+    return false;
+  }
+  DateTime now = getCurrentDateTime();
   uint16_t nowMin = ScheduleManager::toMinutes(now.hour(), now.minute());
   return !ScheduleManager::isDayTime(nowMin);
 }
 
-static bool canEnterNightDeepSleep(unsigned long nowMs,
-                                   unsigned long lastActionMs) {
-  if ((nowMs - lastActionMs) < 300000UL) {
+bool SystemController::canEnterDeepSleep(unsigned long nowMs,
+                                         unsigned long lastActionMs) {
+  if ((nowMs - lastActionMs) < DEEP_SLEEP_IDLE_MS) {
     return false;
   }
   if (OtaManager::isOtaInProgress()) {
@@ -326,7 +344,7 @@ static bool canEnterNightDeepSleep(unsigned long nowMs,
   if (AkwariumWifi::getIsAPMode()) {
     return false;
   }
-  if (WiFi.status() == WL_CONNECTED) {
+  if (!AkwariumWifi::isStaOff()) {
     return false;
   }
   if (BleManager::isAdvertising() || BleManager::isConnected()) {
@@ -339,7 +357,7 @@ static bool canEnterNightDeepSleep(unsigned long nowMs,
 }
 
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
-  const Config cfg = ConfigManager::getConfigSnapshot();
+  const Config cfg = ConfigManager::getCopy();
   if (cfg.dayStartHour > 23 || cfg.dayStartMinute > 59) {
     LogManager::logWarn("Niepoprawny start dnia, timer sleep ustawiony na 30 min.");
     return 30ULL * 60ULL * 1000000ULL;
@@ -542,7 +560,11 @@ void SystemController::runFeederCalibrationOnPowerUp(U8G2 *display) {
 }
 
 void SystemController::enterNightDeepSleep() {
-  DateTime now = rtc.now();
+  if (!rtcReady) {
+    LogManager::logWarn("RTC niedostepny - pomijam deep sleep.");
+    return;
+  }
+  DateTime now = getCurrentDateTime();
 
   LogManager::logInfo("Noc: wylaczam urzadzenia i przechodze do deep sleep.");
 
@@ -583,7 +605,7 @@ void SystemController::handlePowerManagement(U8G2 *display,
                                              AquariumAnimation *anim) {
   unsigned long nowMs = millis();
   unsigned long lastAction = PowerManager::getLastActivityTime();
-  const Config cfg = ConfigManager::getConfigSnapshot();
+  const Config cfg = ConfigManager::getCopy();
 
   if (!isNightTimeNow()) {
     if ((nowMs - lastAction) > 240000UL &&
@@ -605,7 +627,11 @@ void SystemController::handlePowerManagement(U8G2 *display,
     return;
   }
 
-  if (!canEnterNightDeepSleep(nowMs, lastAction)) {
+  if (!AkwariumWifi::isStaOff()) {
+    AkwariumWifi::requestStaOffForDeepSleep();
+  }
+
+  if (!canEnterDeepSleep(nowMs, lastAction)) {
     if (display) {
       display->setPowerSave(1);
     }

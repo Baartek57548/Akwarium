@@ -7,10 +7,13 @@ class ConfigManager {
 public:
   static void init();
   static void save();
+  static bool updateAndSave(const Config &cfg);
+  static Config getCopy();
+
+  // Compatibility wrappers for older call sites.
   static void saveConfig(const Config &cfg);
-  static void resetToDefault();
   static Config getConfigSnapshot();
-  static Config &getConfig();
+  static void resetToDefault();
 
 private:
   static uint32_t calculateCrc32(const Config &cfg);

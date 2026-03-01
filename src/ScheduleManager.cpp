@@ -21,7 +21,7 @@ bool ScheduleManager::isWithinWindow(uint16_t nowMin, uint16_t startMin,
 }
 
 bool ScheduleManager::isDayTime(uint16_t nowMin) {
-  const Config sysConfig = ConfigManager::getConfigSnapshot();
+  const Config sysConfig = ConfigManager::getCopy();
   if (sysConfig.dayStartHour == 24)
     return true;
   if (sysConfig.dayEndHour == 24)
@@ -33,7 +33,7 @@ bool ScheduleManager::isDayTime(uint16_t nowMin) {
 }
 
 bool ScheduleManager::isAerationActive(uint16_t nowMin) {
-  const Config sysConfig = ConfigManager::getConfigSnapshot();
+  const Config sysConfig = ConfigManager::getCopy();
   uint16_t aerationOn =
       toMinutes(sysConfig.aerationHourOn, sysConfig.aerationMinuteOn);
   uint16_t aerationOff =
@@ -42,7 +42,7 @@ bool ScheduleManager::isAerationActive(uint16_t nowMin) {
 }
 
 bool ScheduleManager::isFilterActive(uint16_t nowMin) {
-  const Config sysConfig = ConfigManager::getConfigSnapshot();
+  const Config sysConfig = ConfigManager::getCopy();
   uint16_t filterOn =
       toMinutes(sysConfig.filterHourOn, sysConfig.filterMinuteOn);
   uint16_t filterOff =
@@ -51,7 +51,7 @@ bool ScheduleManager::isFilterActive(uint16_t nowMin) {
 }
 
 int ScheduleManager::getMinutesUntilFilterOff(uint16_t nowMin) {
-  const Config sysConfig = ConfigManager::getConfigSnapshot();
+  const Config sysConfig = ConfigManager::getCopy();
   uint16_t startMin =
       toMinutes(sysConfig.filterHourOn, sysConfig.filterMinuteOn);
   uint16_t endMin =
@@ -67,7 +67,7 @@ int ScheduleManager::getMinutesUntilFilterOff(uint16_t nowMin) {
 }
 
 void ScheduleManager::checkAutoFeed(const DateTime &now) {
-  Config sysConfig = ConfigManager::getConfigSnapshot();
+  Config sysConfig = ConfigManager::getCopy();
   if (sysConfig.feedMode == 0 || feederCtrl == nullptr)
     return;
 
@@ -94,7 +94,7 @@ void ScheduleManager::checkAutoFeed(const DateTime &now) {
         // Potem podlaczymy to pod systemController by ustawil STATE_FEEDING
         LogManager::logInfo("Auto Feed rozpoczety z harmonogramu.");
         sysConfig.lastFeedEpoch = now.unixtime();
-        ConfigManager::saveConfig(sysConfig);
+        ConfigManager::updateAndSave(sysConfig);
       } else {
         LogManager::logError(
             "Blad aktywacji auto-karmnika. Silnik lub czujnik nie odpowiada.");
