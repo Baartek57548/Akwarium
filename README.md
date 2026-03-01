@@ -66,12 +66,20 @@ Aktualne srodowisko w `platformio.ini`:
 - `platform = espressif32`
 - `framework = arduino`
 
-Przyklady:
+Przyklady (zalecane, dziala nawet gdy `pio` nie jest w PATH):
+
+```bash
+python -m platformio run
+python -m platformio run -t upload
+python -m platformio device monitor -b 115200
+```
+
+Alternatywnie (jesli masz `pio` w PATH):
 
 ```bash
 pio run
 pio run -t upload
-pio device monitor
+pio device monitor -b 115200
 ```
 
 ## 5. Konfiguracja WiFi/AP

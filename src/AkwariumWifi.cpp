@@ -20,7 +20,7 @@ static const int WIFI_TIMEOUT = 6000;
 static const char *apSSID = AP_SSID;
 static const char *apPassword = AP_PASSWORD;
 
-// Stare wbudowane GUI zostaĹ‚o przeniesione do zewnÄ™trznych plikĂłw w WebAssets.h
+// Stare wbudowane GUI zostalo przeniesione do zewnetrznych plikow w WebAssets.h
 
 static WebServer server(80);
 static DNSServer dnsServer;
@@ -47,11 +47,11 @@ static void setupNetwork() {
 
   if (WiFi.status() == WL_CONNECTED) {
     isAPMode = false;
-    Serial.println("\n[WIFI] PoĹ‚Ä…czono. IP: " + WiFi.localIP().toString());
+    Serial.println("\n[WIFI] Polaczono. IP: " + WiFi.localIP().toString());
   } else {
     isAPMode = false;
     Serial.println(
-        "\n[WIFI] Timeout. PoĹ‚Ä…czenie STA nieudane. Projekt dziala Offline.");
+        "\n[WIFI] Timeout. Polaczenie STA nieudane. Projekt dziala offline.");
   }
 }
 
@@ -90,7 +90,7 @@ static void setupWebServer() {
       struct tm timeinfo;
       getLocalTime(&timeinfo);
       Serial.println(&timeinfo,
-                     "[RTC] Zsynchronizowano czas ukĹ‚adu: %Y-%m-%d %H:%M:%S");
+                     "[RTC] Zsynchronizowano czas ukladu: %Y-%m-%d %H:%M:%S");
 
       server.send(200, "text/plain", "OK");
     } else {
@@ -263,7 +263,7 @@ void AkwariumWifi::begin() {
                           NULL,       // Parametry
                           1,          // Priorytet
                           NULL,       // Uchwyt
-                          1);         // RdzeĹ„ 1
+                          1);         // Rdzen 1
 }
 
 bool AkwariumWifi::getIsAPMode() { return isAPMode; }
