@@ -10,18 +10,25 @@ on:
     tags:
       - "v*"
 
+  pull_request:
+    branches:
+      - main
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      - run: pip install platformio
+      - name: Install PlatformIO
+        run: pip install platformio
 
       - name: Build project
         run: pio run
@@ -29,7 +36,13 @@ jobs:
       - name: Verify firmware exists
         run: ls -lah .pio/build/esp32-s3-devkitc-1/
 
-      - name: Create Release
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: .pio/build/esp32-s3-devkitc-1/firmware.bin
+
+      - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
