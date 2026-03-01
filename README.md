@@ -101,14 +101,21 @@ Uwagi:
 
 Menu glowne:
 
-- Harmonogramy
-- Logi
-- Data i czas
-- Test
-- Wifi
-- Bluetooth
+Przyklady (zalecane, dziala nawet gdy `pio` nie jest w PATH):
 
-Dodatkowo:
+```bash
+python -m platformio run
+python -m platformio run -t upload
+python -m platformio device monitor -b 115200
+```
+
+Alternatywnie (jesli masz `pio` w PATH):
+
+```bash
+pio run
+pio run -t upload
+pio device monitor -b 115200
+```
 
 - reczne karmienie: przytrzymaj wszystkie 3 przyciski przez 1 s
 - AP i BLE maja auto-exit po sesji klienta + reczne wyjscie `UP`
