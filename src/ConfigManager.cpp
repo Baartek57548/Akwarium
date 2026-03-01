@@ -1,11 +1,27 @@
 #include "ConfigManager.h"
 #include <Arduino.h>
 #include <Preferences.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 
 Config ConfigManager::sysConfig;
 static Preferences preferences;
 static const char *PREF_NAMESPACE = "Akwarium";
+static SemaphoreHandle_t configMutex = nullptr;
+
+static bool lockConfig(TickType_t timeoutTicks = pdMS_TO_TICKS(100)) {
+  if (configMutex == nullptr) {
+    return false;
+  }
+  return xSemaphoreTake(configMutex, timeoutTicks) == pdTRUE;
+}
+
+static void unlockConfig() {
+  if (configMutex != nullptr) {
+    xSemaphoreGive(configMutex);
+  }
+}
 
 struct ConfigV1Legacy {
   uint8_t dayStartHour;
@@ -84,8 +100,25 @@ void ConfigManager::loadDefaultConfig() {
 }
 
 void ConfigManager::init() {
+  if (configMutex == nullptr) {
+    configMutex = xSemaphoreCreateMutex();
+    if (configMutex == nullptr) {
+      Serial.println("[CONFIG] BLAD: nie mozna utworzyc mutexa konfiguracji.");
+      loadDefaultConfig();
+      return;
+    }
+  }
+
   preferences.begin(PREF_NAMESPACE, false);
 
+  if (!lockConfig()) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas init(), ladowanie default.");
+    loadDefaultConfig();
+    save();
+    return;
+  }
+
+  bool shouldSave = false;
   size_t configBytes =
       preferences.getBytes("sysConfig", &sysConfig, sizeof(Config));
 
@@ -95,10 +128,13 @@ void ConfigManager::init() {
     if (calculatedCrc == sysConfig.crc32) {
       Serial.println(
           "[CONFIG] Konfiguracja zaladowana pomyslnie, CRC poprawne.");
+      unlockConfig();
       return;
     } else {
       Serial.println("[CONFIG] BLAD CRC! Konfiguracja uszkodzona. Ladowanie "
                      "wartosci domyslnych.");
+      loadDefaultConfig();
+      shouldSave = true;
     }
   } else {
     // Spróbuj odzyskać z legacy (bez sprawdzania CRC bo nie istnialo)
@@ -136,29 +172,75 @@ void ConfigManager::init() {
       sysConfig.feedMinute = constrain(legacy.feedMinute, 0, 59);
       sysConfig.lastFeedEpoch = legacy.lastFeedEpoch;
       sysConfig.alwaysScreenOn = legacy.alwaysScreenOn;
-      save(); // Przeliczenie i zapis wymuszonego CRC
-      return;
+      shouldSave = true;
     } else {
       Serial.println("[CONFIG] Brak lub niepoprawna sygnatura MAGIC. Ladowanie "
                      "default() z CRC.");
+      loadDefaultConfig();
+      shouldSave = true;
     }
   }
 
-  loadDefaultConfig();
-  save();
+  unlockConfig();
+
+  if (shouldSave) {
+    save(); // Przeliczenie i zapis CRC w bezpiecznym locku
+  }
 }
 
 void ConfigManager::save() {
+  if (!lockConfig()) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas save().");
+    return;
+  }
+
   sysConfig.version = CONFIG_VERSION;
   sysConfig.magic = CONFIG_MAGIC;
   sysConfig.crc32 = calculateCrc32(sysConfig);
   preferences.putBytes("sysConfig", &sysConfig, sizeof(Config));
+  unlockConfig();
+
   Serial.println("[CONFIG] Zapisano nowa konfiguracje (zabezpieczona CRC32)");
 }
 
+void ConfigManager::saveConfig(const Config &cfg) {
+  if (!lockConfig()) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas saveConfig().");
+    return;
+  }
+
+  sysConfig = cfg;
+  sysConfig.version = CONFIG_VERSION;
+  sysConfig.magic = CONFIG_MAGIC;
+  sysConfig.crc32 = calculateCrc32(sysConfig);
+  preferences.putBytes("sysConfig", &sysConfig, sizeof(Config));
+  unlockConfig();
+
+  Serial.println("[CONFIG] Zapisano konfiguracje przez saveConfig().");
+}
+
 void ConfigManager::resetToDefault() {
+  if (!lockConfig()) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas resetToDefault().");
+    return;
+  }
+
   loadDefaultConfig();
+  unlockConfig();
   save();
+}
+
+Config ConfigManager::getConfigSnapshot() {
+  Config snapshot = {};
+
+  if (lockConfig(pdMS_TO_TICKS(20))) {
+    snapshot = sysConfig;
+    unlockConfig();
+  } else {
+    snapshot = sysConfig;
+  }
+
+  return snapshot;
 }
 
 Config &ConfigManager::getConfig() { return sysConfig; }

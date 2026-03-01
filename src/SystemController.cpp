@@ -1,6 +1,7 @@
 #include "SystemController.h"
 #include "AkwariumWifi.h"
 #include "AquariumAnimation.h"
+#include "BleManager.h"
 #include "ConfigManager.h"
 #include "LogManager.h"
 #include "OtaManager.h"
@@ -30,6 +31,8 @@
 static void logWakeupCauseOnBoot();
 static void releaseDeepSleepHolds();
 static bool isNightTimeNow();
+static bool canEnterNightDeepSleep(unsigned long nowMs,
+                                   unsigned long lastActionMs);
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
 static bool configureExt0Wakeup();
 static bool holdOutputsInOffState();
@@ -159,7 +162,7 @@ void SystemController::updateDecisions() {
 
   ScheduleManager::update(now);
 
-  Config &cfg = ConfigManager::getConfig();
+  const Config cfg = ConfigManager::getConfigSnapshot();
   uint16_t nowMin = ScheduleManager::toMinutes(now.hour(), now.minute());
 
   bool isDay = ScheduleManager::isDayTime(nowMin);
@@ -260,7 +263,8 @@ bool SystemController::isFeedingNow() { return feederController.isFeeding(); }
 
 void SystemController::setManualServo(int angle) {
   manualServoOverride = true;
-  manualServoAngle = angle;
+  manualServoAngle =
+      constrain(angle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
   manualServoTimer = millis();
 }
 
@@ -311,8 +315,31 @@ static bool isNightTimeNow() {
   return !ScheduleManager::isDayTime(nowMin);
 }
 
+static bool canEnterNightDeepSleep(unsigned long nowMs,
+                                   unsigned long lastActionMs) {
+  if ((nowMs - lastActionMs) < 300000UL) {
+    return false;
+  }
+  if (OtaManager::isOtaInProgress()) {
+    return false;
+  }
+  if (AkwariumWifi::getIsAPMode()) {
+    return false;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    return false;
+  }
+  if (BleManager::isAdvertising() || BleManager::isConnected()) {
+    return false;
+  }
+  if (SystemController::isFeedingNow()) {
+    return false;
+  }
+  return true;
+}
+
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
-  Config &cfg = ConfigManager::getConfig();
+  const Config cfg = ConfigManager::getConfigSnapshot();
   if (cfg.dayStartHour > 23 || cfg.dayStartMinute > 59) {
     LogManager::logWarn("Niepoprawny start dnia, timer sleep ustawiony na 30 min.");
     return 30ULL * 60ULL * 1000000ULL;
@@ -556,11 +583,11 @@ void SystemController::handlePowerManagement(U8G2 *display,
                                              AquariumAnimation *anim) {
   unsigned long nowMs = millis();
   unsigned long lastAction = PowerManager::getLastActivityTime();
-  Config &sysConfig = ConfigManager::getConfig();
+  const Config cfg = ConfigManager::getConfigSnapshot();
 
   if (!isNightTimeNow()) {
     if ((nowMs - lastAction) > 240000UL &&
-        !sysConfig.alwaysScreenOn) { // 4 minuty
+        !cfg.alwaysScreenOn) { // 4 minuty
       if (PowerManager::getCurrentMode() == MODE_ACTIVE) {
         PowerManager::setMode(MODE_LOW_POWER);
         if (display) {
@@ -575,6 +602,14 @@ void SystemController::handlePowerManagement(U8G2 *display,
         }
       }
     }
+    return;
+  }
+
+  if (!canEnterNightDeepSleep(nowMs, lastAction)) {
+    if (display) {
+      display->setPowerSave(1);
+    }
+    PowerManager::setMode(MODE_LOW_POWER);
     return;
   }
 

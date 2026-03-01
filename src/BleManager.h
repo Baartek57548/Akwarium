@@ -14,6 +14,7 @@ public:
   static bool isAdvertising();
   static uint8_t getConnectedClients();
   static const char *getDeviceName();
+  static uint32_t getPasskey();
 };
 
 #endif // BLE_MANAGER_H
