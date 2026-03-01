@@ -1,47 +1,84 @@
 # Sterownik Akwarium PRO v5.1
 
-Dokumentacja tego pliku jest zaktualizowana pod aktualny kod w folderze `src/`.
+Kompletny sterownik akwarium dla ESP32-S3 (PlatformIO + Arduino) z lokalnym UI OLED, Web API, OTA oraz BLE.
 
-## 1. Co robi projekt
+## 1. Najwazniejsze funkcje
 
-Sterownik pracuje na ESP32-S3 (FreeRTOS, dual core) i obsluguje:
+- harmonogram dnia, filtra i napowietrzania
+- sterowanie grzalka z histereza i zabezpieczeniem temperatury
+- automatyczne oraz reczne karmienie (z czujnikiem i timeoutem)
+- panel WWW (`/`) i REST API (`/api/status`, `/api/logs`, `/api/action`)
+- OTA przez HTTP upload (`POST /update`)
+- BLE GATT z szyfrowaniem, bondowaniem i PIN
+- logi runtime (RAM) + logi krytyczne trwale (Preferences)
+- zarzadzanie energia: wygaszanie ekranu + deep sleep nocny
 
-- harmonogram swiatla, filtra i napowietrzania
-- pomiar temperatury DS18B20 + sterowanie grzalka (histereza + ograniczenie przelaczen)
-- karmnik automatyczny i reczny (z czujnikiem i timeoutem)
-- pomiar napiecia baterii RTC CR2032
-- lokalny panel WWW + OTA przez upload pliku `.bin`
-- lokalny interfejs OLED 128x32 + przyciski fizyczne
-- logi systemowe (RAM + trwale logi krytyczne w Preferences)
-- usypianie ekranu i Deep Sleep
+## 2. Wymagania
 
-## 2. Architektura (aktualna)
+- Python 3.10+
+- PlatformIO (CLI lub rozszerzenie VS Code)
+- ESP32-S3 Zero 4MB (`board = esp32s3_zero_4mb`)
+- czujnik DS18B20, OLED SSD1306 128x32 (I2C), RTC DS3231
 
-Najwazniejsze moduly:
+## 3. Szybki start
 
-- `AkwariumV4.ino` - setup, loop i UI state machine
-- `SystemController.*` - glowna logika sterowania i decyzje runtime
-- `AkwariumWifi.*` - WiFi STA/AP, HTTP server, captive portal DNS, OTA upload endpoint
-- `BleManager.*` - serwer BLE GATT (status, komendy, ustawienia)
-- `ApiHandlers.*` - endpointy `/api/status`, `/api/logs`, `/api/action`
-- `ConfigManager.*` + `ConfigData.h` - konfiguracja w Preferences (CRC32)
-- `ConfigValidation.*` - wspolna walidacja i clamp configu (UI/BLE/HTTP)
-- `ScheduleManager.*` - okna czasowe i auto-feeding
-- `PowerManager.*` + `BatteryReader.*` - bateria, aktywnosc, tryby zasilania
-- `TemperatureController.*` - DS18B20 i grzalka
-- `FeederController.*` - silnik karmnika + logika czujnika
-- `ServoController.*` - serwo napowietrzania (attach tylko na czas ruchu)
-- `SharedState.*` - bezpieczny snapshot danych miedzy rdzeniami
-- `AquariumAnimation.*` + `UIRenderers.*` - OLED/UI
+### 3.1 Konfiguracja sekretow
 
-## 3. Piny (z kodu)
+Projekt ma fallback do `src/arduino_secrets.template.h`, ale do normalnej pracy ustaw swoje dane w `src/arduino_secrets.h`.
 
+PowerShell:
+
+```powershell
+Copy-Item src/arduino_secrets.template.h src/arduino_secrets.h
 ```
+
+Nastepnie edytuj `src/arduino_secrets.h`:
+
+- `SECRET_SSID`, `SECRET_PASS`
+- `AP_SSID`, `AP_PASSWORD`
+- `SECRET_BLE_PASSKEY`
+
+Plik `src/arduino_secrets.h` jest ignorowany przez git.
+
+### 3.2 Build
+
+```bash
+python -m platformio run
+```
+
+Alternatywnie (jesli `pio` jest w PATH):
+
+```bash
+pio run
+```
+
+### 3.3 Flash
+
+```bash
+python -m platformio run -t upload
+```
+
+Jesli plytka nie wchodzi w upload: przytrzymaj `BOOT`, podlacz zasilanie/USB i ponow upload.
+
+### 3.4 Serial monitor
+
+```bash
+python -m platformio device monitor -b 115200
+```
+
+W `platformio.ini`:
+
+- `monitor_speed = 115200`
+- `monitor_encoding = UTF-8`
+
+## 4. Piny
+
+```text
 BUTTON_UP_PIN      GPIO15
 BUTTON_SELECT_PIN  GPIO16
 BUTTON_DOWN_PIN    GPIO14
 
-ONE_WIRE_BUS       GPIO1   (DS18B20)
+ONE_WIRE_BUS       GPIO1
 HEATER_PIN         GPIO3
 PUMP_PIN           GPIO4
 FEEDER_PIN         GPIO5
@@ -55,16 +92,14 @@ LIGHT_PIN          GPIO17
 
 Uwagi:
 
-- `LIGHT_PIN` jest aktywny w logice odwrotnej (`LOW = ON`, `HIGH = OFF`).
-- `PUMP_PIN` i `HEATER_PIN` dzialaja klasycznie (`HIGH = ON`).
+- `LIGHT_PIN`: logika odwrotna (`LOW = ON`, `HIGH = OFF`)
+- `PUMP_PIN` i `HEATER_PIN`: `HIGH = ON`
 
-## 4. Build i upload (PlatformIO)
+## 5. Interfejsy sterowania
 
-Aktualne srodowisko w `platformio.ini`:
+### 5.1 OLED + przyciski
 
-- `env:esp32-s3-devkitc-1`
-- `platform = espressif32`
-- `framework = arduino`
+Menu glowne:
 
 Przyklady (zalecane, dziala nawet gdy `pio` nie jest w PATH):
 
@@ -82,103 +117,120 @@ pio run -t upload
 pio device monitor -b 115200
 ```
 
-## 5. Konfiguracja WiFi/AP
+- reczne karmienie: przytrzymaj wszystkie 3 przyciski przez 1 s
+- AP i BLE maja auto-exit po sesji klienta + reczne wyjscie `UP`
 
-Sekrety:
+### 5.2 HTTP API
 
-- `SECRET_SSID`, `SECRET_PASS` - domowa siec WiFi (tryb STA)
-- `AP_SSID`, `AP_PASSWORD` - dane Access Point urzadzenia
-- `SECRET_BLE_PASSKEY` - PIN parowania BLE
+Podstawowe endpointy:
 
-Start systemu:
+- `GET /api/status`
+- `GET /api/logs`
+- `POST /api/action`
+- `POST /settime?epoch=<unix>`
+- `POST /update` (OTA)
 
-- urzadzenie probuje polaczyc sie jako STA przez 6 s
-- po timeout pracuje offline (bez automatycznego AP)
-- AP uruchamia sie recznie z menu `Wifi`
-
-Pliki:
-
-- `src/arduino_secrets.template.h` - bezpieczny template (fallback build/CI)
-- `src/arduino_secrets.h` - lokalny plik z prawdziwymi sekretami (ignorowany przez git)
-
-## 6. Web panel i API
-
-HTTP:
-
-- `GET /` - panel WWW
-- `GET /style.css`, `GET /script.js` - assety
-- `POST /settime?epoch=<unix>` - synchronizacja czasu RTC
-- `POST /update` - OTA upload firmware
-
-REST API:
-
-- `GET /api/status` - status urzadzenia (temp, bateria, przekazniki, serwo, harmonogram, siec)
-- `GET /api/logs` - logi normalne + krytyczne
-- `POST /api/action` - akcje sterujace
-
-Dozwolone akcje `action`:
+Dostepne akcje `action`:
 
 - `feed_now`
 - `set_servo` (wymaga `angle` 0..90)
 - `clear_servo`
 - `clear_critical_logs`
-- `save_schedule` (parametry harmonogramu i temperatury)
+- `save_schedule`
 
-## 7. UI i przyciski
+Przyklady:
 
-Menu glowne (OLED): `Harmonogramy`, `Logi`, `Data i Czas`, `Test`, `Wifi`.
+```bash
+curl http://<IP>/api/status
+curl http://<IP>/api/logs
+curl -X POST http://<IP>/api/action -d "action=feed_now"
+curl -X POST http://<IP>/api/action -d "action=set_servo&angle=35"
+curl -X POST http://<IP>/api/action -d "action=clear_servo"
+```
 
-Skrot zachowania:
+### 5.3 BLE
 
-- HOME: `SELECT` -> MENU
-- MENU: `DOWN` nastepna pozycja, `SELECT` wejscie, `UP` powrot
-- Ekrany harmonogramow / czasu: `SELECT` edycja/nastepne pole, `DOWN` zmiana wartosci
-- LOGI: `DOWN` przewijanie
-- Wifi/AP: `UP` reczne wylaczenie AP i powrot do menu
+- nazwa urzadzenia: `Akwarium_BLE`
+- wymagane parowanie z PIN (`SECRET_BLE_PASSKEY`)
+- szyfrowanie: MITM + bonding
 
-## 8. Zasilanie i sleep
+Akcje (`command`):
 
-- po 4 min bez aktywnosci ekran przechodzi w power-save (jesli `alwaysScreenOn == false`)
-- po 5 min bez aktywnosci i przy spelnieniu warunkow system wchodzi w Deep Sleep na 30 min
-- wybudzanie: przyciski (`ESP_EXT1_WAKEUP_ANY_LOW`) lub timer RTC
+- `{"action":"feed_now"}`
+- `{"action":"set_servo","angle":45}`
+- `{"action":"clear_servo"}`
+- `{"action":"clear_critical_logs"}`
 
-Warunki Deep Sleep (w skrocie):
+Szczegolowy opis BLE (UUID, payload `settings`) jest w `Info.md`.
 
-- grzalka wylaczona
-- OTA nie jest w trakcie
-- AP wylaczony
-- STA/radio calkowicie wylaczone
-- BLE nie jest aktywne (brak advertising i brak klienta)
-- bezczynnosc > 5 min
+## 6. Zasilanie i deep sleep
 
-## 12. Smoke test manualny
+- po 4 min bezczynnosci: ekran przechodzi w power-save (jesli `alwaysScreenOn=false`)
+- nocny deep sleep po 5 min bezczynnosci, tylko gdy:
+  - OTA wylaczone
+  - AP wylaczony
+  - radio STA wylaczone
+  - BLE nie reklamuje i brak klienta
+  - karmnik nie pracuje
+- wakeup:
+  - przycisk `GPIO14` (EXT1)
+  - timer do startu dnia wg harmonogramu
 
-Checklista testow smoke znajduje sie w:
+## 7. Build/CI i release
+
+Workflow: `.github/workflows/build.yml`
+
+- uruchamia build dla PR do `main`
+- uruchamia build dla push do `main`
+- dla tagow `v*` publikuje `firmware.bin` jako GitHub Release
+
+Przyklad release:
+
+```bash
+git switch main
+git pull --ff-only
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0
+```
+
+## 8. Struktura projektu
+
+Najwazniejsze pliki/moduly:
+
+- `src/AkwariumV4.ino` - setup, loop, UI state machine
+- `src/SystemController.*` - glowna logika runtime
+- `src/AkwariumWifi.*` - WiFi/AP, HTTP, OTA upload
+- `src/ApiHandlers.*` - REST API
+- `src/BleManager.*` - BLE GATT
+- `src/ConfigManager.*`, `src/ConfigValidation.*` - konfiguracja i walidacja
+- `src/ScheduleManager.*` - okna czasowe i auto-feed
+- `src/PowerManager.*`, `src/BatteryReader.*` - bateria i aktywnosc
+- `src/TemperatureController.*` - DS18B20 + grzalka
+- `src/FeederController.*`, `src/ServoController.*` - wykonawcze
+- `src/SharedState.*` - snapshot miedzy rdzeniami
+
+## 9. Testy manualne
+
+Checklista smoke test:
 
 - `docs/manual_smoke_test.md`
 
-## 9. Domyslna konfiguracja
+## 10. Najczestsze problemy
 
-Domyslne wartosci z `ConfigManager::loadDefaultConfig()`:
+### `pio` / `platformio` command not found
 
-- dzien: `10:00 -> 21:30`
-- napowietrzanie: `10:00 -> 21:00`
-- filtr: `10:30 -> 20:30`
-- temperatura docelowa: `25.0 C`
-- histereza temperatury: `0.5 C`
-- karmienie: `18:00`, tryb `1` (codziennie)
-- `servoPreOffMins = 30`
-- `alwaysScreenOn = false`
+Uzywaj komend przez modul Pythona:
 
-## 10. Logi i diagnostyka
+```bash
+python -m platformio run
+```
 
-- logi normalne: ring buffer 20 wpisow (RAM)
-- logi krytyczne: ring buffer 20 wpisow (trwale, Preferences)
-- czyszczenie logow krytycznych: `POST /api/action` z `action=clear_critical_logs`
+### Push do `main` odrzucany
 
-## 11. Bezpieczenstwo runtime
+Repo ma reguly ochrony `main` (PR + wymagany check build). Wypychaj zmiany na branch i merguj przez PR.
 
-- brak poprawnego odczytu DS18B20 (seria bledow) -> fail-safe, grzalka OFF
-- twardy limit temperatury: przy `>= 28.0 C` grzalka jest natychmiast odcinana
-- manualny override serwa wygasa automatycznie po 5 minutach
-- karmnik ma timeout bezpieczenstwa (`15 s`) i logike cyklu czujnika
+### Brak logow w monitorze
+
+- sprawdz baud: `115200`
+- sprawdz czy monitor jest otwarty na poprawnym porcie
+- po OTA odczekaj restart urzadzenia
