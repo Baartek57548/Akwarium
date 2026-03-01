@@ -33,6 +33,7 @@ static bool isNightTimeNow();
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
 static bool configureButtonWakeup();
 static bool holdOutputsInOffState();
+static int readWakeButtonIdleLevel();
 
 static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
@@ -406,6 +407,22 @@ static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
   return static_cast<uint64_t>(diffSec) * 1000000ULL;
 }
 
+static int readWakeButtonIdleLevel() {
+  // Glosowanie z kilku probek, aby ograniczyc przypadkowe odczyty.
+  uint8_t highCount = 0;
+  uint8_t lowCount = 0;
+  for (uint8_t i = 0; i < 16; i++) {
+    int level = digitalRead(static_cast<uint8_t>(BUTTON_DOWN_PIN));
+    if (level == HIGH) {
+      highCount++;
+    } else {
+      lowCount++;
+    }
+    delay(1);
+  }
+  return (highCount >= lowCount) ? HIGH : LOW;
+}
+
 static bool configureButtonWakeup() {
   if (!esp_sleep_is_valid_wakeup_gpio(BUTTON_DOWN_PIN) ||
       !rtc_gpio_is_valid_gpio(BUTTON_DOWN_PIN)) {
@@ -413,38 +430,18 @@ static bool configureButtonWakeup() {
     return false;
   }
 
-  esp_err_t err = rtc_gpio_deinit(BUTTON_DOWN_PIN);
-  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-    logEspErr("rtc_gpio_deinit(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
-
-  err = rtc_gpio_init(BUTTON_DOWN_PIN);
-  if (err != ESP_OK) {
-    logEspErr("rtc_gpio_init(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
-
-  err = rtc_gpio_set_direction(BUTTON_DOWN_PIN, RTC_GPIO_MODE_INPUT_ONLY);
-  if (err != ESP_OK) {
-    logEspErr("rtc_gpio_set_direction(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
-
-  err = rtc_gpio_pullup_en(BUTTON_DOWN_PIN);
-  if (err != ESP_OK) {
-    logEspErr("rtc_gpio_pullup_en(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
-
-  err = rtc_gpio_pulldown_dis(BUTTON_DOWN_PIN);
-  if (err != ESP_OK) {
-    logEspErr("rtc_gpio_pulldown_dis(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
+  pinMode(static_cast<uint8_t>(BUTTON_DOWN_PIN), INPUT_PULLUP);
+  int idleLevel = readWakeButtonIdleLevel();
+  esp_sleep_ext1_wakeup_mode_t ext1Mode =
+      (idleLevel == HIGH) ? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH;
+  char modeMsg[96];
+  snprintf(modeMsg, sizeof(modeMsg),
+           "Wake GPIO14: idle=%d mode=%s",
+           idleLevel, (ext1Mode == ESP_EXT1_WAKEUP_ANY_LOW) ? "LOW" : "HIGH");
+  LogManager::logInfo(modeMsg);
 
   uint64_t wakeMask = (1ULL << static_cast<uint64_t>(BUTTON_DOWN_PIN));
-  err = esp_sleep_enable_ext1_wakeup(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
+  esp_err_t err = esp_sleep_enable_ext1_wakeup(wakeMask, ext1Mode);
   if (err != ESP_OK) {
     logEspErr("esp_sleep_enable_ext1_wakeup", err);
     return false;
