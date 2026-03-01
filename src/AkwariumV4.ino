@@ -172,7 +172,7 @@ static void applyPendingUiChanges() {
   portEXIT_CRITICAL(&pendingUiMux);
 
   if (applySchedule) {
-    Config &cfg = ConfigManager::getConfig();
+    Config cfg = ConfigManager::getConfigSnapshot();
     cfg.dayStartHour = constrain(localSchedule.dayStartHour, 0, 24);
     cfg.dayStartMinute = constrain(localSchedule.dayStartMinute, 0, 59);
     cfg.dayEndHour = constrain(localSchedule.dayEndHour, 0, 24);
@@ -188,12 +188,12 @@ static void applyPendingUiChanges() {
     cfg.filterHourOff = constrain(localSchedule.filterHourOff, 0, 23);
     cfg.filterMinuteOff = constrain(localSchedule.filterMinuteOff, 0, 59);
 
-    cfg.targetTemp = constrain(localSchedule.targetTemp, 0.0f, 99.0f);
+    cfg.targetTemp = constrain(localSchedule.targetTemp, 15.0f, 35.0f);
     cfg.feedHour = constrain(localSchedule.feedHour, 0, 23);
     cfg.feedMinute = constrain(localSchedule.feedMinute, 0, 59);
     cfg.feedMode = constrain(localSchedule.feedMode, 0, 3);
 
-    ConfigManager::save();
+    ConfigManager::saveConfig(cfg);
   }
 
   if (applyTime) {
@@ -533,7 +533,7 @@ void VideoTask(void *pvParameters) {
       animation->setBatteryVoltage(PowerManager::getBatteryVoltage());
       animation->setBattery(PowerManager::getBatteryPercent());
 
-      Config &cfg = ConfigManager::getConfig();
+      Config cfg = ConfigManager::getConfigSnapshot();
       animation->setLightSchedule(cfg.dayStartHour, cfg.dayStartMinute,
                                   cfg.dayEndHour, cfg.dayEndMinute);
       animation->setAerationSchedule(cfg.aerationHourOn, cfg.aerationMinuteOn,

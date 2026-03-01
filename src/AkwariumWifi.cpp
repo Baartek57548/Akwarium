@@ -27,6 +27,8 @@ static DNSServer dnsServer;
 static const byte DNS_PORT = 53;
 static bool isAPMode = false;
 static bool otaUploadActive = false;
+static volatile bool apStartRequested = false;
+static volatile bool apStopRequested = false;
 
 WebServer &AkwariumWifi::getServer() { return server; }
 
@@ -178,11 +180,54 @@ static void setupWebServer() {
   server.begin();
 }
 
+static void startAPInternal() {
+  if (isAPMode) {
+    return;
+  }
+
+  WiFi.disconnect();
+  WiFi.mode(WIFI_AP);
+  if (WiFi.softAP(apSSID, apPassword)) {
+    dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+    isAPMode = true;
+    Serial.println("[WIFI-AP] Uruchomiono AP. IP: " +
+                   WiFi.softAPIP().toString());
+  } else {
+    Serial.println("[WIFI-AP] BLAD: nie udalo sie uruchomic AP.");
+  }
+}
+
+static void stopAPInternal() {
+  if (!isAPMode) {
+    return;
+  }
+
+  dnsServer.stop();
+  WiFi.softAPdisconnect(true);
+  isAPMode = false;
+  Serial.println("[WIFI-AP] Wylaczono AP.");
+  // UWAGA: Nie wywolujemy setupNetwork() - blokowaloby i mogloby powodowac WDT.
+}
+
+static void processAPRequests() {
+  if (apStopRequested) {
+    apStopRequested = false;
+    apStartRequested = false;
+    stopAPInternal();
+  }
+
+  if (apStartRequested) {
+    apStartRequested = false;
+    startAPInternal();
+  }
+}
+
 static void WifiTask(void *parameter) {
   setupNetwork();
   setupWebServer();
 
   for (;;) {
+    processAPRequests();
     if (isAPMode)
       dnsServer.processNextRequest();
     server.handleClient();
@@ -203,27 +248,13 @@ void AkwariumWifi::begin() {
 bool AkwariumWifi::getIsAPMode() { return isAPMode; }
 
 void AkwariumWifi::startAP() {
-  if (!isAPMode) {
-    WiFi.disconnect();
-    WiFi.mode(WIFI_AP);
-    if (WiFi.softAP(apSSID, apPassword)) {
-      dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
-      isAPMode = true;
-      Serial.println("[WIFI-AP] Uruchomiono AP. IP: " +
-                     WiFi.softAPIP().toString());
-    }
-  }
+  apStopRequested = false;
+  apStartRequested = true;
 }
 
 void AkwariumWifi::stopAP() {
-  if (isAPMode) {
-    dnsServer.stop();
-    WiFi.softAPdisconnect(true);
-    isAPMode = false;
-    Serial.println("[WIFI-AP] WyĹ‚Ä…czono AP.");
-    // UWAGA: Nie wywolujemy setupNetwork() - blokowaloby na 10s i powodowalo
-    // reset przez WDT (watchdog = 5s), co uruchamia kalibracje karmnika!
-  }
+  apStartRequested = false;
+  apStopRequested = true;
 }
 
 String AkwariumWifi::getAPName() {

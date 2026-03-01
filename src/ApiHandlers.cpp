@@ -13,6 +13,9 @@ void setupApiEndpoints() {
   WebServer &server = AkwariumWifi::getServer();
 
   server.on("/api/status", HTTP_GET, [&server]() {
+    const SharedStateData snap = SharedState::getSnapshot();
+    const Config cfg = ConfigManager::getConfigSnapshot();
+
     float voltage = PowerManager::getBatteryVoltage();
     if (isnan(voltage))
       voltage = 0.0f;
@@ -36,36 +39,18 @@ void setupApiEndpoints() {
         "\"feeding\":{\"hour\":%d,\"minute\":%d,\"freq\":%d,\"lastFeedEpoch\":%"
         "u},"
         "\"network\":{\"ip\":\"%s\",\"apMode\":%s}}",
-        isnan(SharedState::getSnapshot().temperature)
-            ? -99.9
-            : SharedState::getSnapshot().temperature,
-        ConfigManager::getConfig().targetTemp,
-        ConfigManager::getConfig().tempHysteresis,
-        isnan(SharedState::getSnapshot().minTemp)
-            ? 20.0
-            : SharedState::getSnapshot().minTemp,
-        (unsigned int)SharedState::getSnapshot().minTempEpoch, voltage,
+        isnan(snap.temperature) ? -99.9 : snap.temperature, cfg.targetTemp,
+        cfg.tempHysteresis, isnan(snap.minTemp) ? 20.0 : snap.minTemp,
+        (unsigned int)snap.minTempEpoch, voltage,
         (int)PowerManager::getBatteryPercent(),
-        SharedState::getSnapshot().isLightOn ? "true" : "false",
-        SharedState::getSnapshot().isFilterOn ? "true" : "false",
+        snap.isLightOn ? "true" : "false", snap.isFilterOn ? "true" : "false",
         SystemController::getServoPosition(),
-        ConfigManager::getConfig().dayStartHour,
-        ConfigManager::getConfig().dayStartMinute,
-        ConfigManager::getConfig().dayEndHour,
-        ConfigManager::getConfig().dayEndMinute,
-        ConfigManager::getConfig().aerationHourOn,
-        ConfigManager::getConfig().aerationMinuteOn,
-        ConfigManager::getConfig().aerationHourOff,
-        ConfigManager::getConfig().aerationMinuteOff,
-        ConfigManager::getConfig().filterHourOn,
-        ConfigManager::getConfig().filterMinuteOn,
-        ConfigManager::getConfig().filterHourOff,
-        ConfigManager::getConfig().filterMinuteOff,
-        ConfigManager::getConfig().servoPreOffMins,
-        ConfigManager::getConfig().feedHour,
-        ConfigManager::getConfig().feedMinute,
-        ConfigManager::getConfig().feedMode,
-        (unsigned int)ConfigManager::getConfig().lastFeedEpoch,
+        cfg.dayStartHour, cfg.dayStartMinute, cfg.dayEndHour, cfg.dayEndMinute,
+        cfg.aerationHourOn, cfg.aerationMinuteOn, cfg.aerationHourOff,
+        cfg.aerationMinuteOff, cfg.filterHourOn, cfg.filterMinuteOn,
+        cfg.filterHourOff, cfg.filterMinuteOff, cfg.servoPreOffMins,
+        cfg.feedHour, cfg.feedMinute, cfg.feedMode,
+        (unsigned int)cfg.lastFeedEpoch,
         AkwariumWifi::getIP().c_str(),
         AkwariumWifi::getIsAPMode() ? "true" : "false");
     server.sendHeader("Connection", "close");
@@ -88,7 +73,7 @@ void setupApiEndpoints() {
         return;
       } else if (action == "set_servo") {
         if (server.hasArg("angle")) {
-          int ang = server.arg("angle").toInt();
+          int ang = constrain(server.arg("angle").toInt(), 0, 90);
           SystemController::setManualServo(ang);
           server.send(200, "text/plain", "OK");
           return;
@@ -102,84 +87,133 @@ void setupApiEndpoints() {
         server.send(200, "text/plain", "OK");
         return;
       } else if (action == "save_schedule") {
+        Config cfg = ConfigManager::getConfigSnapshot();
+        bool updated = false;
+
+        auto parseTimeArg = [](const String &value, int &hour,
+                               int &minute) -> bool {
+          if (value.length() < 5 || value[2] != ':') {
+            return false;
+          }
+          if (!isDigit(value[0]) || !isDigit(value[1]) || !isDigit(value[3]) ||
+              !isDigit(value[4])) {
+            return false;
+          }
+          hour = value.substring(0, 2).toInt();
+          minute = value.substring(3, 5).toInt();
+          return true;
+        };
+
         if (server.hasArg("feedTime")) {
           String ft = server.arg("feedTime");
-          if (ft.length() >= 5) {
-            ConfigManager::getConfig().feedHour = ft.substring(0, 2).toInt();
-            ConfigManager::getConfig().feedMinute = ft.substring(3, 5).toInt();
+          int h = 0;
+          int m = 0;
+          if (!parseTimeArg(ft, h, m)) {
+            server.send(400, "text/plain", "Invalid feedTime");
+            return;
           }
+          cfg.feedHour = constrain(h, 0, 23);
+          cfg.feedMinute = constrain(m, 0, 59);
+          updated = true;
         }
         if (server.hasArg("feedFreq")) {
-          ConfigManager::getConfig().feedMode = server.arg("feedFreq").toInt();
+          cfg.feedMode = constrain(server.arg("feedFreq").toInt(), 0, 3);
+          updated = true;
         }
         if (server.hasArg("dayStart")) {
           String ds = server.arg("dayStart");
-          if (ds.length() >= 5) {
-            ConfigManager::getConfig().dayStartHour =
-                ds.substring(0, 2).toInt();
-            ConfigManager::getConfig().dayStartMinute =
-                ds.substring(3, 5).toInt();
+          int h = 0;
+          int m = 0;
+          if (!parseTimeArg(ds, h, m)) {
+            server.send(400, "text/plain", "Invalid dayStart");
+            return;
           }
+          cfg.dayStartHour = constrain(h, 0, 24);
+          cfg.dayStartMinute = constrain(m, 0, 59);
+          updated = true;
         }
         if (server.hasArg("dayEnd")) {
           String de = server.arg("dayEnd");
-          if (de.length() >= 5) {
-            ConfigManager::getConfig().dayEndHour = de.substring(0, 2).toInt();
-            ConfigManager::getConfig().dayEndMinute =
-                de.substring(3, 5).toInt();
+          int h = 0;
+          int m = 0;
+          if (!parseTimeArg(de, h, m)) {
+            server.send(400, "text/plain", "Invalid dayEnd");
+            return;
           }
+          cfg.dayEndHour = constrain(h, 0, 24);
+          cfg.dayEndMinute = constrain(m, 0, 59);
+          updated = true;
         }
         if (server.hasArg("targetTemp")) {
           float tTemp = server.arg("targetTemp").toFloat();
-          ConfigManager::getConfig().targetTemp =
-              constrain(tTemp, 15.0f, 35.0f);
+          cfg.targetTemp = constrain(tTemp, 15.0f, 35.0f);
+          updated = true;
         }
         if (server.hasArg("tempHyst")) {
           float hTemp = server.arg("tempHyst").toFloat();
-          ConfigManager::getConfig().tempHysteresis =
-              constrain(hTemp, 0.1f, 5.0f);
+          cfg.tempHysteresis = constrain(hTemp, 0.1f, 5.0f);
+          updated = true;
         }
         if (server.hasArg("airOn")) {
           String ao = server.arg("airOn");
-          if (ao.length() >= 5) {
-            ConfigManager::getConfig().aerationHourOn =
-                ao.substring(0, 2).toInt();
-            ConfigManager::getConfig().aerationMinuteOn =
-                ao.substring(3, 5).toInt();
+          int h = 0;
+          int m = 0;
+          if (!parseTimeArg(ao, h, m)) {
+            server.send(400, "text/plain", "Invalid airOn");
+            return;
           }
+          cfg.aerationHourOn = constrain(h, 0, 23);
+          cfg.aerationMinuteOn = constrain(m, 0, 59);
+          updated = true;
         }
         if (server.hasArg("airOff")) {
           String af = server.arg("airOff");
-          if (af.length() >= 5) {
-            ConfigManager::getConfig().aerationHourOff =
-                af.substring(0, 2).toInt();
-            ConfigManager::getConfig().aerationMinuteOff =
-                af.substring(3, 5).toInt();
+          int h = 0;
+          int m = 0;
+          if (!parseTimeArg(af, h, m)) {
+            server.send(400, "text/plain", "Invalid airOff");
+            return;
           }
+          cfg.aerationHourOff = constrain(h, 0, 23);
+          cfg.aerationMinuteOff = constrain(m, 0, 59);
+          updated = true;
         }
         if (server.hasArg("filterOn")) {
           String fo = server.arg("filterOn");
-          if (fo.length() >= 5) {
-            ConfigManager::getConfig().filterHourOn =
-                fo.substring(0, 2).toInt();
-            ConfigManager::getConfig().filterMinuteOn =
-                fo.substring(3, 5).toInt();
+          int h = 0;
+          int m = 0;
+          if (!parseTimeArg(fo, h, m)) {
+            server.send(400, "text/plain", "Invalid filterOn");
+            return;
           }
+          cfg.filterHourOn = constrain(h, 0, 23);
+          cfg.filterMinuteOn = constrain(m, 0, 59);
+          updated = true;
         }
         if (server.hasArg("filterOff")) {
           String ff = server.arg("filterOff");
-          if (ff.length() >= 5) {
-            ConfigManager::getConfig().filterHourOff =
-                ff.substring(0, 2).toInt();
-            ConfigManager::getConfig().filterMinuteOff =
-                ff.substring(3, 5).toInt();
+          int h = 0;
+          int m = 0;
+          if (!parseTimeArg(ff, h, m)) {
+            server.send(400, "text/plain", "Invalid filterOff");
+            return;
           }
+          cfg.filterHourOff = constrain(h, 0, 23);
+          cfg.filterMinuteOff = constrain(m, 0, 59);
+          updated = true;
         }
         if (server.hasArg("servoPreOffMins")) {
-          ConfigManager::getConfig().servoPreOffMins =
-              server.arg("servoPreOffMins").toInt();
+          cfg.servoPreOffMins =
+              constrain(server.arg("servoPreOffMins").toInt(), 0, 255);
+          updated = true;
         }
-        ConfigManager::save();
+
+        if (!updated) {
+          server.send(400, "text/plain", "No valid fields");
+          return;
+        }
+
+        ConfigManager::saveConfig(cfg);
         server.send(200, "text/plain", "OK");
         return;
       }

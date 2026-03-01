@@ -129,7 +129,7 @@ static void publishResult(const char *type, const char *code) {
 
 static void buildStatusJson(char *json, size_t jsonSize) {
   SharedStateData snap = SharedState::getSnapshot();
-  const Config &cfg = ConfigManager::getConfig();
+  const Config cfg = ConfigManager::getConfigSnapshot();
 
   float vBat = PowerManager::getBatteryVoltage();
   if (isnan(vBat)) {
@@ -323,7 +323,7 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
     bool updated = false;
     bool anyField = false;
     bool hasInvalidValue = false;
-    Config &cfg = ConfigManager::getConfig();
+    Config cfg = ConfigManager::getConfigSnapshot();
     float floatVal = 0.0f;
     long intVal = 0;
 
@@ -513,7 +513,7 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
     }
 
     if (updated) {
-      ConfigManager::save();
+      ConfigManager::saveConfig(cfg);
       BleManager::notifyStatus();
       Serial.println("[BLE] Settings updated & saved.");
       publishResult("ack",
@@ -526,7 +526,7 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
 
   void onRead(BLECharacteristic *pCharacteristic) override {
     char json[500];
-    const Config &cfg = ConfigManager::getConfig();
+    const Config cfg = ConfigManager::getConfigSnapshot();
     snprintf(json, sizeof(json),
              "{\"tar\":%.1f,\"hys\":%.1f,\"fdH\":%d,\"fdM\":%d,\"fdF\":%d,"
              "\"lsH\":%d,\"lsM\":%d,\"leH\":%d,\"leM\":%d,"

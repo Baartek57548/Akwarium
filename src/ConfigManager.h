@@ -7,7 +7,9 @@ class ConfigManager {
 public:
   static void init();
   static void save();
+  static void saveConfig(const Config &cfg);
   static void resetToDefault();
+  static Config getConfigSnapshot();
   static Config &getConfig();
 
 private:
