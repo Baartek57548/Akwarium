@@ -638,11 +638,18 @@ void setup() {
   Wire.begin(8, 9);
   Wire.setClock(100000L);
 
+  // Natychmiastowa odpowiedz po wybudzeniu z deep sleep.
+  display.begin();
+  display.setContrast(255);
+  display.setPowerSave(0);
+  display.clearBuffer();
+  display.setFont(u8g2_font_6x10_tr);
+  display.drawStr(0, 12, "Wybudzanie...");
+  display.sendBuffer();
+
   // Inicjalizacja sprzetu, pamieci (CRC NVS), baterii i logow
   SystemController::init();
 
-  display.begin();
-  display.setContrast(255);
   animation = new AquariumAnimation(&display);
 
   setupApiEndpoints();

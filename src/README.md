@@ -1,5 +1,11 @@
 # Sterownik Akwarium PRO v5.1
 
+
+JAK PROGRAMOWAĆ ESP32s3 zero poprzez PlatformIO (wtyczka do VS code)
+1. Odłącz zasilanie
+2. Trzymając przycisk boot podłącz zasilanie
+3. Urządzenie jest przygotowane do programowania
+
 Dokumentacja tego pliku jest zaktualizowana pod aktualny kod w folderze `src/`.
 
 ## 1. Co robi projekt
@@ -9,7 +15,7 @@ Sterownik pracuje na ESP32-S3 (FreeRTOS, dual core) i obsluguje:
 - harmonogram swiatla, filtra i napowietrzania
 - pomiar temperatury DS18B20 + sterowanie grzalka (histereza + ograniczenie przelaczen)
 - karmnik automatyczny i reczny (z czujnikiem i timeoutem)
-- pomiar napiecia baterii RTC CR2032
+- pomiar napiecia baterii RTC CR2025/CR2032
 - lokalny panel WWW + OTA przez upload pliku `.bin`
 - lokalny interfejs OLED 128x32 + przyciski fizyczne
 - logi systemowe (RAM + trwale logi krytyczne w Preferences)

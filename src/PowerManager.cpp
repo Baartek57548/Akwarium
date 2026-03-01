@@ -49,7 +49,8 @@ void PowerManager::update() {
   // jest gotowy
   if (batteryReader->isMeasurementReady()) {
     float v = batteryReader->getLastMeasurement();
-    bool validSample = (!isnan(v) && v >= 0.5f && v <= 5.5f);
+    // CR2025/CR2032 nie powinny przekraczac ok. 3.3V.
+    bool validSample = (!isnan(v) && v >= 0.5f && v <= 3.6f);
 
     if (validSample) {
       lastValidVoltage = v;
