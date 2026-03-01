@@ -31,7 +31,7 @@ static void logWakeupCauseOnBoot();
 static void releaseDeepSleepHolds();
 static bool isNightTimeNow();
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
-static bool configureExt0Wakeup();
+static bool configureButtonWakeup();
 static bool holdOutputsInOffState();
 
 static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
@@ -85,6 +85,8 @@ void SystemController::hardwareSetup() {
   pinMode(BAT_EN_PIN, OUTPUT);
   digitalWrite(BAT_EN_PIN, HIGH); // Załączenie dzielnika pomiarowego
 
+  // Po wybudzeniu pin wake moze pozostac w trybie RTC GPIO.
+  rtc_gpio_deinit(BUTTON_DOWN_PIN);
   pinMode(static_cast<uint8_t>(BUTTON_UP_PIN), INPUT_PULLUP);
   pinMode(static_cast<uint8_t>(BUTTON_SELECT_PIN), INPUT_PULLUP);
   pinMode(static_cast<uint8_t>(BUTTON_DOWN_PIN), INPUT_PULLUP);
@@ -299,8 +301,16 @@ static void logEspErr(const char *prefix, esp_err_t err) {
 static void logWakeupCauseOnBoot() {
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   switch (cause) {
+  case ESP_SLEEP_WAKEUP_EXT1: {
+    uint64_t mask = esp_sleep_get_ext1_wakeup_status();
+    char msg[96];
+    snprintf(msg, sizeof(msg), "Wakeup cause: EXT1 mask=0x%llX",
+             static_cast<unsigned long long>(mask));
+    LogManager::logInfo(msg);
+    break;
+  }
   case ESP_SLEEP_WAKEUP_EXT0:
-    LogManager::logInfo("Wakeup cause: EXT0 (GPIO14)");
+    LogManager::logInfo("Wakeup cause: EXT0");
     break;
   case ESP_SLEEP_WAKEUP_TIMER:
     LogManager::logInfo("Wakeup cause: TIMER");
@@ -384,16 +394,20 @@ static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
   return static_cast<uint64_t>(diffSec) * 1000000ULL;
 }
 
-static bool configureExt0Wakeup() {
+static bool configureButtonWakeup() {
   if (!esp_sleep_is_valid_wakeup_gpio(BUTTON_DOWN_PIN) ||
       !rtc_gpio_is_valid_gpio(BUTTON_DOWN_PIN)) {
-    LogManager::logError("GPIO14 nie jest poprawnym RTC wake pin dla EXT0.");
+    LogManager::logError("GPIO14 nie jest poprawnym RTC wake pin.");
     return false;
   }
 
-  pinMode(static_cast<uint8_t>(BUTTON_DOWN_PIN), INPUT_PULLUP);
+  esp_err_t err = rtc_gpio_deinit(BUTTON_DOWN_PIN);
+  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    logEspErr("rtc_gpio_deinit(BUTTON_DOWN_PIN)", err);
+    return false;
+  }
 
-  esp_err_t err = rtc_gpio_init(BUTTON_DOWN_PIN);
+  err = rtc_gpio_init(BUTTON_DOWN_PIN);
   if (err != ESP_OK) {
     logEspErr("rtc_gpio_init(BUTTON_DOWN_PIN)", err);
     return false;
@@ -417,9 +431,10 @@ static bool configureExt0Wakeup() {
     return false;
   }
 
-  err = esp_sleep_enable_ext0_wakeup(BUTTON_DOWN_PIN, 0); // LOW = wakeup
+  uint64_t wakeMask = (1ULL << static_cast<uint64_t>(BUTTON_DOWN_PIN));
+  err = esp_sleep_enable_ext1_wakeup(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
   if (err != ESP_OK) {
-    logEspErr("esp_sleep_enable_ext0_wakeup", err);
+    logEspErr("esp_sleep_enable_ext1_wakeup", err);
     return false;
   }
 
@@ -585,8 +600,8 @@ void SystemController::enterNightDeepSleep() {
     return;
   }
 
-  if (!configureExt0Wakeup()) {
-    LogManager::logError("Konfiguracja EXT0 nieudana - pomijam deep sleep.");
+  if (!configureButtonWakeup()) {
+    LogManager::logError("Konfiguracja wakeup GPIO14 nieudana - pomijam deep sleep.");
     return;
   }
 
