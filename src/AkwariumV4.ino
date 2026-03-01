@@ -9,6 +9,7 @@
 #include "AquariumAnimation.h"
 #include "BleManager.h"
 #include "ConfigManager.h"
+#include "ConfigValidation.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
@@ -172,28 +173,49 @@ static void applyPendingUiChanges() {
   portEXIT_CRITICAL(&pendingUiMux);
 
   if (applySchedule) {
-    Config cfg = ConfigManager::getConfigSnapshot();
-    cfg.dayStartHour = constrain(localSchedule.dayStartHour, 0, 24);
-    cfg.dayStartMinute = constrain(localSchedule.dayStartMinute, 0, 59);
-    cfg.dayEndHour = constrain(localSchedule.dayEndHour, 0, 24);
-    cfg.dayEndMinute = constrain(localSchedule.dayEndMinute, 0, 59);
+    ConfigPatch patch = {};
+    patch.hasDayStartHour = true;
+    patch.dayStartHour = localSchedule.dayStartHour;
+    patch.hasDayStartMinute = true;
+    patch.dayStartMinute = localSchedule.dayStartMinute;
+    patch.hasDayEndHour = true;
+    patch.dayEndHour = localSchedule.dayEndHour;
+    patch.hasDayEndMinute = true;
+    patch.dayEndMinute = localSchedule.dayEndMinute;
 
-    cfg.aerationHourOn = constrain(localSchedule.aerationHourOn, 0, 23);
-    cfg.aerationMinuteOn = constrain(localSchedule.aerationMinuteOn, 0, 59);
-    cfg.aerationHourOff = constrain(localSchedule.aerationHourOff, 0, 23);
-    cfg.aerationMinuteOff = constrain(localSchedule.aerationMinuteOff, 0, 59);
+    patch.hasAerationHourOn = true;
+    patch.aerationHourOn = localSchedule.aerationHourOn;
+    patch.hasAerationMinuteOn = true;
+    patch.aerationMinuteOn = localSchedule.aerationMinuteOn;
+    patch.hasAerationHourOff = true;
+    patch.aerationHourOff = localSchedule.aerationHourOff;
+    patch.hasAerationMinuteOff = true;
+    patch.aerationMinuteOff = localSchedule.aerationMinuteOff;
 
-    cfg.filterHourOn = constrain(localSchedule.filterHourOn, 0, 23);
-    cfg.filterMinuteOn = constrain(localSchedule.filterMinuteOn, 0, 59);
-    cfg.filterHourOff = constrain(localSchedule.filterHourOff, 0, 23);
-    cfg.filterMinuteOff = constrain(localSchedule.filterMinuteOff, 0, 59);
+    patch.hasFilterHourOn = true;
+    patch.filterHourOn = localSchedule.filterHourOn;
+    patch.hasFilterMinuteOn = true;
+    patch.filterMinuteOn = localSchedule.filterMinuteOn;
+    patch.hasFilterHourOff = true;
+    patch.filterHourOff = localSchedule.filterHourOff;
+    patch.hasFilterMinuteOff = true;
+    patch.filterMinuteOff = localSchedule.filterMinuteOff;
 
-    cfg.targetTemp = constrain(localSchedule.targetTemp, 15.0f, 35.0f);
-    cfg.feedHour = constrain(localSchedule.feedHour, 0, 23);
-    cfg.feedMinute = constrain(localSchedule.feedMinute, 0, 59);
-    cfg.feedMode = constrain(localSchedule.feedMode, 0, 3);
+    patch.hasTargetTemp = true;
+    patch.targetTemp = localSchedule.targetTemp;
+    patch.hasFeedHour = true;
+    patch.feedHour = localSchedule.feedHour;
+    patch.hasFeedMinute = true;
+    patch.feedMinute = localSchedule.feedMinute;
+    patch.hasFeedMode = true;
+    patch.feedMode = localSchedule.feedMode;
 
-    ConfigManager::saveConfig(cfg);
+    Config cfg = ConfigManager::getCopy();
+    ConfigValidationResult validation = {};
+    ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
+    if (validation.hasAnyApplied()) {
+      ConfigManager::updateAndSave(cfg);
+    }
   }
 
   if (applyTime) {
@@ -533,7 +555,7 @@ void VideoTask(void *pvParameters) {
       animation->setBatteryVoltage(PowerManager::getBatteryVoltage());
       animation->setBattery(PowerManager::getBatteryPercent());
 
-      Config cfg = ConfigManager::getConfigSnapshot();
+      Config cfg = ConfigManager::getCopy();
       animation->setLightSchedule(cfg.dayStartHour, cfg.dayStartMinute,
                                   cfg.dayEndHour, cfg.dayEndMinute);
       animation->setAerationSchedule(cfg.aerationHourOn, cfg.aerationMinuteOn,
@@ -612,8 +634,9 @@ void VideoTask(void *pvParameters) {
 void setup() {
   Serial.begin(115200);
 
-  Wire.begin();
-  Wire.setClock(400000L);
+  // ESP32-S3 Zero: stabilna magistrala I2C dla OLED/RTC na GPIO8(GPIO SDA) i GPIO9(GPIO SCL)
+  Wire.begin(8, 9);
+  Wire.setClock(100000L);
 
   // Inicjalizacja sprzetu, pamieci (CRC NVS), baterii i logow
   SystemController::init();

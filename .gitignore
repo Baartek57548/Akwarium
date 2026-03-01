@@ -5,3 +5,4 @@ src/build/
 .vscode/launch.json
 .vscode/ipch
 do wykonania.txt
+src/arduino_secrets.h

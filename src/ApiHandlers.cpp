@@ -1,11 +1,61 @@
 #include "ApiHandlers.h"
 #include "AkwariumWifi.h"
 #include "ConfigManager.h"
+#include "ConfigValidation.h"
 #include "LogManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
 #include "SystemController.h"
 #include <WebServer.h>
+#include <cstdlib>
+
+namespace {
+
+static bool parseLongStrict(const String &raw, long &out) {
+  if (raw.length() == 0) {
+    return false;
+  }
+
+  char *endPtr = nullptr;
+  long parsed = strtol(raw.c_str(), &endPtr, 10);
+  if (endPtr == raw.c_str() || *endPtr != '\0') {
+    return false;
+  }
+
+  out = parsed;
+  return true;
+}
+
+static bool parseFloatStrict(const String &raw, float &out) {
+  if (raw.length() == 0) {
+    return false;
+  }
+
+  char *endPtr = nullptr;
+  float parsed = strtof(raw.c_str(), &endPtr);
+  if (endPtr == raw.c_str() || *endPtr != '\0') {
+    return false;
+  }
+
+  out = parsed;
+  return true;
+}
+
+static bool parseTimeArg(const String &value, int &hour, int &minute) {
+  if (value.length() < 5 || value[2] != ':') {
+    return false;
+  }
+  if (!isDigit(value[0]) || !isDigit(value[1]) || !isDigit(value[3]) ||
+      !isDigit(value[4])) {
+    return false;
+  }
+
+  hour = value.substring(0, 2).toInt();
+  minute = value.substring(3, 5).toInt();
+  return true;
+}
+
+} // namespace
 
 extern WebServer server; // from AkwariumWifi
 
@@ -14,7 +64,7 @@ void setupApiEndpoints() {
 
   server.on("/api/status", HTTP_GET, [&server]() {
     const SharedStateData snap = SharedState::getSnapshot();
-    const Config cfg = ConfigManager::getConfigSnapshot();
+    const Config cfg = ConfigManager::getCopy();
 
     float voltage = PowerManager::getBatteryVoltage();
     if (isnan(voltage))
@@ -87,134 +137,155 @@ void setupApiEndpoints() {
         server.send(200, "text/plain", "OK");
         return;
       } else if (action == "save_schedule") {
-        Config cfg = ConfigManager::getConfigSnapshot();
-        bool updated = false;
-
-        auto parseTimeArg = [](const String &value, int &hour,
-                               int &minute) -> bool {
-          if (value.length() < 5 || value[2] != ':') {
-            return false;
-          }
-          if (!isDigit(value[0]) || !isDigit(value[1]) || !isDigit(value[3]) ||
-              !isDigit(value[4])) {
-            return false;
-          }
-          hour = value.substring(0, 2).toInt();
-          minute = value.substring(3, 5).toInt();
-          return true;
-        };
+        ConfigPatch patch = {};
+        uint8_t invalidFields = 0;
 
         if (server.hasArg("feedTime")) {
           String ft = server.arg("feedTime");
           int h = 0;
           int m = 0;
-          if (!parseTimeArg(ft, h, m)) {
-            server.send(400, "text/plain", "Invalid feedTime");
-            return;
+          if (parseTimeArg(ft, h, m)) {
+            patch.hasFeedHour = true;
+            patch.feedHour = h;
+            patch.hasFeedMinute = true;
+            patch.feedMinute = m;
+          } else {
+            invalidFields++;
           }
-          cfg.feedHour = constrain(h, 0, 23);
-          cfg.feedMinute = constrain(m, 0, 59);
-          updated = true;
         }
         if (server.hasArg("feedFreq")) {
-          cfg.feedMode = constrain(server.arg("feedFreq").toInt(), 0, 3);
-          updated = true;
+          long v = 0;
+          if (parseLongStrict(server.arg("feedFreq"), v)) {
+            patch.hasFeedMode = true;
+            patch.feedMode = static_cast<int>(v);
+          } else {
+            invalidFields++;
+          }
         }
         if (server.hasArg("dayStart")) {
           String ds = server.arg("dayStart");
           int h = 0;
           int m = 0;
-          if (!parseTimeArg(ds, h, m)) {
-            server.send(400, "text/plain", "Invalid dayStart");
-            return;
+          if (parseTimeArg(ds, h, m)) {
+            patch.hasDayStartHour = true;
+            patch.dayStartHour = h;
+            patch.hasDayStartMinute = true;
+            patch.dayStartMinute = m;
+          } else {
+            invalidFields++;
           }
-          cfg.dayStartHour = constrain(h, 0, 24);
-          cfg.dayStartMinute = constrain(m, 0, 59);
-          updated = true;
         }
         if (server.hasArg("dayEnd")) {
           String de = server.arg("dayEnd");
           int h = 0;
           int m = 0;
-          if (!parseTimeArg(de, h, m)) {
-            server.send(400, "text/plain", "Invalid dayEnd");
-            return;
+          if (parseTimeArg(de, h, m)) {
+            patch.hasDayEndHour = true;
+            patch.dayEndHour = h;
+            patch.hasDayEndMinute = true;
+            patch.dayEndMinute = m;
+          } else {
+            invalidFields++;
           }
-          cfg.dayEndHour = constrain(h, 0, 24);
-          cfg.dayEndMinute = constrain(m, 0, 59);
-          updated = true;
         }
         if (server.hasArg("targetTemp")) {
-          float tTemp = server.arg("targetTemp").toFloat();
-          cfg.targetTemp = constrain(tTemp, 15.0f, 35.0f);
-          updated = true;
+          float v = 0.0f;
+          if (parseFloatStrict(server.arg("targetTemp"), v)) {
+            patch.hasTargetTemp = true;
+            patch.targetTemp = v;
+          } else {
+            invalidFields++;
+          }
         }
         if (server.hasArg("tempHyst")) {
-          float hTemp = server.arg("tempHyst").toFloat();
-          cfg.tempHysteresis = constrain(hTemp, 0.1f, 5.0f);
-          updated = true;
+          float v = 0.0f;
+          if (parseFloatStrict(server.arg("tempHyst"), v)) {
+            patch.hasTempHysteresis = true;
+            patch.tempHysteresis = v;
+          } else {
+            invalidFields++;
+          }
         }
         if (server.hasArg("airOn")) {
           String ao = server.arg("airOn");
           int h = 0;
           int m = 0;
-          if (!parseTimeArg(ao, h, m)) {
-            server.send(400, "text/plain", "Invalid airOn");
-            return;
+          if (parseTimeArg(ao, h, m)) {
+            patch.hasAerationHourOn = true;
+            patch.aerationHourOn = h;
+            patch.hasAerationMinuteOn = true;
+            patch.aerationMinuteOn = m;
+          } else {
+            invalidFields++;
           }
-          cfg.aerationHourOn = constrain(h, 0, 23);
-          cfg.aerationMinuteOn = constrain(m, 0, 59);
-          updated = true;
         }
         if (server.hasArg("airOff")) {
           String af = server.arg("airOff");
           int h = 0;
           int m = 0;
-          if (!parseTimeArg(af, h, m)) {
-            server.send(400, "text/plain", "Invalid airOff");
-            return;
+          if (parseTimeArg(af, h, m)) {
+            patch.hasAerationHourOff = true;
+            patch.aerationHourOff = h;
+            patch.hasAerationMinuteOff = true;
+            patch.aerationMinuteOff = m;
+          } else {
+            invalidFields++;
           }
-          cfg.aerationHourOff = constrain(h, 0, 23);
-          cfg.aerationMinuteOff = constrain(m, 0, 59);
-          updated = true;
         }
         if (server.hasArg("filterOn")) {
           String fo = server.arg("filterOn");
           int h = 0;
           int m = 0;
-          if (!parseTimeArg(fo, h, m)) {
-            server.send(400, "text/plain", "Invalid filterOn");
-            return;
+          if (parseTimeArg(fo, h, m)) {
+            patch.hasFilterHourOn = true;
+            patch.filterHourOn = h;
+            patch.hasFilterMinuteOn = true;
+            patch.filterMinuteOn = m;
+          } else {
+            invalidFields++;
           }
-          cfg.filterHourOn = constrain(h, 0, 23);
-          cfg.filterMinuteOn = constrain(m, 0, 59);
-          updated = true;
         }
         if (server.hasArg("filterOff")) {
           String ff = server.arg("filterOff");
           int h = 0;
           int m = 0;
-          if (!parseTimeArg(ff, h, m)) {
-            server.send(400, "text/plain", "Invalid filterOff");
-            return;
+          if (parseTimeArg(ff, h, m)) {
+            patch.hasFilterHourOff = true;
+            patch.filterHourOff = h;
+            patch.hasFilterMinuteOff = true;
+            patch.filterMinuteOff = m;
+          } else {
+            invalidFields++;
           }
-          cfg.filterHourOff = constrain(h, 0, 23);
-          cfg.filterMinuteOff = constrain(m, 0, 59);
-          updated = true;
         }
         if (server.hasArg("servoPreOffMins")) {
-          cfg.servoPreOffMins =
-              constrain(server.arg("servoPreOffMins").toInt(), 0, 255);
-          updated = true;
+          long v = 0;
+          if (parseLongStrict(server.arg("servoPreOffMins"), v)) {
+            patch.hasServoPreOffMins = true;
+            patch.servoPreOffMins = static_cast<int>(v);
+          } else {
+            invalidFields++;
+          }
         }
 
-        if (!updated) {
+        Config cfg = ConfigManager::getCopy();
+        ConfigValidationResult validation = {};
+        ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
+        if (!validation.hasAnyApplied()) {
           server.send(400, "text/plain", "No valid fields");
           return;
         }
 
-        ConfigManager::saveConfig(cfg);
-        server.send(200, "text/plain", "OK");
+        if (!ConfigManager::updateAndSave(cfg)) {
+          server.send(500, "text/plain", "Save failed");
+          return;
+        }
+
+        if (validation.hasInvalidFields() || invalidFields > 0) {
+          server.send(200, "text/plain", "OK_PARTIAL");
+        } else {
+          server.send(200, "text/plain", "OK");
+        }
         return;
       }
     }

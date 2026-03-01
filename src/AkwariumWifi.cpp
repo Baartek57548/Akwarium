@@ -1,8 +1,8 @@
 #include "AkwariumWifi.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
+#include "SecretConfig.h"
 #include "WebAssets.h"
-#include "arduino_secrets.h"
 #include <DNSServer.h>
 #include <Update.h>
 #include <WebServer.h>
@@ -29,11 +29,14 @@ static bool isAPMode = false;
 static bool otaUploadActive = false;
 static volatile bool apStartRequested = false;
 static volatile bool apStopRequested = false;
+static volatile bool staOffRequested = false;
+static volatile bool staIsOff = false;
 
 WebServer &AkwariumWifi::getServer() { return server; }
 
 static void setupNetwork() {
   WiFi.mode(WIFI_STA);
+  staIsOff = false;
   WiFi.begin(STA_SSID, STA_PASSWORD);
   unsigned long start = millis();
 
@@ -187,6 +190,7 @@ static void startAPInternal() {
 
   WiFi.disconnect();
   WiFi.mode(WIFI_AP);
+  staIsOff = true;
   if (WiFi.softAP(apSSID, apPassword)) {
     dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
     isAPMode = true;
@@ -205,8 +209,20 @@ static void stopAPInternal() {
   dnsServer.stop();
   WiFi.softAPdisconnect(true);
   isAPMode = false;
+  staIsOff = true;
   Serial.println("[WIFI-AP] Wylaczono AP.");
   // UWAGA: Nie wywolujemy setupNetwork() - blokowaloby i mogloby powodowac WDT.
+}
+
+static void disableStaForDeepSleepInternal() {
+  if (isAPMode) {
+    return;
+  }
+
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_OFF);
+  staIsOff = true;
+  Serial.println("[WIFI-STA] Wylaczono STA/radio dla deep sleep.");
 }
 
 static void processAPRequests() {
@@ -219,6 +235,11 @@ static void processAPRequests() {
   if (apStartRequested) {
     apStartRequested = false;
     startAPInternal();
+  }
+
+  if (staOffRequested && !isAPMode) {
+    staOffRequested = false;
+    disableStaForDeepSleepInternal();
   }
 }
 
@@ -249,6 +270,7 @@ bool AkwariumWifi::getIsAPMode() { return isAPMode; }
 
 void AkwariumWifi::startAP() {
   apStopRequested = false;
+  staOffRequested = false;
   apStartRequested = true;
 }
 
@@ -256,6 +278,13 @@ void AkwariumWifi::stopAP() {
   apStartRequested = false;
   apStopRequested = true;
 }
+
+void AkwariumWifi::requestStaOffForDeepSleep() {
+  apStartRequested = false;
+  staOffRequested = true;
+}
+
+bool AkwariumWifi::isStaOff() { return staIsOff; }
 
 String AkwariumWifi::getAPName() {
   return isAPMode ? String(apSSID) : String(STA_SSID);

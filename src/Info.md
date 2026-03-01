@@ -141,7 +141,7 @@ oraz `servoController.update()` i `feederController.update()`.
   - grzalka OFF
   - OTA OFF
   - AP OFF
-  - brak aktywnego WiFi STA
+  - STA/radio OFF (wymagane `AkwariumWifi::isStaOff()`)
   - BLE OFF (brak advertising i brak polaczonego klienta)
 - usypianie na 30 min
 - wakeup:
@@ -323,7 +323,7 @@ Charakterystyki GATT:
 Bezpieczenstwo:
 
 - wymagane szyfrowanie i bonding
-- parowanie z PIN (`getPasskey()`, domyslnie `260225`)
+- parowanie z PIN (`getPasskey()`, wartosc z `SECRET_BLE_PASSKEY`)
 - write/read na charakterystykach chronione uprawnieniami encrypted
 
 ## 13. ApiHandlers - endpointy REST
@@ -411,7 +411,7 @@ Menu glowne ma 6 pozycji:
 - `Wifi`
 - `Bluetooth`
 
-`Akwarium.ino` mapuje zapis zmian UI do:
+`AkwariumV4.ino` mapuje zapis zmian UI do:
 
-- `ConfigManager::getConfig()` + `ConfigManager::save()` (harmonogramy)
+- `ConfigManager::getCopy()` + `ConfigManager::updateAndSave()` (harmonogramy)
 - `SystemController::rtc.adjust(...)` (data/czas)

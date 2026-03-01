@@ -1,8 +1,10 @@
 #include "BleManager.h"
 #include "AkwariumWifi.h"
 #include "ConfigManager.h"
+#include "ConfigValidation.h"
 #include "LogManager.h"
 #include "PowerManager.h"
+#include "SecretConfig.h"
 #include "SharedState.h"
 #include "SystemController.h"
 
@@ -42,7 +44,6 @@ static unsigned long lastNotifyTime = 0;
 static const unsigned long NOTIFY_INTERVAL_MS = 2000;
 static const unsigned long RESUME_ADVERTISING_DELAY_MS = 150;
 static const uint16_t BLE_PREFERRED_MTU = 185;
-static constexpr uint32_t BLE_PASSKEY = 260225;
 static const char *BLE_DEVICE_NAME = "Akwarium_BLE";
 
 static void refreshConnectionState() {
@@ -129,7 +130,7 @@ static void publishResult(const char *type, const char *code) {
 
 static void buildStatusJson(char *json, size_t jsonSize) {
   SharedStateData snap = SharedState::getSnapshot();
-  const Config cfg = ConfigManager::getConfigSnapshot();
+  const Config cfg = ConfigManager::getCopy();
 
   float vBat = PowerManager::getBatteryVoltage();
   if (isnan(vBat)) {
@@ -158,7 +159,9 @@ static void buildStatusJson(char *json, size_t jsonSize) {
 }
 
 class MySecurityCallbacks : public BLESecurityCallbacks {
-  uint32_t onPassKeyRequest() override { return BLE_PASSKEY; }
+  uint32_t onPassKeyRequest() override {
+    return static_cast<uint32_t>(SECRET_BLE_PASSKEY);
+  }
 
   void onPassKeyNotify(uint32_t pass_key) override {
     Serial.printf("[BLE] Pairing PIN: %06lu\n",
@@ -320,190 +323,189 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
 
     PowerManager::registerActivity();
 
-    bool updated = false;
     bool anyField = false;
-    bool hasInvalidValue = false;
-    Config cfg = ConfigManager::getConfigSnapshot();
+    uint8_t parseInvalidFields = 0;
+    ConfigPatch patch = {};
     float floatVal = 0.0f;
     long intVal = 0;
 
     if (root.containsKey("tar")) {
       anyField = true;
       if (tryGetFloat(root, "tar", floatVal)) {
-        cfg.targetTemp = constrain(floatVal, 15.0f, 35.0f);
-        updated = true;
+        patch.hasTargetTemp = true;
+        patch.targetTemp = floatVal;
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("hys")) {
       anyField = true;
       if (tryGetFloat(root, "hys", floatVal)) {
-        cfg.tempHysteresis = constrain(floatVal, 0.1f, 5.0f);
-        updated = true;
+        patch.hasTempHysteresis = true;
+        patch.tempHysteresis = floatVal;
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("fdH")) {
       anyField = true;
       if (tryGetInt(root, "fdH", intVal)) {
-        cfg.feedHour = constrain(static_cast<int>(intVal), 0, 23);
-        updated = true;
+        patch.hasFeedHour = true;
+        patch.feedHour = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("fdM")) {
       anyField = true;
       if (tryGetInt(root, "fdM", intVal)) {
-        cfg.feedMinute = constrain(static_cast<int>(intVal), 0, 59);
-        updated = true;
+        patch.hasFeedMinute = true;
+        patch.feedMinute = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("fdF")) {
       anyField = true;
       if (tryGetInt(root, "fdF", intVal)) {
-        cfg.feedMode = constrain(static_cast<int>(intVal), 0, 3);
-        updated = true;
+        patch.hasFeedMode = true;
+        patch.feedMode = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("lsH")) {
       anyField = true;
       if (tryGetInt(root, "lsH", intVal)) {
-        cfg.dayStartHour = constrain(static_cast<int>(intVal), 0, 24);
-        updated = true;
+        patch.hasDayStartHour = true;
+        patch.dayStartHour = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("lsM")) {
       anyField = true;
       if (tryGetInt(root, "lsM", intVal)) {
-        cfg.dayStartMinute = constrain(static_cast<int>(intVal), 0, 59);
-        updated = true;
+        patch.hasDayStartMinute = true;
+        patch.dayStartMinute = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("leH")) {
       anyField = true;
       if (tryGetInt(root, "leH", intVal)) {
-        cfg.dayEndHour = constrain(static_cast<int>(intVal), 0, 24);
-        updated = true;
+        patch.hasDayEndHour = true;
+        patch.dayEndHour = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("leM")) {
       anyField = true;
       if (tryGetInt(root, "leM", intVal)) {
-        cfg.dayEndMinute = constrain(static_cast<int>(intVal), 0, 59);
-        updated = true;
+        patch.hasDayEndMinute = true;
+        patch.dayEndMinute = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("asH")) {
       anyField = true;
       if (tryGetInt(root, "asH", intVal)) {
-        cfg.aerationHourOn = constrain(static_cast<int>(intVal), 0, 23);
-        updated = true;
+        patch.hasAerationHourOn = true;
+        patch.aerationHourOn = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("asM")) {
       anyField = true;
       if (tryGetInt(root, "asM", intVal)) {
-        cfg.aerationMinuteOn = constrain(static_cast<int>(intVal), 0, 59);
-        updated = true;
+        patch.hasAerationMinuteOn = true;
+        patch.aerationMinuteOn = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("aeH")) {
       anyField = true;
       if (tryGetInt(root, "aeH", intVal)) {
-        cfg.aerationHourOff = constrain(static_cast<int>(intVal), 0, 23);
-        updated = true;
+        patch.hasAerationHourOff = true;
+        patch.aerationHourOff = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("aeM")) {
       anyField = true;
       if (tryGetInt(root, "aeM", intVal)) {
-        cfg.aerationMinuteOff = constrain(static_cast<int>(intVal), 0, 59);
-        updated = true;
+        patch.hasAerationMinuteOff = true;
+        patch.aerationMinuteOff = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("fsH")) {
       anyField = true;
       if (tryGetInt(root, "fsH", intVal)) {
-        cfg.filterHourOn = constrain(static_cast<int>(intVal), 0, 23);
-        updated = true;
+        patch.hasFilterHourOn = true;
+        patch.filterHourOn = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("fsM")) {
       anyField = true;
       if (tryGetInt(root, "fsM", intVal)) {
-        cfg.filterMinuteOn = constrain(static_cast<int>(intVal), 0, 59);
-        updated = true;
+        patch.hasFilterMinuteOn = true;
+        patch.filterMinuteOn = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("feH")) {
       anyField = true;
       if (tryGetInt(root, "feH", intVal)) {
-        cfg.filterHourOff = constrain(static_cast<int>(intVal), 0, 23);
-        updated = true;
+        patch.hasFilterHourOff = true;
+        patch.filterHourOff = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("feM")) {
       anyField = true;
       if (tryGetInt(root, "feM", intVal)) {
-        cfg.filterMinuteOff = constrain(static_cast<int>(intVal), 0, 59);
-        updated = true;
+        patch.hasFilterMinuteOff = true;
+        patch.filterMinuteOff = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
     if (root.containsKey("spO")) {
       anyField = true;
       if (tryGetInt(root, "spO", intVal)) {
-        cfg.servoPreOffMins = constrain(static_cast<int>(intVal), 0, 255);
-        updated = true;
+        patch.hasServoPreOffMins = true;
+        patch.servoPreOffMins = static_cast<int>(intVal);
       } else {
-        hasInvalidValue = true;
+        parseInvalidFields++;
       }
     }
 
@@ -512,12 +514,21 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    if (updated) {
-      ConfigManager::saveConfig(cfg);
+    Config cfg = ConfigManager::getCopy();
+    ConfigValidationResult validation = {};
+    ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
+    uint8_t invalidFields = validation.invalidFields + parseInvalidFields;
+
+    if (validation.hasAnyApplied()) {
+      if (!ConfigManager::updateAndSave(cfg)) {
+        publishResult("err", "save_failed");
+        return;
+      }
+
       BleManager::notifyStatus();
       Serial.println("[BLE] Settings updated & saved.");
-      publishResult("ack",
-                    hasInvalidValue ? "settings_partial" : "settings_saved");
+      publishResult("ack", invalidFields > 0 ? "settings_partial"
+                                            : "settings_saved");
       return;
     }
 
@@ -526,7 +537,7 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
 
   void onRead(BLECharacteristic *pCharacteristic) override {
     char json[500];
-    const Config cfg = ConfigManager::getConfigSnapshot();
+    const Config cfg = ConfigManager::getCopy();
     snprintf(json, sizeof(json),
              "{\"tar\":%.1f,\"hys\":%.1f,\"fdH\":%d,\"fdM\":%d,\"fdF\":%d,"
              "\"lsH\":%d,\"lsM\":%d,\"leH\":%d,\"leM\":%d,"
@@ -560,7 +571,7 @@ void BleManager::init() {
   BLEDevice::setSecurityCallbacks(new MySecurityCallbacks());
 
   BLESecurity *pSecurity = new BLESecurity();
-  pSecurity->setStaticPIN(BLE_PASSKEY);
+  pSecurity->setStaticPIN(static_cast<uint32_t>(SECRET_BLE_PASSKEY));
   pSecurity->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
   pSecurity->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
   pSecurity->setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
@@ -732,4 +743,6 @@ uint8_t BleManager::getConnectedClients() {
 
 const char *BleManager::getDeviceName() { return BLE_DEVICE_NAME; }
 
-uint32_t BleManager::getPasskey() { return BLE_PASSKEY; }
+uint32_t BleManager::getPasskey() {
+  return static_cast<uint32_t>(SECRET_BLE_PASSKEY);
+}
