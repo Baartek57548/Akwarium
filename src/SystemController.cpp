@@ -39,6 +39,8 @@ static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
 static bool wokeFromButtonThisBoot = false;
 
+static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
+
 TemperatureController SystemController::tempController(ONE_WIRE_BUS,
                                                        HEATER_PIN);
 FeederController SystemController::feederController(FEEDER_PIN,
