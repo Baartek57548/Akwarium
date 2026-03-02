@@ -2,6 +2,7 @@
 #include "AkwariumWifi.h"
 #include "ConfigManager.h"
 #include "ConfigValidation.h"
+#include "InterfaceCore.h"
 #include "LogManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"

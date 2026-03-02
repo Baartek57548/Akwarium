@@ -9,7 +9,7 @@
 #include "AquariumAnimation.h"
 #include "BleManager.h"
 #include "ConfigManager.h"
-#include "ConfigValidation.h"
+#include "InterfaceCore.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
@@ -210,12 +210,7 @@ static void applyPendingUiChanges() {
     patch.hasFeedMode = true;
     patch.feedMode = localSchedule.feedMode;
 
-    Config cfg = ConfigManager::getCopy();
-    ConfigValidationResult validation = {};
-    ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
-    if (validation.hasAnyApplied()) {
-      ConfigManager::updateAndSave(cfg);
-    }
+    InterfaceCore::applyConfigPatchAndSave(patch);
   }
 
   if (applyTime) {
@@ -225,8 +220,8 @@ static void applyPendingUiChanges() {
     uint8_t day = constrain(localTime.day, 1, 31);
     uint8_t month = constrain(localTime.month, 1, 12);
     uint16_t year = constrain(localTime.year, 2024, 2099);
-    SystemController::rtc.adjust(
-        DateTime(year, month, day, hour, minute, second));
+    uint32_t epoch = DateTime(year, month, day, hour, minute, second).unixtime();
+    syncSystemTime(epoch);
   }
 }
 
@@ -241,6 +236,12 @@ void updateUiState() {
   bool upJustPressed = isUpPressed && !lastUpPressed;
   bool selectJustPressed = isSelectPressed && !lastSelectPressed;
   bool downJustPressed = isDownPressed && !lastDownPressed;
+
+  // Kazde fizyczne nacisniecie traktujemy jako aktywnosc uzytkownika,
+  // aby ekran mogl sie natychmiast wybudzic.
+  if (isUpPressed || isSelectPressed || isDownPressed) {
+    PowerManager::registerActivity();
+  }
 
   if (allButtonsPressed) {
     if (allButtonsHoldStartMs == 0) {
