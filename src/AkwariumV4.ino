@@ -242,6 +242,12 @@ void updateUiState() {
   bool selectJustPressed = isSelectPressed && !lastSelectPressed;
   bool downJustPressed = isDownPressed && !lastDownPressed;
 
+  // Kazde fizyczne nacisniecie traktujemy jako aktywnosc uzytkownika,
+  // aby ekran mogl sie natychmiast wybudzic.
+  if (isUpPressed || isSelectPressed || isDownPressed) {
+    PowerManager::registerActivity();
+  }
+
   if (allButtonsPressed) {
     if (allButtonsHoldStartMs == 0) {
       allButtonsHoldStartMs = millis();

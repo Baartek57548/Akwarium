@@ -8,6 +8,7 @@
 #include "PowerManager.h"
 #include "ScheduleManager.h"
 #include "SharedState.h"
+#include <Preferences.h>
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 #include <esp_err.h>
@@ -33,10 +34,18 @@ static bool isNightTimeNow();
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
 static bool configureButtonWakeup();
 static bool holdOutputsInOffState();
+static bool isPlausibleEpoch(uint32_t epoch);
+static bool restoreRtcFromBackup();
+static void persistRtcBackupIfNeeded(uint32_t epoch, bool force = false);
 
 static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
+static const unsigned long RTC_BACKUP_WRITE_INTERVAL_MS = 600000UL;
 static bool wokeFromButtonThisBoot = false;
+static Preferences rtcPrefs;
+static bool rtcPrefsReady = false;
+static uint32_t rtcBackupEpochCache = 0;
+static unsigned long lastRtcBackupWriteMs = 0;
 
 TemperatureController SystemController::tempController(ONE_WIRE_BUS,
                                                        HEATER_PIN);
@@ -45,6 +54,64 @@ FeederController SystemController::feederController(FEEDER_PIN,
 ServoController SystemController::servoController(SERVO_PIN, 90);
 BatteryReader SystemController::batteryReader(BAT_ADC_PIN);
 RTC_DS3231 SystemController::rtc;
+
+static bool ensureRtcPrefsReady() {
+  if (rtcPrefsReady) {
+    return true;
+  }
+
+  if (!rtcPrefs.begin("Akwarium", false)) {
+    return false;
+  }
+
+  rtcPrefsReady = true;
+  rtcBackupEpochCache = rtcPrefs.getULong("rtcEpoch", 0);
+  return true;
+}
+
+static bool isPlausibleEpoch(uint32_t epoch) {
+  // 2024-01-01 00:00:00 .. 2100-01-01 00:00:00
+  return epoch >= 1704067200UL && epoch <= 4102444800UL;
+}
+
+static bool restoreRtcFromBackup() {
+  if (!ensureRtcPrefsReady()) {
+    return false;
+  }
+
+  uint32_t backupEpoch = rtcPrefs.getULong("rtcEpoch", 0);
+  if (!isPlausibleEpoch(backupEpoch)) {
+    return false;
+  }
+
+  SystemController::rtc.adjust(DateTime(backupEpoch));
+  rtcBackupEpochCache = backupEpoch;
+  return true;
+}
+
+static void persistRtcBackupIfNeeded(uint32_t epoch, bool force) {
+  if (!isPlausibleEpoch(epoch)) {
+    return;
+  }
+
+  if (!ensureRtcPrefsReady()) {
+    return;
+  }
+
+  const unsigned long nowMs = millis();
+  if (!force) {
+    if (rtcBackupEpochCache != 0 && epoch <= rtcBackupEpochCache) {
+      return;
+    }
+    if ((nowMs - lastRtcBackupWriteMs) < RTC_BACKUP_WRITE_INTERVAL_MS) {
+      return;
+    }
+  }
+
+  rtcPrefs.putULong("rtcEpoch", epoch);
+  rtcBackupEpochCache = epoch;
+  lastRtcBackupWriteMs = nowMs;
+}
 
 DateTime getCurrentDateTime() {
   if (SystemController::isRtcReady()) {
@@ -56,9 +123,15 @@ DateTime getCurrentDateTime() {
 }
 
 void syncSystemTime(uint32_t epoch) {
+  if (!isPlausibleEpoch(epoch)) {
+    return;
+  }
+
   if (SystemController::isRtcReady()) {
     SystemController::rtc.adjust(DateTime(epoch));
   }
+
+  persistRtcBackupIfNeeded(epoch, true);
 }
 
 bool SystemController::manualServoOverride = false;
@@ -103,10 +176,18 @@ void SystemController::hardwareSetup() {
     LogManager::logError("Nie znaleziono modulu RTC (DS3231)!");
   } else if (rtc.lostPower()) {
     rtcReady = true;
-    LogManager::logWarn("RTC zresetowany, przywracanie domyslnego czasu...");
-    rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+    if (restoreRtcFromBackup()) {
+      LogManager::logWarn(
+          "RTC zresetowany - czas przywrocony z backupu NVS.");
+    } else {
+      LogManager::logWarn(
+          "RTC zresetowany, brak backupu. Ustawiam domyslny czas.");
+      rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+      persistRtcBackupIfNeeded(rtc.now().unixtime(), true);
+    }
   } else {
     rtcReady = true;
+    persistRtcBackupIfNeeded(rtc.now().unixtime(), true);
   }
 }
 
@@ -181,6 +262,10 @@ void SystemController::updateDecisions() {
     return;
 
   DateTime now = getCurrentDateTime();
+  if (rtcReady) {
+    persistRtcBackupIfNeeded(now.unixtime(), false);
+  }
+
   SharedState::updateTime(now.hour(), now.minute(), now.second(), now.day(),
                           now.month(), now.year());
 
@@ -630,25 +715,18 @@ void SystemController::enterNightDeepSleep() {
 
 void SystemController::handlePowerManagement(U8G2 *display,
                                              AquariumAnimation *anim) {
+  (void)anim;
   unsigned long nowMs = millis();
   unsigned long lastAction = PowerManager::getLastActivityTime();
   const Config cfg = ConfigManager::getCopy();
 
   if (!isNightTimeNow()) {
-    if ((nowMs - lastAction) > 240000UL &&
-        !cfg.alwaysScreenOn) { // 4 minuty
-      if (PowerManager::getCurrentMode() == MODE_ACTIVE) {
-        PowerManager::setMode(MODE_LOW_POWER);
-        if (display) {
-          display->setPowerSave(1);
-        }
-      }
-    } else {
-      if (PowerManager::getCurrentMode() != MODE_ACTIVE) {
-        PowerManager::setMode(MODE_ACTIVE);
-        if (display) {
-          display->setPowerSave(0);
-        }
+    bool keepScreenOn = cfg.alwaysScreenOn || ((nowMs - lastAction) <= 240000UL);
+    PowerManager::setMode(keepScreenOn ? MODE_ACTIVE : MODE_LOW_POWER);
+    if (display) {
+      display->setPowerSave(keepScreenOn ? 0 : 1);
+      if (keepScreenOn) {
+        display->setContrast(255);
       }
     }
     return;
@@ -660,10 +738,13 @@ void SystemController::handlePowerManagement(U8G2 *display,
 
   if (!canEnterDeepSleep(nowMs, lastAction)) {
     bool keepInteractive = ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
+    PowerManager::setMode(keepInteractive ? MODE_ACTIVE : MODE_LOW_POWER);
     if (display) {
       display->setPowerSave(keepInteractive ? 0 : 1);
+      if (keepInteractive) {
+        display->setContrast(255);
+      }
     }
-    PowerManager::setMode(keepInteractive ? MODE_ACTIVE : MODE_LOW_POWER);
     return;
   }
 
