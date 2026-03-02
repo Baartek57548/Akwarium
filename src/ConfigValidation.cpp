@@ -49,6 +49,15 @@ void ConfigValidation::applyPatchAndClamp(Config &cfg, const ConfigPatch &patch,
     markApplied(result);
   }
 
+  // 24:00 to specjalna wartosc sentinel (caly dzien / cala noc). Minuty dla
+  // godziny 24 sa zawsze zerowane niezaleznie od zrodla patcha.
+  if (cfg.dayStartHour == 24) {
+    cfg.dayStartMinute = 0;
+  }
+  if (cfg.dayEndHour == 24) {
+    cfg.dayEndMinute = 0;
+  }
+
   if (patch.hasAerationHourOn) {
     markProvided(result);
     cfg.aerationHourOn =
