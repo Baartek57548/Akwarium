@@ -27,6 +27,14 @@ public:
   static void setManualServo(int angle);
   static void clearManualServo();
   static int getServoPosition();
+  static void setManualLight(bool on);
+  static void setManualFilter(bool on);
+  static void clearManualLight();
+  static void clearManualFilter();
+  static bool isManualLightOverrideEnabled();
+  static bool isManualFilterOverrideEnabled();
+  static bool getManualLightState();
+  static bool getManualFilterState();
 
   // Kalibracja karmnika przy uruchomieniu (wywoływane w setup przed VideoTask)
   static void runFeederCalibrationOnPowerUp(U8G2 *display);
@@ -56,6 +64,10 @@ private:
   static bool manualServoOverride;
   static int manualServoAngle;
   static unsigned long manualServoTimer;
+  static bool manualLightOverride;
+  static bool manualLightState;
+  static bool manualFilterOverride;
+  static bool manualFilterState;
 
   static uint8_t tempInvalidReadCount;
   static bool tempSensorErrorLogged;

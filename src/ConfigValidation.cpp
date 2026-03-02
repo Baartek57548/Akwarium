@@ -49,6 +49,15 @@ void ConfigValidation::applyPatchAndClamp(Config &cfg, const ConfigPatch &patch,
     markApplied(result);
   }
 
+  // 24:00 to specjalna wartosc sentinel (caly dzien / cala noc). Minuty dla
+  // godziny 24 sa zawsze zerowane niezaleznie od zrodla patcha.
+  if (cfg.dayStartHour == 24) {
+    cfg.dayStartMinute = 0;
+  }
+  if (cfg.dayEndHour == 24) {
+    cfg.dayEndMinute = 0;
+  }
+
   if (patch.hasAerationHourOn) {
     markProvided(result);
     cfg.aerationHourOn =
@@ -137,6 +146,18 @@ void ConfigValidation::applyPatchAndClamp(Config &cfg, const ConfigPatch &patch,
   if (patch.hasFeedMinute) {
     markProvided(result);
     cfg.feedMinute = static_cast<uint8_t>(constrain(patch.feedMinute, 0, 59));
+    markApplied(result);
+  }
+
+  if (patch.hasAlwaysScreenOn) {
+    markProvided(result);
+    cfg.alwaysScreenOn = patch.alwaysScreenOn;
+    markApplied(result);
+  }
+
+  if (patch.hasHeaterEnabled) {
+    markProvided(result);
+    cfg.heaterEnabled = patch.heaterEnabled;
     markApplied(result);
   }
 }

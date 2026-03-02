@@ -64,6 +64,10 @@ void syncSystemTime(uint32_t epoch) {
 bool SystemController::manualServoOverride = false;
 int SystemController::manualServoAngle = 90;
 unsigned long SystemController::manualServoTimer = 0;
+bool SystemController::manualLightOverride = false;
+bool SystemController::manualLightState = false;
+bool SystemController::manualFilterOverride = false;
+bool SystemController::manualFilterState = false;
 
 uint8_t SystemController::tempInvalidReadCount = 0;
 bool SystemController::tempSensorErrorLogged = false;
@@ -189,17 +193,26 @@ void SystemController::updateDecisions() {
   const Config cfg = ConfigManager::getCopy();
   uint16_t nowMin = ScheduleManager::toMinutes(now.hour(), now.minute());
 
-  bool isDay = ScheduleManager::isDayTime(nowMin);
+  bool scheduledDay = ScheduleManager::isDayTime(nowMin);
+  bool lightState = scheduledDay;
   bool runFilter = ScheduleManager::isFilterActive(nowMin);
   bool runAeration = ScheduleManager::isAerationActive(nowMin);
-  if (!isDay) {
+  if (!scheduledDay) {
     runFilter = false;
     runAeration = false;
   }
 
+  if (manualLightOverride) {
+    lightState = manualLightState;
+  }
+  if (manualFilterOverride) {
+    runFilter = manualFilterState;
+  }
+
   // Sterowanie grzalka (Tylko jesli odczyt temp jest wzglednie swiezy)
   SharedStateData snap = SharedState::getSnapshot();
-  if (isDay && !isnan(snap.temperature) && tempInvalidReadCount < 3) {
+  if (cfg.heaterEnabled && scheduledDay && !isnan(snap.temperature) &&
+      tempInvalidReadCount < 3) {
     tempController.setTargetTemperature(cfg.targetTemp);
     tempController.setHysteresis(cfg.tempHysteresis);
     tempController.controlHeater(snap.temperature);
@@ -244,12 +257,12 @@ void SystemController::updateDecisions() {
       map(servoTarget, SERVO_CLOSED_ANGLE, SERVO_OPEN_ANGLE, 0, 100);
   SharedState::updateAeration(aerationPct);
 
-  bool isHeaterOn = isDay && tempController.isHeaterOn();
+  bool isHeaterOn = cfg.heaterEnabled && scheduledDay && tempController.isHeaterOn();
 
   // Aplikacja relejow na zewnatrz (Light i Filter). TBD: Powiazanie z
   // globalnymi stanowiskami z UI. Dla stabilnosci na czas przejscia UI
   // zostawimy to do wcisniecia w applyOutputs.
-  SharedState::updateRelays(isHeaterOn, runFilter, isDay, isDay);
+  SharedState::updateRelays(isHeaterOn, runFilter, lightState, scheduledDay);
 }
 
 void SystemController::applyOutputs() {
@@ -297,6 +310,32 @@ void SystemController::clearManualServo() { manualServoOverride = false; }
 int SystemController::getServoPosition() {
   return servoController.getCurrentPosition();
 }
+
+void SystemController::setManualLight(bool on) {
+  manualLightOverride = true;
+  manualLightState = on;
+}
+
+void SystemController::setManualFilter(bool on) {
+  manualFilterOverride = true;
+  manualFilterState = on;
+}
+
+void SystemController::clearManualLight() { manualLightOverride = false; }
+
+void SystemController::clearManualFilter() { manualFilterOverride = false; }
+
+bool SystemController::isManualLightOverrideEnabled() {
+  return manualLightOverride;
+}
+
+bool SystemController::isManualFilterOverrideEnabled() {
+  return manualFilterOverride;
+}
+
+bool SystemController::getManualLightState() { return manualLightState; }
+
+bool SystemController::getManualFilterState() { return manualFilterState; }
 
 static void logEspErr(const char *prefix, esp_err_t err) {
   char msg[96];

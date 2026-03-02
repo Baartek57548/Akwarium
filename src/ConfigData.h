@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 constexpr uint32_t CONFIG_MAGIC = 0xCAFEBAC4;
-constexpr uint16_t CONFIG_VERSION = 5; // Bumped version due to CRC addition
+constexpr uint16_t CONFIG_VERSION = 6; // Added heaterEnabled flag
 constexpr int SERVO_OPEN_ANGLE = 0;
 constexpr int SERVO_PREOFF_ANGLE = 45;
 constexpr int SERVO_CLOSED_ANGLE = 90;
@@ -33,6 +33,7 @@ struct Config {
   uint8_t feedMinute;
   uint32_t lastFeedEpoch;
   bool alwaysScreenOn;
+  bool heaterEnabled;
   uint16_t version;
   uint32_t magic;
   uint32_t crc32; // Nowe pole dla CRC w celu zapewnienia weryfikacji zawartosci

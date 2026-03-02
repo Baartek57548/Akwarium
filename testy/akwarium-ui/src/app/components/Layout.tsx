@@ -11,47 +11,34 @@ const tabs = [
 
 export function Layout() {
   return (
-    <div className="flex items-start justify-center min-h-screen" style={{ background: "#060b18" }}>
-      <div
-        className="relative flex flex-col overflow-hidden"
-        style={{
-          width: "100%",
-          maxWidth: 430,
-          minHeight: "100svh",
-          background: "#080e1c",
-        }}
-      >
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto pb-20">
+    <div className="app-shell">
+      <div className="app-phone-frame">
+        <main className="app-content">
           <Outlet />
         </main>
 
-        {/* Bottom nav */}
-        <nav
-          className="fixed bottom-0 left-1/2 z-50 flex items-center"
-          style={{
-            transform: "translateX(-50%)",
-            width: "100%",
-            maxWidth: 430,
-            background: "rgba(8,14,28,0.96)",
-            borderTop: "1px solid rgba(6,182,212,0.15)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
-          }}
-        >
+        <nav className="app-nav">
           {tabs.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               end={to === "/"}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center flex-1 py-3 gap-0.5 transition-all ${
+                `relative flex flex-col items-center justify-center flex-1 py-3 gap-0.5 transition-all ${
                   isActive ? "text-cyan-400" : "text-slate-500"
                 }`
               }
             >
               {({ isActive }) => (
                 <>
+                  <div
+                    className="absolute top-0 h-[2px] rounded-full transition-all"
+                    style={{
+                      width: isActive ? 24 : 0,
+                      background: "var(--ui-accent)",
+                      boxShadow: isActive ? "0 0 10px rgba(34,211,238,0.8)" : "none",
+                    }}
+                  />
                   <Icon
                     size={20}
                     className={isActive ? "drop-shadow-[0_0_6px_rgba(34,211,238,0.7)]" : ""}

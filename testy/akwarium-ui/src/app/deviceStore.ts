@@ -7,54 +7,93 @@ export interface LogEntry {
   message: string;
 }
 
+export interface TempPoint {
+  time: string;
+  temp: number;
+  epochMs: number;
+}
+
+export interface DeviceSchedule {
+  light: { start: string; end: string };
+  aeration: { start: string; end: string };
+  filter: { start: string; end: string };
+  feeding: { time: string; mode: number };
+  servoPreOffMins: number;
+}
+
 export interface DeviceState {
+  loading: boolean;
+  online: boolean;
+  lastError: string | null;
+  lastSyncAt: number | null;
+
   currentTemp: number;
   targetTemp: number;
   hysteresis: number;
-  lightOn: boolean;
-  filterOn: boolean;
-  heaterOn: boolean;
-  aerationAngle: number; // 0 = off, >0 = on
+  minTemp: number | null;
+  minTempTimeEpoch: number | null;
+
+  relays: {
+    light: boolean;
+    pump: boolean;
+    heater: boolean;
+  };
+  aerationAngle: number;
+  manualServoAngle: number | null;
+
   batteryVoltage: number;
   batteryPercent: number;
-  schedule: {
-    light: { start: string; end: string; enabled: boolean };
-    aeration: { start: string; end: string; enabled: boolean };
-    filter: { start: string; end: string; enabled: boolean };
-    feeding: { time: string; mode: number };
-  };
+
+  schedule: DeviceSchedule;
+
   wifi: {
     connected: boolean;
-    ssid: string;
     ip: string;
-    rssi: number;
-    apActive: boolean;
-    apSsid: string;
-    apIp: string;
+    apMode: boolean;
+    modeLabel: string;
   };
+
+  settings: {
+    alwaysScreenOn: boolean;
+    heaterEnabled: boolean;
+  };
+
+  manual: {
+    lightOverride: boolean;
+    lightState: boolean;
+    filterOverride: boolean;
+    filterState: boolean;
+  };
+
   logs: LogEntry[];
   criticalLogs: LogEntry[];
-  uptime: string;
+
+  lastFeedEpoch: number;
   lastFeedTime: string;
-  alwaysScreenOn: boolean;
-  servoPreOffMins: number;
-  manualServoAngle: number | null;
+
+  tempHistory: TempPoint[];
 }
 
 export interface DeviceContextType {
   state: DeviceState;
-  setTemp: (target: number, hyst: number) => void;
-  toggleLight: () => void;
-  toggleFilter: () => void;
-  toggleHeater: () => void;
-  setAeration: (angle: number) => void;
-  feedNow: () => void;
-  saveSchedule: (schedule: DeviceState["schedule"]) => void;
-  clearCriticalLogs: () => void;
-  toggleAP: () => void;
-  setAlwaysScreenOn: (val: boolean) => void;
-  setServoPreOffMins: (val: number) => void;
-  setManualServo: (angle: number | null) => void;
+  apiBaseUrl: string;
+  apiBaseSource: "proxy" | "env" | "manual";
+  refresh: () => Promise<void>;
+  setApiBaseUrl: (raw: string) => { ok: true; normalized: string } | { ok: false; error: string };
+  resetApiBaseUrl: () => void;
+  setTemp: (target: number, hyst: number) => Promise<boolean>;
+  setLight: (enabled: boolean) => Promise<boolean>;
+  setFilter: (enabled: boolean) => Promise<boolean>;
+  setAPMode: (enabled: boolean) => Promise<boolean>;
+  feedNow: () => Promise<boolean>;
+  saveSchedule: (schedule: DeviceSchedule) => Promise<boolean>;
+  clearCriticalLogs: () => Promise<boolean>;
+  setAlwaysScreenOn: (enabled: boolean) => Promise<boolean>;
+  setHeaterEnabled: (enabled: boolean) => Promise<boolean>;
+  setServoPreOffMins: (val: number) => Promise<boolean>;
+  setManualServo: (angle: number | null) => Promise<boolean>;
+  syncTime: () => Promise<boolean>;
+  uploadFirmware: (file: File) => Promise<boolean>;
   addLog: (level: LogEntry["level"], message: string) => void;
 }
 
