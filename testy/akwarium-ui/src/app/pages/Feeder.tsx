@@ -1,46 +1,52 @@
 import { useState } from "react";
-import {
-  Fish,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  Timer,
-  Activity,
-} from "lucide-react";
+import { Fish, Clock, CheckCircle2, AlertCircle, Timer, Activity, WifiOff } from "lucide-react";
 import { useDevice } from "../useDevice";
+
+const FEED_MODE_LABEL: Record<number, string> = {
+  0: "Wylaczone",
+  1: "Codziennie",
+  2: "Co 2 dni",
+  3: "Co 3 dni",
+};
 
 export function Feeder() {
   const { state, feedNow } = useDevice();
   const [feeding, setFeeding] = useState<"idle" | "running" | "done">("idle");
   const [progress, setProgress] = useState(0);
 
-  const handleFeed = () => {
+  const handleFeed = async () => {
     if (feeding !== "idle") return;
+
     setFeeding("running");
     setProgress(0);
-    feedNow();
 
-    let p = 0;
+    let current = 0;
     const interval = setInterval(() => {
-      p += 7;
-      setProgress(Math.min(p, 100));
-      if (p >= 100) {
-        clearInterval(interval);
-        setFeeding("done");
-        setTimeout(() => {
-          setFeeding("idle");
-          setProgress(0);
-        }, 3000);
-      }
-    }, 100);
+      current += 8;
+      setProgress(Math.min(100, current));
+    }, 120);
+
+    const ok = await feedNow();
+    clearInterval(interval);
+
+    setProgress(100);
+    if (ok) {
+      setFeeding("done");
+      setTimeout(() => {
+        setFeeding("idle");
+        setProgress(0);
+      }, 2500);
+      return;
+    }
+
+    setFeeding("idle");
+    setProgress(0);
   };
 
-  const feedMode = state.schedule.feeding.mode === 0 ? "Wyłączone" : "Codziennie";
-  const feedTime = state.schedule.feeding.time;
+  const feedModeLabel = FEED_MODE_LABEL[state.schedule.feeding.mode] ?? `Tryb ${state.schedule.feeding.mode}`;
 
   return (
     <div style={{ color: "#e2e8f0", minHeight: "100%" }}>
-      {/* Header */}
       <div
         className="px-5 pt-12 pb-5"
         style={{
@@ -52,13 +58,25 @@ export function Feeder() {
           Sterownik Akwarium PRO
         </p>
         <h1 style={{ fontSize: 22, color: "#e2e8f0" }}>Karmnik</h1>
-        <p style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-          Sterowanie ręczne i harmonogram
-        </p>
+        <p style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>Sterowanie reczne i podglad harmonogramu</p>
       </div>
 
       <div className="flex flex-col gap-4 px-4 pt-4 pb-4">
-        {/* Feed NOW button */}
+        {!state.online && (
+          <div
+            className="rounded-2xl px-4 py-3 flex items-center gap-2"
+            style={{
+              background: "rgba(248,113,113,0.12)",
+              border: "1px solid rgba(248,113,113,0.25)",
+            }}
+          >
+            <WifiOff size={14} style={{ color: "#f87171" }} />
+            <span style={{ fontSize: 12, color: "#fecaca" }}>
+              Brak polaczenia z API. Reczne karmienie jest niedostepne.
+            </span>
+          </div>
+        )}
+
         <div
           className="rounded-2xl p-6 flex flex-col items-center gap-4"
           style={{
@@ -66,10 +84,9 @@ export function Feeder() {
             border: "1px solid rgba(244,114,182,0.2)",
           }}
         >
-          <p style={{ fontSize: 12, color: "#94a3b8" }}>Karmienie ręczne</p>
+          <p style={{ fontSize: 12, color: "#94a3b8" }}>Karmienie reczne (action=feed_now)</p>
 
           <div className="relative flex items-center justify-center" style={{ width: 140, height: 140 }}>
-            {/* Outer glow ring */}
             <div
               className="absolute inset-0 rounded-full"
               style={{
@@ -93,21 +110,13 @@ export function Feeder() {
               }}
             />
 
-            {/* Progress ring SVG */}
             {feeding === "running" && (
               <svg
                 className="absolute inset-0"
                 style={{ width: 140, height: 140, transform: "rotate(-90deg)" }}
                 viewBox="0 0 140 140"
               >
-                <circle
-                  cx="70"
-                  cy="70"
-                  r="64"
-                  fill="none"
-                  stroke="rgba(244,114,182,0.15)"
-                  strokeWidth="6"
-                />
+                <circle cx="70" cy="70" r="64" fill="none" stroke="rgba(244,114,182,0.15)" strokeWidth="6" />
                 <circle
                   cx="70"
                   cy="70"
@@ -122,6 +131,7 @@ export function Feeder() {
                 />
               </svg>
             )}
+
             {feeding === "done" && (
               <svg
                 className="absolute inset-0"
@@ -134,7 +144,7 @@ export function Feeder() {
 
             <button
               onClick={handleFeed}
-              disabled={feeding !== "idle"}
+              disabled={feeding !== "idle" || !state.online}
               className="relative z-10 flex flex-col items-center justify-center rounded-full transition-all"
               style={{
                 width: 110,
@@ -158,20 +168,19 @@ export function Feeder() {
                     : feeding === "running"
                     ? "0 0 30px rgba(244,114,182,0.3)"
                     : "0 0 20px rgba(244,114,182,0.1)",
-                cursor: feeding !== "idle" ? "default" : "pointer",
+                cursor: feeding !== "idle" || !state.online ? "default" : "pointer",
+                opacity: !state.online ? 0.6 : 1,
               }}
             >
               {feeding === "done" ? (
                 <>
                   <CheckCircle2 size={30} style={{ color: "#4ade80" }} />
-                  <span style={{ fontSize: 11, color: "#4ade80", marginTop: 6 }}>Gotowe!</span>
+                  <span style={{ fontSize: 11, color: "#4ade80", marginTop: 6 }}>Gotowe</span>
                 </>
               ) : feeding === "running" ? (
                 <>
                   <Activity size={30} style={{ color: "#f472b6" }} />
-                  <span style={{ fontSize: 11, color: "#f472b6", marginTop: 6 }}>
-                    {Math.round(progress)}%
-                  </span>
+                  <span style={{ fontSize: 11, color: "#f472b6", marginTop: 6 }}>{Math.round(progress)}%</span>
                 </>
               ) : (
                 <>
@@ -184,14 +193,13 @@ export function Feeder() {
 
           <p style={{ fontSize: 12, color: "#64748b", textAlign: "center" }}>
             {feeding === "running"
-              ? "Karmnik w trakcie pracy… timeout bezpieczeństwa: 15s"
+              ? "Wysylanie akcji do sterownika..."
               : feeding === "done"
-              ? "Karmienie zakończone pomyślnie"
-              : "Naciśnij, aby uruchomić karmnik jednorazowo"}
+              ? "Akcja zakonczona"
+              : "Uruchamia jeden cykl karmnika"}
           </p>
         </div>
 
-        {/* Last feed */}
         <div
           className="flex items-center gap-3 rounded-2xl px-4 py-3.5"
           style={{
@@ -208,7 +216,6 @@ export function Feeder() {
           </div>
         </div>
 
-        {/* Schedule info */}
         <div
           className="rounded-2xl p-4 flex flex-col gap-3"
           style={{
@@ -229,8 +236,10 @@ export function Feeder() {
                 border: "1px solid rgba(244,114,182,0.15)",
               }}
             >
-              <p style={{ fontSize: 10, color: "#64748b" }} className="uppercase mb-1">Tryb</p>
-              <p style={{ fontSize: 14, color: "#f472b6" }}>{feedMode}</p>
+              <p style={{ fontSize: 10, color: "#64748b" }} className="uppercase mb-1">
+                Tryb
+              </p>
+              <p style={{ fontSize: 14, color: "#f472b6" }}>{feedModeLabel}</p>
             </div>
             <div
               className="rounded-xl p-3"
@@ -239,15 +248,14 @@ export function Feeder() {
                 border: "1px solid rgba(244,114,182,0.15)",
               }}
             >
-              <p style={{ fontSize: 10, color: "#64748b" }} className="uppercase mb-1">Godzina</p>
-              <p style={{ fontSize: 14, color: "#f472b6" }}>
-                {state.schedule.feeding.mode === 0 ? "—" : feedTime}
+              <p style={{ fontSize: 10, color: "#64748b" }} className="uppercase mb-1">
+                Godzina
               </p>
+              <p style={{ fontSize: 14, color: "#f472b6" }}>{state.schedule.feeding.mode === 0 ? "-" : state.schedule.feeding.time}</p>
             </div>
           </div>
         </div>
 
-        {/* Safety info */}
         <div
           className="rounded-2xl p-4 flex flex-col gap-2.5"
           style={{
@@ -257,15 +265,13 @@ export function Feeder() {
         >
           <div className="flex items-center gap-2">
             <AlertCircle size={15} style={{ color: "#fbbf24" }} />
-            <span style={{ fontSize: 13, color: "#fbbf24" }}>Parametry karmnika</span>
+            <span style={{ fontSize: 13, color: "#fbbf24" }}>Info</span>
           </div>
           <ul className="flex flex-col gap-1.5" style={{ paddingLeft: 4 }}>
             {[
-              "Timeout bezpieczeństwa: 15 sekund",
-              "Czujnik potwierdzenia zakończenia cyklu",
-              "Logika wykrywania zacięcia",
-              "Silnik: GPIO5",
-              "Czujnik: GPIO12",
+              "Manual feed: POST /api/action action=feed_now",
+              "Feed mode i czas: POST /api/action action=save_schedule",
+              "Status ostatniego karmienia: /api/status feeding.lastFeedEpoch",
             ].map((item) => (
               <li key={item} className="flex items-start gap-2">
                 <div

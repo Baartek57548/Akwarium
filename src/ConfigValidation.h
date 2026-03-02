@@ -46,6 +46,12 @@ struct ConfigPatch {
   int feedHour = 0;
   bool hasFeedMinute = false;
   int feedMinute = 0;
+
+  bool hasAlwaysScreenOn = false;
+  bool alwaysScreenOn = false;
+
+  bool hasHeaterEnabled = false;
+  bool heaterEnabled = true;
 };
 
 struct ConfigValidationResult {
