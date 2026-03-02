@@ -79,8 +79,9 @@ static bool parseBoolStrict(const String &raw, bool &out) {
   return false;
 }
 
-static bool parseTimeArg(const String &value, int &hour, int &minute) {
-  if (value.length() < 5 || value[2] != ':') {
+static bool parseTimeArg(const String &value, int &hour, int &minute,
+                         bool allow24Hour = false) {
+  if (value.length() != 5 || value[2] != ':') {
     return false;
   }
   if (!isDigit(value[0]) || !isDigit(value[1]) || !isDigit(value[3]) ||
@@ -90,7 +91,13 @@ static bool parseTimeArg(const String &value, int &hour, int &minute) {
 
   hour = value.substring(0, 2).toInt();
   minute = value.substring(3, 5).toInt();
-  return true;
+  if (minute < 0 || minute > 59) {
+    return false;
+  }
+  if (hour == 24) {
+    return allow24Hour && minute == 0;
+  }
+  return hour >= 0 && hour <= 23;
 }
 
 static bool applyPatchAndSave(ConfigPatch &patch, uint8_t invalidFields,
@@ -209,8 +216,16 @@ void setupApiEndpoints() {
 
     if (action == "set_servo") {
       if (server.hasArg("angle")) {
-        int ang = constrain(server.arg("angle").toInt(), 0, 90);
-        SystemController::setManualServo(ang);
+        long angleRaw = 0;
+        if (!parseLongStrict(server.arg("angle"), angleRaw)) {
+          server.send(400, "text/plain", "Invalid angle");
+          return;
+        }
+        if (angleRaw < 0 || angleRaw > 90) {
+          server.send(400, "text/plain", "Angle out of range");
+          return;
+        }
+        SystemController::setManualServo(static_cast<int>(angleRaw));
         server.send(200, "text/plain", "OK");
         return;
       }
@@ -361,7 +376,7 @@ void setupApiEndpoints() {
         String ds = server.arg("dayStart");
         int h = 0;
         int m = 0;
-        if (parseTimeArg(ds, h, m)) {
+        if (parseTimeArg(ds, h, m, true)) {
           patch.hasDayStartHour = true;
           patch.dayStartHour = h;
           patch.hasDayStartMinute = true;
@@ -374,7 +389,7 @@ void setupApiEndpoints() {
         String de = server.arg("dayEnd");
         int h = 0;
         int m = 0;
-        if (parseTimeArg(de, h, m)) {
+        if (parseTimeArg(de, h, m, true)) {
           patch.hasDayEndHour = true;
           patch.dayEndHour = h;
           patch.hasDayEndMinute = true;

@@ -7,6 +7,7 @@
 #include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <errno.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -38,6 +39,22 @@ static void addCorsHeaders() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+static bool parseEpochStrict(const String &raw, uint32_t &out) {
+  if (raw.length() == 0) {
+    return false;
+  }
+
+  errno = 0;
+  char *endPtr = nullptr;
+  unsigned long parsed = strtoul(raw.c_str(), &endPtr, 10);
+  if (errno == ERANGE || endPtr == raw.c_str() || *endPtr != '\0') {
+    return false;
+  }
+
+  out = static_cast<uint32_t>(parsed);
+  return true;
 }
 
 static void setupNetwork() {
@@ -96,13 +113,20 @@ static void setupWebServer() {
     addCorsHeaders();
     if (server.hasArg("epoch")) {
       PowerManager::registerActivity();
-      time_t epoch = server.arg("epoch").toInt();
+      uint32_t epoch = 0;
+      if (!parseEpochStrict(server.arg("epoch"), epoch) ||
+          epoch < 1704067200UL || epoch > 4102444800UL) {
+        server.send(400, "text/plain", "Niepoprawny epoch");
+        return;
+      }
+
+      time_t epochTime = static_cast<time_t>(epoch);
       struct timeval tv;
-      tv.tv_sec = epoch;
+      tv.tv_sec = epochTime;
       tv.tv_usec = 0;
       settimeofday(&tv, NULL);
 
-      syncSystemTime((uint32_t)epoch);
+      syncSystemTime(epoch);
 
       struct tm timeinfo;
       getLocalTime(&timeinfo);
