@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Lightbulb, Filter, Wind, Fish, Save, Check, Clock, ToggleLeft, ToggleRight } from "lucide-react";
-import { useDevice, DeviceState } from "../deviceContext";
+import { useDevice } from "../useDevice";
 
 type ScheduleKey = "light" | "aeration" | "filter";
 

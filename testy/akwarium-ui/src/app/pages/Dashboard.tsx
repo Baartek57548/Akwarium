@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import {
   Thermometer,
-  Zap,
-  Droplets,
   Wind,
   Lightbulb,
   Filter,
@@ -10,13 +8,13 @@ import {
   Flame,
   Wifi,
   WifiOff,
-  Battery,
   BatteryLow,
   BatteryMedium,
   BatteryFull,
   Clock,
   ChevronRight,
   Activity,
+  Zap,
 } from "lucide-react";
 import {
   AreaChart,
@@ -26,7 +24,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useDevice } from "../deviceContext";
+import { useDevice } from "../useDevice";
 import { tempHistory } from "../tempHistory";
 import { Link } from "react-router";
 
@@ -85,14 +83,22 @@ function RelayCard({
   );
 }
 
-const CustomTooltip = ({ active, payload }: any) => {
+interface TempTooltipProps {
+  active?: boolean;
+  payload?: Array<{ value?: number }>;
+}
+
+const CustomTooltip = ({ active, payload }: TempTooltipProps) => {
   if (active && payload && payload.length) {
+    const value = payload[0]?.value;
+    if (typeof value !== "number") return null;
+
     return (
       <div
         className="rounded-lg px-3 py-1.5 text-xs"
         style={{ background: "#1e2a3d", border: "1px solid rgba(6,182,212,0.3)", color: "#e2e8f0" }}
       >
-        <span className="text-cyan-400">{payload[0].value.toFixed(1)}°C</span>
+        <span className="text-cyan-400">{value.toFixed(1)}°C</span>
       </div>
     );
   }

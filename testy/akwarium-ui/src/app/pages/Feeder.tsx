@@ -4,14 +4,10 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
-  Zap,
   Timer,
   Activity,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
-import { useDevice } from "../deviceContext";
-import { motion } from "motion/react";
+import { useDevice } from "../useDevice";
 
 export function Feeder() {
   const { state, feedNow } = useDevice();

@@ -6,9 +6,9 @@ import {
   XCircle,
   Trash2,
   CheckCircle2,
-  ChevronDown,
 } from "lucide-react";
-import { useDevice, LogEntry } from "../deviceContext";
+import { type LogEntry } from "../deviceStore";
+import { useDevice } from "../useDevice";
 
 function LevelBadge({ level }: { level: LogEntry["level"] }) {
   const config = {

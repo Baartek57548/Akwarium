@@ -10,15 +10,13 @@ import {
   RefreshCw,
   Save,
   Check,
-  ChevronRight,
   Moon,
   Sun,
   AlertCircle,
-  Info,
   Cpu,
   Wind,
 } from "lucide-react";
-import { useDevice } from "../deviceContext";
+import { useDevice } from "../useDevice";
 
 function SectionHeader({ icon: Icon, title, color }: { icon: React.ElementType; title: string; color: string }) {
   return (
@@ -31,34 +29,7 @@ function SectionHeader({ icon: Icon, title, color }: { icon: React.ElementType; 
   );
 }
 
-function RowItem({
-  label,
-  sublabel,
-  value,
-  onClick,
-}: {
-  label: string;
-  sublabel?: string;
-  value?: React.ReactNode;
-  onClick?: () => void;
-}) {
-  return (
-    <div
-      className="flex items-center px-4 py-3 transition-colors"
-      style={{ borderTop: "1px solid rgba(255,255,255,0.05)", cursor: onClick ? "pointer" : "default" }}
-      onClick={onClick}
-    >
-      <div className="flex-1">
-        <p style={{ fontSize: 13, color: "#e2e8f0" }}>{label}</p>
-        {sublabel && <p style={{ fontSize: 11, color: "#64748b" }}>{sublabel}</p>}
-      </div>
-      <div className="flex items-center gap-1.5">
-        {value && <span style={{ fontSize: 13, color: "#94a3b8" }}>{value}</span>}
-        {onClick && <ChevronRight size={14} style={{ color: "#475569" }} />}
-      </div>
-    </div>
-  );
-}
+
 
 export function Settings() {
   const {
