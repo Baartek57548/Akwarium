@@ -35,54 +35,25 @@ static volatile bool staIsOff = false;
 
 WebServer &AkwariumWifi::getServer() { return server; }
 
-static bool parseUintStrict(const String &raw, uint64_t &out) {
+static void addCorsHeaders() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+static bool parseEpochStrict(const String &raw, uint32_t &out) {
   if (raw.length() == 0) {
     return false;
   }
 
   errno = 0;
   char *endPtr = nullptr;
-  unsigned long long parsed = strtoull(raw.c_str(), &endPtr, 10);
+  unsigned long parsed = strtoul(raw.c_str(), &endPtr, 10);
   if (errno == ERANGE || endPtr == raw.c_str() || *endPtr != '\0') {
     return false;
   }
 
-  out = static_cast<uint64_t>(parsed);
-  return true;
-}
-
-static bool parseLongStrict(const String &raw, long &out) {
-  if (raw.length() == 0) {
-    return false;
-  }
-
-  errno = 0;
-  char *endPtr = nullptr;
-  long parsed = strtol(raw.c_str(), &endPtr, 10);
-  if (errno == ERANGE || endPtr == raw.c_str() || *endPtr != '\0') {
-    return false;
-  }
-
-  out = parsed;
-  return true;
-}
-
-static bool parseEpochArg(const String &raw, uint32_t &epochSec) {
-  uint64_t parsed = 0;
-  if (!parseUintStrict(raw, parsed)) {
-    return false;
-  }
-
-  // Akceptujemy epoch w sekundach lub milisekundach.
-  if (parsed > 4102444800ULL && parsed <= 4102444800000ULL) {
-    parsed /= 1000ULL;
-  }
-
-  if (parsed < 1704067200ULL || parsed > 4102444800ULL) {
-    return false;
-  }
-
-  epochSec = static_cast<uint32_t>(parsed);
+  out = static_cast<uint32_t>(parsed);
   return true;
 }
 
@@ -108,6 +79,16 @@ static void setupNetwork() {
 }
 
 static void setupWebServer() {
+  server.on("/settime", HTTP_OPTIONS, []() {
+    addCorsHeaders();
+    server.send(204, "text/plain", "");
+  });
+
+  server.on("/update", HTTP_OPTIONS, []() {
+    addCorsHeaders();
+    server.send(204, "text/plain", "");
+  });
+
   server.on("/", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
     server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -129,40 +110,23 @@ static void setupWebServer() {
   });
 
   server.on("/settime", HTTP_POST, []() {
+    addCorsHeaders();
     if (server.hasArg("epoch")) {
       PowerManager::registerActivity();
-      uint32_t epochUtc = 0;
-      if (!parseEpochArg(server.arg("epoch"), epochUtc)) {
+      uint32_t epoch = 0;
+      if (!parseEpochStrict(server.arg("epoch"), epoch) ||
+          epoch < 1704067200UL || epoch > 4102444800UL) {
         server.send(400, "text/plain", "Niepoprawny epoch");
         return;
       }
 
-      uint32_t rtcEpoch = epochUtc;
-      if (server.hasArg("tzOffsetMin")) {
-        long tzOffsetMin = 0;
-        if (!parseLongStrict(server.arg("tzOffsetMin"), tzOffsetMin) ||
-            tzOffsetMin < -840 || tzOffsetMin > 840) {
-          server.send(400, "text/plain", "Niepoprawny tzOffsetMin");
-          return;
-        }
-
-        // JS: getTimezoneOffset() = UTC - LOCAL (w minutach).
-        int64_t adjusted = static_cast<int64_t>(epochUtc) -
-                           static_cast<int64_t>(tzOffsetMin) * 60LL;
-        if (adjusted < 1704067200LL || adjusted > 4102444800LL) {
-          server.send(400, "text/plain", "Epoch poza zakresem");
-          return;
-        }
-        rtcEpoch = static_cast<uint32_t>(adjusted);
-      }
-
-      time_t epoch = static_cast<time_t>(epochUtc);
+      time_t epochTime = static_cast<time_t>(epoch);
       struct timeval tv;
-      tv.tv_sec = epoch;
+      tv.tv_sec = epochTime;
       tv.tv_usec = 0;
       settimeofday(&tv, NULL);
 
-      syncSystemTime(rtcEpoch);
+      syncSystemTime(epoch);
 
       struct tm timeinfo;
       getLocalTime(&timeinfo);
@@ -188,6 +152,7 @@ static void setupWebServer() {
   server.on(
       "/update", HTTP_POST,
       []() {
+        addCorsHeaders();
         const bool otaSuccess = !Update.hasError();
         if (otaUploadActive) {
           OtaManager::endOtaUpdate(otaSuccess);

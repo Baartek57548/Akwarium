@@ -148,4 +148,16 @@ void ConfigValidation::applyPatchAndClamp(Config &cfg, const ConfigPatch &patch,
     cfg.feedMinute = static_cast<uint8_t>(constrain(patch.feedMinute, 0, 59));
     markApplied(result);
   }
+
+  if (patch.hasAlwaysScreenOn) {
+    markProvided(result);
+    cfg.alwaysScreenOn = patch.alwaysScreenOn;
+    markApplied(result);
+  }
+
+  if (patch.hasHeaterEnabled) {
+    markProvided(result);
+    cfg.heaterEnabled = patch.heaterEnabled;
+    markApplied(result);
+  }
 }
