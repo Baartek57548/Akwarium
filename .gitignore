@@ -6,4 +6,4 @@ src/build/
 .vscode/ipch
 do wykonania.txt
 src/arduino_secrets.h
-testy/
+tests/
