@@ -45,6 +45,9 @@ npm.cmd run dev
 
 Domyslnie: `http://localhost:5173`
 
+5. W aplikacji wejdz w `Ustawienia -> Polaczenie z urzadzeniem` i wpisz IP/URL ESP32
+   (np. `192.168.1.105`). Wybor zapamietuje sie lokalnie do czasu recznego resetu.
+
 ## Uwaga o `npm` w PowerShell
 
 Jesli masz blad `npm.ps1 cannot be loaded because running scripts is disabled`, uzywaj:
@@ -55,7 +58,8 @@ Jesli masz blad `npm.ps1 cannot be loaded because running scripts is disabled`, 
 
 ## Konfiguracja API
 
-Aplikacja wywoluje endpointy relatywnie (`/api/...`, `/settime`, `/update`).
+Aplikacja wywoluje endpointy relatywnie (`/api/...`, `/settime`, `/update`), ale mozesz
+tez ustawic runtime target API bezposrednio w UI (`Ustawienia -> Polaczenie z urzadzeniem`).
 
 W trybie developerskim mozesz przekierowac ruch do ESP32 przez proxy Vite:
 
@@ -64,6 +68,9 @@ W trybie developerskim mozesz przekierowac ruch do ESP32 przez proxy Vite:
 Opcjonalnie mozna wymusic bezposredni bazowy URL:
 
 - `VITE_API_BASE_URL=http://<IP_ESP32>`
+
+Uwaga: dla bezposredniego polaczenia z `http://localhost:5173` firmware musi zwracac
+naglowki CORS dla `/api/*`, `/settime`, `/update`.
 
 ## Skrypty
 

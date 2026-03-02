@@ -1,4 +1,4 @@
-import { useState, type ElementType } from "react";
+import { useCallback, useState, type ElementType } from "react";
 import {
   Thermometer,
   Sliders,
@@ -15,6 +15,9 @@ import {
   Monitor,
   Flame,
   Radio,
+  Link2,
+  Plug,
+  Unplug,
 } from "lucide-react";
 import { useDevice } from "../useDevice";
 
@@ -32,6 +35,10 @@ function SectionHeader({ icon: Icon, title, color }: { icon: ElementType; title:
 export function Settings() {
   const {
     state,
+    apiBaseUrl,
+    apiBaseSource,
+    setApiBaseUrl,
+    resetApiBaseUrl,
     setTemp,
     setServoPreOffMins,
     setManualServo,
@@ -62,10 +69,27 @@ export function Settings() {
   const [togglingDisplay, setTogglingDisplay] = useState(false);
   const [togglingHeater, setTogglingHeater] = useState(false);
   const [actionInfo, setActionInfo] = useState<{ type: "ok" | "error"; msg: string } | null>(null);
+  const [deviceUrlInput, setDeviceUrlInput] = useState(apiBaseSource === "manual" ? apiBaseUrl : "");
 
-  const showInfo = (type: "ok" | "error", msg: string) => {
+  const showInfo = useCallback((type: "ok" | "error", msg: string) => {
     setActionInfo({ type, msg });
     setTimeout(() => setActionInfo(null), 3500);
+  }, []);
+
+  const handleDeviceConnect = () => {
+    const result = setApiBaseUrl(deviceUrlInput);
+    if (!result.ok) {
+      showInfo("error", result.error);
+      return;
+    }
+    setDeviceUrlInput(result.normalized);
+    showInfo("ok", `Ustawiono target API: ${result.normalized}.`);
+  };
+
+  const handleDeviceReset = () => {
+    resetApiBaseUrl();
+    setDeviceUrlInput("");
+    showInfo("ok", "Przywrocono domyslne polaczenie API.");
   };
 
   const handleTempSave = async () => {
@@ -179,6 +203,14 @@ export function Settings() {
     showInfo(ok ? "ok" : "error", ok ? "Opcja grzalki zapisana." : "Nie udalo sie zapisac opcji grzalki.");
   };
 
+  const apiModeLabel =
+    apiBaseSource === "manual"
+      ? "Reczny adres urzadzenia"
+      : apiBaseSource === "env"
+        ? "VITE_API_BASE_URL"
+        : "Vite proxy (/api...)";
+  const apiTargetLabel = apiBaseSource === "proxy" ? "Proxy do hosta UI" : apiBaseUrl;
+
   return (
     <div style={{ color: "#e2e8f0", minHeight: "100%" }}>
       <div
@@ -205,7 +237,7 @@ export function Settings() {
             }}
           >
             <p style={{ fontSize: 12, color: "#fecaca" }}>
-              Brak polaczenia z API sterownika. API to endpointy ESP32 (`/api/status`, `/api/action`), bez nich przyciski nie zapisza zmian.
+              Brak polaczenia z API sterownika. Wybierz IP/URL ESP32 ponizej albo uzyj proxy Vite.
             </p>
           </div>
         )}
@@ -221,6 +253,79 @@ export function Settings() {
             <p style={{ fontSize: 12, color: actionInfo.type === "ok" ? "#86efac" : "#fecaca" }}>{actionInfo.msg}</p>
           </div>
         )}
+
+        <div
+          className="rounded-2xl p-4"
+          style={{
+            background: "linear-gradient(135deg, rgba(56,189,248,0.09) 0%, rgba(8,14,28,0.92) 100%)",
+            border: "1px solid rgba(56,189,248,0.24)",
+          }}
+        >
+          <SectionHeader icon={Link2} title="Polaczenie z urzadzeniem" color="#38bdf8" />
+          <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 10 }}>
+            Wpisz IP lub URL sterownika. Ustawienie zapamietuje sie lokalnie i pozostaje aktywne do recznego odlaczenia.
+          </p>
+
+          <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 6 }}>Adres ESP32</label>
+          <input
+            type="text"
+            value={deviceUrlInput}
+            onChange={(event) => setDeviceUrlInput(event.target.value)}
+            placeholder="np. 192.168.1.105 albo http://192.168.4.1"
+            className="w-full rounded-xl px-3 py-2.5 outline-none"
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "#e2e8f0",
+              fontSize: 14,
+            }}
+          />
+
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <button
+              onClick={handleDeviceConnect}
+              disabled={state.loading || !deviceUrlInput.trim()}
+              className="flex items-center justify-center gap-2 rounded-xl py-2.5 transition-all active:scale-95"
+              style={{
+                background: "rgba(56,189,248,0.12)",
+                border: "1px solid rgba(56,189,248,0.3)",
+                color: "#38bdf8",
+                opacity: state.loading || !deviceUrlInput.trim() ? 0.55 : 1,
+              }}
+            >
+              {state.loading ? <RefreshCw size={14} className="animate-spin" /> : <Plug size={14} />}
+              Polacz
+            </button>
+
+            <button
+              onClick={handleDeviceReset}
+              disabled={state.loading || apiBaseSource !== "manual"}
+              className="flex items-center justify-center gap-2 rounded-xl py-2.5 transition-all active:scale-95"
+              style={{
+                background: "rgba(71,85,105,0.14)",
+                border: "1px solid rgba(71,85,105,0.35)",
+                color: "#94a3b8",
+                opacity: state.loading || apiBaseSource !== "manual" ? 0.55 : 1,
+              }}
+            >
+              <Unplug size={14} />
+              Przywroc domyslne
+            </button>
+          </div>
+
+          <div
+            className="mt-3 rounded-xl px-3 py-2.5"
+            style={{
+              background: "rgba(2,6,23,0.5)",
+              border: "1px solid rgba(148,163,184,0.2)",
+            }}
+          >
+            <p style={{ fontSize: 12, color: "#cbd5e1" }}>
+              Aktywny target: <span style={{ color: "#e2e8f0" }}>{apiTargetLabel}</span>
+            </p>
+            <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>Tryb: {apiModeLabel}</p>
+          </div>
+        </div>
 
         <div
           className="rounded-2xl p-4"
@@ -574,6 +679,8 @@ export function Settings() {
             { label: "Firmware", value: "Sterownik Akwarium PRO v5.1" },
             { label: "API", value: "/api/status /api/logs /api/action" },
             { label: "Dodatkowe", value: "/settime /update" },
+            { label: "API target", value: apiTargetLabel },
+            { label: "Tryb polaczenia", value: apiModeLabel },
             {
               label: "Ostatnia synchronizacja",
               value: state.lastSyncAt

@@ -11,6 +11,17 @@
 
 namespace {
 
+static void addCorsHeaders(WebServer &server) {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+static void handleCorsPreflight(WebServer &server) {
+  addCorsHeaders(server);
+  server.send(204, "text/plain", "");
+}
+
 static bool parseLongStrict(const String &raw, long &out) {
   if (raw.length() == 0) {
     return false;
@@ -112,7 +123,19 @@ extern WebServer server; // from AkwariumWifi
 void setupApiEndpoints() {
   WebServer &server = AkwariumWifi::getServer();
 
+  server.on("/api/status", HTTP_OPTIONS, [&server]() {
+    handleCorsPreflight(server);
+  });
+  server.on("/api/logs", HTTP_OPTIONS, [&server]() {
+    handleCorsPreflight(server);
+  });
+  server.on("/api/action", HTTP_OPTIONS, [&server]() {
+    handleCorsPreflight(server);
+  });
+
   server.on("/api/status", HTTP_GET, [&server]() {
+    PowerManager::registerActivity();
+    addCorsHeaders(server);
     const SharedStateData snap = SharedState::getSnapshot();
     const Config cfg = ConfigManager::getCopy();
 
@@ -161,12 +184,15 @@ void setupApiEndpoints() {
   });
 
   server.on("/api/logs", HTTP_GET, [&server]() {
+    PowerManager::registerActivity();
+    addCorsHeaders(server);
     String jsonLog = LogManager::getLogsAsJson();
     server.sendHeader("Connection", "close");
     server.send(200, "application/json", jsonLog);
   });
 
   server.on("/api/action", HTTP_POST, [&server]() {
+    addCorsHeaders(server);
     if (!server.hasArg("action")) {
       server.send(400, "text/plain", "Bad Request");
       return;

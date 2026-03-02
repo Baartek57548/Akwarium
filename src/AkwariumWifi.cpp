@@ -34,6 +34,12 @@ static volatile bool staIsOff = false;
 
 WebServer &AkwariumWifi::getServer() { return server; }
 
+static void addCorsHeaders() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
 static void setupNetwork() {
   WiFi.mode(WIFI_STA);
   staIsOff = false;
@@ -56,6 +62,16 @@ static void setupNetwork() {
 }
 
 static void setupWebServer() {
+  server.on("/settime", HTTP_OPTIONS, []() {
+    addCorsHeaders();
+    server.send(204, "text/plain", "");
+  });
+
+  server.on("/update", HTTP_OPTIONS, []() {
+    addCorsHeaders();
+    server.send(204, "text/plain", "");
+  });
+
   server.on("/", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
     server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -77,6 +93,7 @@ static void setupWebServer() {
   });
 
   server.on("/settime", HTTP_POST, []() {
+    addCorsHeaders();
     if (server.hasArg("epoch")) {
       PowerManager::registerActivity();
       time_t epoch = server.arg("epoch").toInt();
@@ -111,6 +128,7 @@ static void setupWebServer() {
   server.on(
       "/update", HTTP_POST,
       []() {
+        addCorsHeaders();
         const bool otaSuccess = !Update.hasError();
         if (otaUploadActive) {
           OtaManager::endOtaUpdate(otaSuccess);

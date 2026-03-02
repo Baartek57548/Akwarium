@@ -76,7 +76,11 @@ export interface DeviceState {
 
 export interface DeviceContextType {
   state: DeviceState;
+  apiBaseUrl: string;
+  apiBaseSource: "proxy" | "env" | "manual";
   refresh: () => Promise<void>;
+  setApiBaseUrl: (raw: string) => { ok: true; normalized: string } | { ok: false; error: string };
+  resetApiBaseUrl: () => void;
   setTemp: (target: number, hyst: number) => Promise<boolean>;
   setLight: (enabled: boolean) => Promise<boolean>;
   setFilter: (enabled: boolean) => Promise<boolean>;

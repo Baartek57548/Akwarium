@@ -71,7 +71,8 @@ interface LogsResponse {
 }
 
 const configuredBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ?? "";
-const API_BASE = configuredBase.replace(/\/+$/, "");
+const ENV_API_BASE = configuredBase.replace(/\/+$/, "");
+const API_BASE_STORAGE_KEY = "akwarium-ui.apiBaseUrl";
 
 const DEFAULT_SCHEDULE: DeviceSchedule = {
   light: { start: "10:00", end: "21:30" },
@@ -134,8 +135,58 @@ const initialState: DeviceState = {
   tempHistory: [],
 };
 
-function apiUrl(path: string): string {
-  return API_BASE ? `${API_BASE}${path}` : path;
+function normalizeApiBase(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) {
+    return "";
+  }
+
+  const withProtocol = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(value) ? value : `http://${value}`;
+
+  try {
+    const parsed = new URL(withProtocol);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function loadStoredApiBase(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const raw = window.localStorage.getItem(API_BASE_STORAGE_KEY) ?? "";
+  const normalized = normalizeApiBase(raw);
+  if (normalized === null) {
+    window.localStorage.removeItem(API_BASE_STORAGE_KEY);
+    return "";
+  }
+
+  return normalized;
+}
+
+function persistStoredApiBase(base: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!base) {
+    window.localStorage.removeItem(API_BASE_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(API_BASE_STORAGE_KEY, base);
+}
+
+function buildApiUrl(base: string, path: string): string {
+  return base ? `${base}${path}` : path;
 }
 
 function genId() {
@@ -397,6 +448,36 @@ function boolToArg(value: boolean): "1" | "0" {
 
 export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DeviceState>(initialState);
+  const [manualApiBase, setManualApiBase] = useState<string>(() => loadStoredApiBase());
+  const apiBaseUrl = manualApiBase || ENV_API_BASE;
+  const apiBaseSource: "proxy" | "env" | "manual" = manualApiBase
+    ? "manual"
+    : apiBaseUrl
+      ? "env"
+      : "proxy";
+  const resolveApiUrl = useCallback((path: string) => buildApiUrl(apiBaseUrl, path), [apiBaseUrl]);
+
+  const setApiBaseUrl = useCallback(
+    (raw: string): { ok: true; normalized: string } | { ok: false; error: string } => {
+      const normalized = normalizeApiBase(raw);
+      if (normalized === null) {
+        return {
+          ok: false,
+          error: "Nieprawidlowy adres. Podaj IP lub URL, np. 192.168.1.105 albo http://192.168.1.105",
+        };
+      }
+
+      setManualApiBase(normalized);
+      persistStoredApiBase(normalized);
+      return { ok: true, normalized };
+    },
+    [],
+  );
+
+  const resetApiBaseUrl = useCallback(() => {
+    setManualApiBase("");
+    persistStoredApiBase("");
+  }, []);
 
   const addLog = useCallback((level: LogEntry["level"], message: string) => {
     setState((prev) => ({
@@ -414,7 +495,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchJson = useCallback(async <T,>(path: string): Promise<T> => {
-    const response = await fetch(apiUrl(path), {
+    const response = await fetch(resolveApiUrl(path), {
       method: "GET",
       cache: "no-store",
     });
@@ -430,12 +511,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       const preview = text.slice(0, 32).replace(/\s+/g, " ").trim();
       if (preview.startsWith("<")) {
         throw new Error(
-          `API zwrocilo HTML zamiast JSON dla ${path}. Ustaw VITE_API_PROXY_TARGET na IP ESP32.`,
+          `API zwrocilo HTML zamiast JSON dla ${path}. Ustaw adres urzadzenia w Ustawieniach albo VITE_API_PROXY_TARGET.`,
         );
       }
       throw new Error(`Nieprawidlowy JSON z ${path}: ${preview}`);
     }
-  }, []);
+  }, [resolveApiUrl]);
 
   const fetchStatus = useCallback(async () => {
     const payload = await fetchJson<StatusResponse>("/api/status");
@@ -485,7 +566,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       body.set(key, String(value));
     }
 
-    const response = await fetch(apiUrl("/api/action"), {
+    const response = await fetch(resolveApiUrl("/api/action"), {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -499,7 +580,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     }
 
     return text || "OK";
-  }, []);
+  }, [resolveApiUrl]);
 
   const setTemp = useCallback(
     async (target: number, hyst: number) => {
@@ -707,7 +788,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     const epoch = Math.floor(Date.now() / 1000);
 
     try {
-      const response = await fetch(apiUrl(`/settime?epoch=${epoch}`), {
+      const response = await fetch(resolveApiUrl(`/settime?epoch=${epoch}`), {
         method: "POST",
       });
 
@@ -723,7 +804,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       addLog("ERROR", errorMessage(err, "Blad synchronizacji czasu"));
       return false;
     }
-  }, [addLog, refresh]);
+  }, [addLog, refresh, resolveApiUrl]);
 
   const uploadFirmware = useCallback(
     async (file: File) => {
@@ -731,7 +812,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         const formData = new FormData();
         formData.append("update", file);
 
-        const response = await fetch(apiUrl("/update"), {
+        const response = await fetch(resolveApiUrl("/update"), {
           method: "POST",
           body: formData,
         });
@@ -747,8 +828,17 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     },
-    [addLog],
+    [addLog, resolveApiUrl],
   );
+
+  useEffect(() => {
+    setState((prev) => ({
+      ...prev,
+      loading: true,
+      online: false,
+      lastError: null,
+    }));
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -776,7 +866,11 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const value: DeviceContextType = useMemo(
     () => ({
       state,
+      apiBaseUrl,
+      apiBaseSource,
       refresh,
+      setApiBaseUrl,
+      resetApiBaseUrl,
       setTemp,
       setLight,
       setFilter,
@@ -794,12 +888,16 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       addLog,
+      apiBaseSource,
+      apiBaseUrl,
       clearCriticalLogs,
       feedNow,
       refresh,
+      resetApiBaseUrl,
       saveSchedule,
       setAPMode,
       setAlwaysScreenOn,
+      setApiBaseUrl,
       setFilter,
       setHeaterEnabled,
       setLight,
