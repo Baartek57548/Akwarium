@@ -2,6 +2,7 @@
 #include "AkwariumWifi.h"
 #include "ConfigManager.h"
 #include "ConfigValidation.h"
+#include "InterfaceCore.h"
 #include "LogManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
@@ -41,8 +42,9 @@ static bool parseFloatStrict(const String &raw, float &out) {
   return true;
 }
 
-static bool parseTimeArg(const String &value, int &hour, int &minute) {
-  if (value.length() < 5 || value[2] != ':') {
+static bool parseTimeArg(const String &value, int &hour, int &minute,
+                         bool allow24Hour = false) {
+  if (value.length() != 5 || value[2] != ':') {
     return false;
   }
   if (!isDigit(value[0]) || !isDigit(value[1]) || !isDigit(value[3]) ||
@@ -52,7 +54,30 @@ static bool parseTimeArg(const String &value, int &hour, int &minute) {
 
   hour = value.substring(0, 2).toInt();
   minute = value.substring(3, 5).toInt();
-  return true;
+  if (minute < 0 || minute > 59) {
+    return false;
+  }
+  if (hour == 24) {
+    return allow24Hour && minute == 0;
+  }
+  return hour >= 0 && hour <= 23;
+}
+
+static void sendRuleResult(WebServer &server, const InterfaceRuleResult &result) {
+  switch (result.code) {
+  case InterfaceRuleCode::OK:
+    server.send(200, "text/plain", "OK");
+    return;
+  case InterfaceRuleCode::OK_PARTIAL:
+    server.send(200, "text/plain", "OK_PARTIAL");
+    return;
+  case InterfaceRuleCode::INVALID_VALUE:
+    server.send(400, "text/plain", "Invalid value");
+    return;
+  case InterfaceRuleCode::SAVE_FAILED:
+    server.send(500, "text/plain", "Save failed");
+    return;
+  }
 }
 
 } // namespace
@@ -118,22 +143,26 @@ void setupApiEndpoints() {
       PowerManager::registerActivity();
       String action = server.arg("action");
       if (action == "feed_now") {
-        SystemController::feedNow();
+        InterfaceCore::triggerFeedNow();
         server.send(200, "text/plain", "OK");
         return;
       } else if (action == "set_servo") {
         if (server.hasArg("angle")) {
-          int ang = constrain(server.arg("angle").toInt(), 0, 90);
-          SystemController::setManualServo(ang);
-          server.send(200, "text/plain", "OK");
+          long angle = 0;
+          if (!parseLongStrict(server.arg("angle"), angle)) {
+            server.send(400, "text/plain", "Invalid angle");
+            return;
+          }
+          InterfaceRuleResult servoResult = InterfaceCore::setManualServoAngle(angle);
+          sendRuleResult(server, servoResult);
           return;
         }
       } else if (action == "clear_servo") {
-        SystemController::clearManualServo();
+        InterfaceCore::clearManualServo();
         server.send(200, "text/plain", "OK");
         return;
       } else if (action == "clear_critical_logs") {
-        LogManager::clearCriticalLogs();
+        InterfaceCore::clearCriticalLogs();
         server.send(200, "text/plain", "OK");
         return;
       } else if (action == "save_schedule") {
@@ -166,7 +195,7 @@ void setupApiEndpoints() {
           String ds = server.arg("dayStart");
           int h = 0;
           int m = 0;
-          if (parseTimeArg(ds, h, m)) {
+          if (parseTimeArg(ds, h, m, true)) {
             patch.hasDayStartHour = true;
             patch.dayStartHour = h;
             patch.hasDayStartMinute = true;
@@ -179,7 +208,7 @@ void setupApiEndpoints() {
           String de = server.arg("dayEnd");
           int h = 0;
           int m = 0;
-          if (parseTimeArg(de, h, m)) {
+          if (parseTimeArg(de, h, m, true)) {
             patch.hasDayEndHour = true;
             patch.dayEndHour = h;
             patch.hasDayEndMinute = true;
@@ -268,24 +297,9 @@ void setupApiEndpoints() {
           }
         }
 
-        Config cfg = ConfigManager::getCopy();
-        ConfigValidationResult validation = {};
-        ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
-        if (!validation.hasAnyApplied()) {
-          server.send(400, "text/plain", "No valid fields");
-          return;
-        }
-
-        if (!ConfigManager::updateAndSave(cfg)) {
-          server.send(500, "text/plain", "Save failed");
-          return;
-        }
-
-        if (validation.hasInvalidFields() || invalidFields > 0) {
-          server.send(200, "text/plain", "OK_PARTIAL");
-        } else {
-          server.send(200, "text/plain", "OK");
-        }
+        InterfaceRuleResult patchResult =
+            InterfaceCore::applyConfigPatchAndSave(patch, invalidFields);
+        sendRuleResult(server, patchResult);
         return;
       }
     }

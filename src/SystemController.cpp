@@ -41,11 +41,15 @@ static void persistRtcBackupIfNeeded(uint32_t epoch, bool force = false);
 static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
 static const unsigned long RTC_BACKUP_WRITE_INTERVAL_MS = 600000UL;
+static const float SERVO_ALARM_TEMP_ON_C = 30.0f;
+static const float SERVO_ALARM_TEMP_OFF_C = 29.5f;
+static const unsigned long SERVO_TARGET_STABLE_MS = 1200UL;
 static bool wokeFromButtonThisBoot = false;
 static Preferences rtcPrefs;
 static bool rtcPrefsReady = false;
 static uint32_t rtcBackupEpochCache = 0;
 static unsigned long lastRtcBackupWriteMs = 0;
+static bool servoTempAlarmActive = false;
 
 TemperatureController SystemController::tempController(ONE_WIRE_BUS,
                                                        HEATER_PIN);
@@ -304,7 +308,17 @@ void SystemController::updateDecisions() {
   if (minsToOff > 0 && minsToOff <= cfg.servoPreOffMins)
     servoTarget = SERVO_PREOFF_ANGLE;
 
-  if (!isnan(snap.temperature) && snap.temperature > 30.0f) {
+  if (!isnan(snap.temperature)) {
+    if (servoTempAlarmActive) {
+      if (snap.temperature <= SERVO_ALARM_TEMP_OFF_C) {
+        servoTempAlarmActive = false;
+      }
+    } else if (snap.temperature >= SERVO_ALARM_TEMP_ON_C) {
+      servoTempAlarmActive = true;
+    }
+  }
+
+  if (servoTempAlarmActive) {
     servoTarget =
         constrain(cfg.servoAlarmAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
   }
@@ -318,11 +332,28 @@ void SystemController::updateDecisions() {
     }
   }
 
-  // Aplikacja Serwa
+  // Aplikacja Serwa z filtrem stabilnosci celu, aby uniknac losowych
+  // "szarpniec" przy chwilowych zmianach warunkow.
   static int lastServoTarget = -1;
-  if (servoTarget != lastServoTarget) {
-    servoController.setPosition(servoTarget);
-    lastServoTarget = servoTarget;
+  static int pendingServoTarget = -1;
+  static unsigned long pendingServoSinceMs = 0;
+
+  const unsigned long nowMs = millis();
+  if (servoTarget != pendingServoTarget) {
+    pendingServoTarget = servoTarget;
+    pendingServoSinceMs = nowMs;
+  }
+
+  const bool manualImmediate = manualServoOverride;
+  const bool pendingChanged = (pendingServoTarget != lastServoTarget);
+  const bool pendingStable =
+      (nowMs - pendingServoSinceMs) >= SERVO_TARGET_STABLE_MS;
+
+  if (pendingChanged &&
+      ((manualImmediate && !servoController.isMoving()) ||
+       (pendingStable && !servoController.isMoving()))) {
+    servoController.setPosition(pendingServoTarget);
+    lastServoTarget = pendingServoTarget;
   }
 
   uint8_t aerationPct =
