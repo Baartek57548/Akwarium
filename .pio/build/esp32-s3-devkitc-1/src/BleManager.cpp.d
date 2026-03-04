@@ -206,8 +206,10 @@
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/nghttp/port/include/http_parser.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/Uri.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/detail/RequestHandler.h \
- src/ConfigManager.h src/ConfigData.h src/LogManager.h src/PowerManager.h \
- src/BatteryReader.h src/SharedState.h src/SystemController.h \
+ src/ConfigManager.h src/ConfigData.h src/ConfigValidation.h \
+ src/InterfaceCore.h src/LogManager.h src/PowerManager.h \
+ src/BatteryReader.h src/SecretConfig.h src/arduino_secrets.template.h \
+ src/SharedState.h src/SystemController.h \
  .pio/libdeps/esp32-s3-devkitc-1/RTClib/src/RTClib.h \
  .pio/libdeps/esp32-s3-devkitc-1/Adafruit\ BusIO/Adafruit_I2CDevice.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src/Wire.h \

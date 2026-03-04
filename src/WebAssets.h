@@ -1196,10 +1196,11 @@ function padTime(hour, min) {
 function syncDeviceTime() {
     const now = new Date();
     const epoch = Math.floor(now.getTime() / 1000);
+    const tzOffsetMin = now.getTimezoneOffset();
 
     addLogLine(`Żądanie synchronizacji czasu (Epoch: ${epoch})...`, "system");
 
-    fetch(`${API_TIME}?epoch=${epoch}`, { method: 'POST' })
+    fetch(`${API_TIME}?epoch=${epoch}&tzOffsetMin=${tzOffsetMin}`, { method: 'POST' })
         .then(response => {
             if (response.ok) {
                 addLogLine("Czas zsynchronizowany z układem ESP32 pomyślnie.", "success");

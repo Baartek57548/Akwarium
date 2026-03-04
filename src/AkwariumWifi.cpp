@@ -1,13 +1,13 @@
 #include "AkwariumWifi.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
+#include "SecretConfig.h"
 #include "WebAssets.h"
-#include "arduino_secrets.h"
 #include <DNSServer.h>
 #include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
-#include <esp_wifi.h>
+#include <errno.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -17,7 +17,6 @@
 static const char *STA_SSID = SECRET_SSID;
 static const char *STA_PASSWORD = SECRET_PASS;
 static const int WIFI_TIMEOUT = 6000;
-static const unsigned long WIFI_RETRY_INTERVAL = 900000UL; // 15 minut
 
 static const char *apSSID = AP_SSID;
 static const char *apPassword = AP_PASSWORD;
@@ -31,13 +30,65 @@ static bool isAPMode = false;
 static bool otaUploadActive = false;
 static volatile bool apStartRequested = false;
 static volatile bool apStopRequested = false;
-static unsigned long lastWifiRetryMs = 0;
+static volatile bool staOffRequested = false;
+static volatile bool staIsOff = false;
 
 WebServer &AkwariumWifi::getServer() { return server; }
 
+static bool parseUintStrict(const String &raw, uint64_t &out) {
+  if (raw.length() == 0) {
+    return false;
+  }
+
+  errno = 0;
+  char *endPtr = nullptr;
+  unsigned long long parsed = strtoull(raw.c_str(), &endPtr, 10);
+  if (errno == ERANGE || endPtr == raw.c_str() || *endPtr != '\0') {
+    return false;
+  }
+
+  out = static_cast<uint64_t>(parsed);
+  return true;
+}
+
+static bool parseLongStrict(const String &raw, long &out) {
+  if (raw.length() == 0) {
+    return false;
+  }
+
+  errno = 0;
+  char *endPtr = nullptr;
+  long parsed = strtol(raw.c_str(), &endPtr, 10);
+  if (errno == ERANGE || endPtr == raw.c_str() || *endPtr != '\0') {
+    return false;
+  }
+
+  out = parsed;
+  return true;
+}
+
+static bool parseEpochArg(const String &raw, uint32_t &epochSec) {
+  uint64_t parsed = 0;
+  if (!parseUintStrict(raw, parsed)) {
+    return false;
+  }
+
+  // Akceptujemy epoch w sekundach lub milisekundach.
+  if (parsed > 4102444800ULL && parsed <= 4102444800000ULL) {
+    parsed /= 1000ULL;
+  }
+
+  if (parsed < 1704067200ULL || parsed > 4102444800ULL) {
+    return false;
+  }
+
+  epochSec = static_cast<uint32_t>(parsed);
+  return true;
+}
+
 static void setupNetwork() {
   WiFi.mode(WIFI_STA);
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // Optymalizacja zuzycia pradu
+  staIsOff = false;
   WiFi.begin(STA_SSID, STA_PASSWORD);
   unsigned long start = millis();
 
@@ -48,11 +99,11 @@ static void setupNetwork() {
 
   if (WiFi.status() == WL_CONNECTED) {
     isAPMode = false;
-    Serial.println("\n[WIFI] PoĹ‚Ä…czono. IP: " + WiFi.localIP().toString());
+    Serial.println("\n[WIFI] Polaczono. IP: " + WiFi.localIP().toString());
   } else {
     isAPMode = false;
     Serial.println(
-        "\n[WIFI] Timeout. PoĹ‚Ä…czenie STA nieudane. Projekt dziala Offline.");
+        "\n[WIFI] Timeout. Polaczenie STA nieudane. Projekt dziala offline.");
   }
 }
 
@@ -80,18 +131,43 @@ static void setupWebServer() {
   server.on("/settime", HTTP_POST, []() {
     if (server.hasArg("epoch")) {
       PowerManager::registerActivity();
-      time_t epoch = server.arg("epoch").toInt();
+      uint32_t epochUtc = 0;
+      if (!parseEpochArg(server.arg("epoch"), epochUtc)) {
+        server.send(400, "text/plain", "Niepoprawny epoch");
+        return;
+      }
+
+      uint32_t rtcEpoch = epochUtc;
+      if (server.hasArg("tzOffsetMin")) {
+        long tzOffsetMin = 0;
+        if (!parseLongStrict(server.arg("tzOffsetMin"), tzOffsetMin) ||
+            tzOffsetMin < -840 || tzOffsetMin > 840) {
+          server.send(400, "text/plain", "Niepoprawny tzOffsetMin");
+          return;
+        }
+
+        // JS: getTimezoneOffset() = UTC - LOCAL (w minutach).
+        int64_t adjusted = static_cast<int64_t>(epochUtc) -
+                           static_cast<int64_t>(tzOffsetMin) * 60LL;
+        if (adjusted < 1704067200LL || adjusted > 4102444800LL) {
+          server.send(400, "text/plain", "Epoch poza zakresem");
+          return;
+        }
+        rtcEpoch = static_cast<uint32_t>(adjusted);
+      }
+
+      time_t epoch = static_cast<time_t>(epochUtc);
       struct timeval tv;
       tv.tv_sec = epoch;
       tv.tv_usec = 0;
       settimeofday(&tv, NULL);
 
-      syncSystemTime((uint32_t)epoch);
+      syncSystemTime(rtcEpoch);
 
       struct tm timeinfo;
       getLocalTime(&timeinfo);
       Serial.println(&timeinfo,
-                     "[RTC] Zsynchronizowano czas ukĹ‚adu: %Y-%m-%d %H:%M:%S");
+                     "[RTC] Zsynchronizowano czas ukladu: %Y-%m-%d %H:%M:%S");
 
       server.send(200, "text/plain", "OK");
     } else {
@@ -191,6 +267,7 @@ static void startAPInternal() {
 
   WiFi.disconnect();
   WiFi.mode(WIFI_AP);
+  staIsOff = true;
   if (WiFi.softAP(apSSID, apPassword)) {
     dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
     isAPMode = true;
@@ -208,14 +285,21 @@ static void stopAPInternal() {
 
   dnsServer.stop();
   WiFi.softAPdisconnect(true);
-  esp_wifi_stop(); // Fizyczne zgaszenie radia AP
   isAPMode = false;
+  staIsOff = true;
   Serial.println("[WIFI-AP] Wylaczono AP.");
+  // UWAGA: Nie wywolujemy setupNetwork() - blokowaloby i mogloby powodowac WDT.
+}
 
-  // Wznowienie radia w trybie Station
-  esp_wifi_start();
-  WiFi.mode(WIFI_STA);
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+static void disableStaForDeepSleepInternal() {
+  if (isAPMode) {
+    return;
+  }
+
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_OFF);
+  staIsOff = true;
+  Serial.println("[WIFI-STA] Wylaczono STA/radio dla deep sleep.");
 }
 
 static void processAPRequests() {
@@ -229,6 +313,11 @@ static void processAPRequests() {
     apStartRequested = false;
     startAPInternal();
   }
+
+  if (staOffRequested && !isAPMode) {
+    staOffRequested = false;
+    disableStaForDeepSleepInternal();
+  }
 }
 
 static void WifiTask(void *parameter) {
@@ -237,20 +326,6 @@ static void WifiTask(void *parameter) {
 
   for (;;) {
     processAPRequests();
-
-    // Auto-reconnect STA scheduler
-    unsigned long now = millis();
-    if (!isAPMode && WiFi.status() != WL_CONNECTED && !otaUploadActive &&
-        (now - lastWifiRetryMs >= WIFI_RETRY_INTERVAL)) {
-
-      lastWifiRetryMs = now;
-      Serial.println(
-          "[WIFI] Rozpoczecie ponownej proby polaczania do routera...");
-      WiFi.disconnect();
-      WiFi.begin(STA_SSID, STA_PASSWORD);
-      // Nie blokujemy tu programu petla while, WiFi zalapie w tle
-    }
-
     if (isAPMode)
       dnsServer.processNextRequest();
     server.handleClient();
@@ -265,13 +340,14 @@ void AkwariumWifi::begin() {
                           NULL,       // Parametry
                           1,          // Priorytet
                           NULL,       // Uchwyt
-                          1);         // RdzeĹ„ 1
+                          1);         // Rdzen 1
 }
 
 bool AkwariumWifi::getIsAPMode() { return isAPMode; }
 
 void AkwariumWifi::startAP() {
   apStopRequested = false;
+  staOffRequested = false;
   apStartRequested = true;
 }
 
@@ -279,6 +355,13 @@ void AkwariumWifi::stopAP() {
   apStartRequested = false;
   apStopRequested = true;
 }
+
+void AkwariumWifi::requestStaOffForDeepSleep() {
+  apStartRequested = false;
+  staOffRequested = true;
+}
+
+bool AkwariumWifi::isStaOff() { return staIsOff; }
 
 String AkwariumWifi::getAPName() {
   return isAPMode ? String(apSSID) : String(STA_SSID);
@@ -295,3 +378,4 @@ String AkwariumWifi::getIP() {
 uint8_t AkwariumWifi::getConnectedClients() {
   return isAPMode ? WiFi.softAPgetStationNum() : 0;
 }
+

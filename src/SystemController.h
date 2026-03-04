@@ -16,19 +16,8 @@ class AquariumAnimation;
 #include "SharedState.h"
 #include "TemperatureController.h"
 
-enum class ControllerState {
-  DAY_IDLE,
-  DAY_ACTIVE,
-  AP_ACTIVE,
-  BLE_ACTIVE,
-  OTA_ACTIVE,
-  NIGHT_PREPARE,
-  NIGHT_SLEEP
-};
-
 class SystemController {
 public:
-  static ControllerState getCurrentState();
   static void init();
   static void update();
 
@@ -44,10 +33,12 @@ public:
 
   // Funkcja zarzadzania energia, wywolywana glownie przez VideoTask lub loop
   static void handlePowerManagement(U8G2 *display, AquariumAnimation *anim);
+  static bool canEnterDeepSleep(unsigned long nowMs, unsigned long lastActionMs);
   static void enterNightDeepSleep();
 
   // Publiczna instancja RTC do globalnych funkcji czasowych
   static RTC_DS3231 rtc;
+  static bool isRtcReady();
 
 private:
   static void hardwareSetup();
@@ -68,6 +59,7 @@ private:
 
   static uint8_t tempInvalidReadCount;
   static bool tempSensorErrorLogged;
+  static bool rtcReady;
 
   // Opcjonalne obiekty Timera by nie zamrazac petli
   static unsigned long lastTempCheckMs;

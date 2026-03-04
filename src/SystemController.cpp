@@ -8,10 +8,9 @@
 #include "PowerManager.h"
 #include "ScheduleManager.h"
 #include "SharedState.h"
-#include <WiFi.h>
+#include <Preferences.h>
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
-#include <esp32-hal-cpu.h>
 #include <esp_err.h>
 #include <esp_sleep.h>
 #include <esp_task_wdt.h>
@@ -31,13 +30,26 @@
 
 static void logWakeupCauseOnBoot();
 static void releaseDeepSleepHolds();
-static RTC_DATA_ATTR uint8_t lastBootMode = 0;
 static bool isNightTimeNow();
-static bool canEnterNightDeepSleep(unsigned long nowMs,
-                                   unsigned long lastActionMs);
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
-static bool configureExt0Wakeup();
+static bool configureButtonWakeup();
 static bool holdOutputsInOffState();
+static bool isPlausibleEpoch(uint32_t epoch);
+static bool restoreRtcFromBackup();
+static void persistRtcBackupIfNeeded(uint32_t epoch, bool force = false);
+
+static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
+static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
+static const unsigned long RTC_BACKUP_WRITE_INTERVAL_MS = 600000UL;
+static const float SERVO_ALARM_TEMP_ON_C = 30.0f;
+static const float SERVO_ALARM_TEMP_OFF_C = 29.5f;
+static const unsigned long SERVO_TARGET_STABLE_MS = 1200UL;
+static bool wokeFromButtonThisBoot = false;
+static Preferences rtcPrefs;
+static bool rtcPrefsReady = false;
+static uint32_t rtcBackupEpochCache = 0;
+static unsigned long lastRtcBackupWriteMs = 0;
+static bool servoTempAlarmActive = false;
 
 TemperatureController SystemController::tempController(ONE_WIRE_BUS,
                                                        HEATER_PIN);
@@ -47,14 +59,83 @@ ServoController SystemController::servoController(SERVO_PIN, 90);
 BatteryReader SystemController::batteryReader(BAT_ADC_PIN);
 RTC_DS3231 SystemController::rtc;
 
-static ControllerState currentState = SystemState::DAY_IDLE;
+static bool ensureRtcPrefsReady() {
+  if (rtcPrefsReady) {
+    return true;
+  }
 
-ControllerState SystemController::getCurrentState() { return currentState; }
+  if (!rtcPrefs.begin("Akwarium", false)) {
+    return false;
+  }
 
-DateTime getCurrentDateTime() { return SystemController::rtc.now(); }
+  rtcPrefsReady = true;
+  rtcBackupEpochCache = rtcPrefs.getULong("rtcEpoch", 0);
+  return true;
+}
+
+static bool isPlausibleEpoch(uint32_t epoch) {
+  // 2024-01-01 00:00:00 .. 2100-01-01 00:00:00
+  return epoch >= 1704067200UL && epoch <= 4102444800UL;
+}
+
+static bool restoreRtcFromBackup() {
+  if (!ensureRtcPrefsReady()) {
+    return false;
+  }
+
+  uint32_t backupEpoch = rtcPrefs.getULong("rtcEpoch", 0);
+  if (!isPlausibleEpoch(backupEpoch)) {
+    return false;
+  }
+
+  SystemController::rtc.adjust(DateTime(backupEpoch));
+  rtcBackupEpochCache = backupEpoch;
+  return true;
+}
+
+static void persistRtcBackupIfNeeded(uint32_t epoch, bool force) {
+  if (!isPlausibleEpoch(epoch)) {
+    return;
+  }
+
+  if (!ensureRtcPrefsReady()) {
+    return;
+  }
+
+  const unsigned long nowMs = millis();
+  if (!force) {
+    if (rtcBackupEpochCache != 0 && epoch <= rtcBackupEpochCache) {
+      return;
+    }
+    if ((nowMs - lastRtcBackupWriteMs) < RTC_BACKUP_WRITE_INTERVAL_MS) {
+      return;
+    }
+  }
+
+  rtcPrefs.putULong("rtcEpoch", epoch);
+  rtcBackupEpochCache = epoch;
+  lastRtcBackupWriteMs = nowMs;
+}
+
+DateTime getCurrentDateTime() {
+  if (SystemController::isRtcReady()) {
+    return SystemController::rtc.now();
+  }
+  // Fallback bez RTC - monotoniczny czas oparty o millis, z neutralna data.
+  return DateTime(2025, 1, 1, 0, 0, 0) +
+         TimeSpan(static_cast<int32_t>(millis() / 1000UL));
+}
 
 void syncSystemTime(uint32_t epoch) {
-  SystemController::rtc.adjust(DateTime(epoch));
+  if (!isPlausibleEpoch(epoch)) {
+    return;
+  }
+
+  if (SystemController::isRtcReady()) {
+    SystemController::rtc.adjust(DateTime(epoch));
+  }
+
+  persistRtcBackupIfNeeded(epoch, true);
 }
 
 bool SystemController::manualServoOverride = false;
@@ -63,14 +144,16 @@ unsigned long SystemController::manualServoTimer = 0;
 
 uint8_t SystemController::tempInvalidReadCount = 0;
 bool SystemController::tempSensorErrorLogged = false;
+bool SystemController::rtcReady = false;
 
 unsigned long SystemController::lastTempCheckMs = 0;
 unsigned long SystemController::lastBatCheckMs =
     -600000UL; // Start pomiaru baterii natychmiast
 
+bool SystemController::isRtcReady() { return rtcReady; }
+
 void SystemController::hardwareSetup() {
   releaseDeepSleepHolds();
-
   pinMode(LIGHT_PIN, OUTPUT);
   digitalWrite(LIGHT_PIN, HIGH); // OFF (aktywny stan LOW)
   pinMode(PUMP_PIN, OUTPUT);
@@ -81,6 +164,8 @@ void SystemController::hardwareSetup() {
   pinMode(BAT_EN_PIN, OUTPUT);
   digitalWrite(BAT_EN_PIN, HIGH); // Załączenie dzielnika pomiarowego
 
+  // Po wybudzeniu pin wake moze pozostac w trybie RTC GPIO.
+  rtc_gpio_deinit(BUTTON_DOWN_PIN);
   pinMode(static_cast<uint8_t>(BUTTON_UP_PIN), INPUT_PULLUP);
   pinMode(static_cast<uint8_t>(BUTTON_SELECT_PIN), INPUT_PULLUP);
   pinMode(static_cast<uint8_t>(BUTTON_DOWN_PIN), INPUT_PULLUP);
@@ -91,10 +176,22 @@ void SystemController::hardwareSetup() {
   batteryReader.init();
 
   if (!rtc.begin()) {
+    rtcReady = false;
     LogManager::logError("Nie znaleziono modulu RTC (DS3231)!");
   } else if (rtc.lostPower()) {
-    LogManager::logWarn("RTC zresetowany, przywracanie domyslnego czasu...");
-    rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+    rtcReady = true;
+    if (restoreRtcFromBackup()) {
+      LogManager::logWarn(
+          "RTC zresetowany - czas przywrocony z backupu NVS.");
+    } else {
+      LogManager::logWarn(
+          "RTC zresetowany, brak backupu. Ustawiam domyslny czas.");
+      rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+      persistRtcBackupIfNeeded(rtc.now().unixtime(), true);
+    }
+  } else {
+    rtcReady = true;
+    persistRtcBackupIfNeeded(rtc.now().unixtime(), true);
   }
 }
 
@@ -103,12 +200,17 @@ void SystemController::init() {
   ConfigManager::init();
   LogManager::init();
 
-  logWakeupCauseOnBoot();
   hardwareSetup();
+  logWakeupCauseOnBoot();
 
   OtaManager::init();
   PowerManager::init(&batteryReader);
   ScheduleManager::init(&feederController);
+  if (wokeFromButtonThisBoot) {
+    PowerManager::registerActivity();
+    LogManager::logInfo(
+        "Wybudzenie przyciskiem GPIO14 - aktywne okno interakcji nocnej.");
+  }
 
   // Rejestracja biezacego zadania (loop) do Watchdoga
   esp_task_wdt_add(NULL);
@@ -163,32 +265,17 @@ void SystemController::updateDecisions() {
   if (OtaManager::isOtaInProgress())
     return;
 
-  DateTime now = rtc.now();
+  DateTime now = getCurrentDateTime();
+  if (rtcReady) {
+    persistRtcBackupIfNeeded(now.unixtime(), false);
+  }
+
   SharedState::updateTime(now.hour(), now.minute(), now.second(), now.day(),
                           now.month(), now.year());
 
   ScheduleManager::update(now);
 
-  // Weryfikacja glownego stanu maszyny (Central State Machine)
-  if (OtaManager::isOtaInProgress()) {
-    currentState = ControllerState::OTA_ACTIVE;
-  } else if (AkwariumWifi::getIsAPMode()) {
-    currentState = ControllerState::AP_ACTIVE;
-  } else if (BleManager::isAdvertising() || BleManager::isConnected()) {
-    currentState = ControllerState::BLE_ACTIVE;
-  } else if (isNightTimeNow()) {
-    currentState =
-        canEnterNightDeepSleep(millis(), PowerManager::getLastActivityTime())
-            ? ControllerState::NIGHT_SLEEP
-            : ControllerState::NIGHT_PREPARE;
-  } else {
-    unsigned long timeSinceAction =
-        millis() - PowerManager::getLastActivityTime();
-    currentState = (timeSinceAction < 240000UL) ? ControllerState::DAY_ACTIVE
-                                                : ControllerState::DAY_IDLE;
-  }
-
-  const Config cfg = ConfigManager::getConfigSnapshot();
+  const Config cfg = ConfigManager::getCopy();
   uint16_t nowMin = ScheduleManager::toMinutes(now.hour(), now.minute());
 
   bool isDay = ScheduleManager::isDayTime(nowMin);
@@ -221,7 +308,17 @@ void SystemController::updateDecisions() {
   if (minsToOff > 0 && minsToOff <= cfg.servoPreOffMins)
     servoTarget = SERVO_PREOFF_ANGLE;
 
-  if (!isnan(snap.temperature) && snap.temperature > 30.0f) {
+  if (!isnan(snap.temperature)) {
+    if (servoTempAlarmActive) {
+      if (snap.temperature <= SERVO_ALARM_TEMP_OFF_C) {
+        servoTempAlarmActive = false;
+      }
+    } else if (snap.temperature >= SERVO_ALARM_TEMP_ON_C) {
+      servoTempAlarmActive = true;
+    }
+  }
+
+  if (servoTempAlarmActive) {
     servoTarget =
         constrain(cfg.servoAlarmAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
   }
@@ -235,11 +332,28 @@ void SystemController::updateDecisions() {
     }
   }
 
-  // Aplikacja Serwa
+  // Aplikacja Serwa z filtrem stabilnosci celu, aby uniknac losowych
+  // "szarpniec" przy chwilowych zmianach warunkow.
   static int lastServoTarget = -1;
-  if (servoTarget != lastServoTarget) {
-    servoController.setPosition(servoTarget);
-    lastServoTarget = servoTarget;
+  static int pendingServoTarget = -1;
+  static unsigned long pendingServoSinceMs = 0;
+
+  const unsigned long nowMs = millis();
+  if (servoTarget != pendingServoTarget) {
+    pendingServoTarget = servoTarget;
+    pendingServoSinceMs = nowMs;
+  }
+
+  const bool manualImmediate = manualServoOverride;
+  const bool pendingChanged = (pendingServoTarget != lastServoTarget);
+  const bool pendingStable =
+      (nowMs - pendingServoSinceMs) >= SERVO_TARGET_STABLE_MS;
+
+  if (pendingChanged &&
+      ((manualImmediate && !servoController.isMoving()) ||
+       (pendingStable && !servoController.isMoving()))) {
+    servoController.setPosition(pendingServoTarget);
+    lastServoTarget = pendingServoTarget;
   }
 
   uint8_t aerationPct =
@@ -289,7 +403,8 @@ bool SystemController::isFeedingNow() { return feederController.isFeeding(); }
 
 void SystemController::setManualServo(int angle) {
   manualServoOverride = true;
-  manualServoAngle = constrain(angle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
+  manualServoAngle =
+      constrain(angle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
   manualServoTimer = millis();
 }
 
@@ -307,12 +422,23 @@ static void logEspErr(const char *prefix, esp_err_t err) {
 }
 
 static void logWakeupCauseOnBoot() {
+  wokeFromButtonThisBoot = false;
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-  lastBootMode = static_cast<uint8_t>(cause);
-
   switch (cause) {
+  case ESP_SLEEP_WAKEUP_EXT1: {
+    uint64_t mask = esp_sleep_get_ext1_wakeup_status();
+    char msg[96];
+    snprintf(msg, sizeof(msg), "Wakeup cause: EXT1 mask=0x%llX",
+             static_cast<unsigned long long>(mask));
+    LogManager::logInfo(msg);
+    if ((mask & (1ULL << static_cast<uint64_t>(BUTTON_DOWN_PIN))) != 0ULL) {
+      wokeFromButtonThisBoot = true;
+    }
+    break;
+  }
   case ESP_SLEEP_WAKEUP_EXT0:
-    LogManager::logInfo("Wakeup cause: EXT0 (GPIO14)");
+    LogManager::logInfo("Wakeup cause: EXT0");
+    wokeFromButtonThisBoot = true;
     break;
   case ESP_SLEEP_WAKEUP_TIMER:
     LogManager::logInfo("Wakeup cause: TIMER");
@@ -337,22 +463,29 @@ static void releaseDeepSleepHolds() {
 }
 
 static bool isNightTimeNow() {
-  DateTime now = SystemController::rtc.now();
+  if (!SystemController::isRtcReady()) {
+    return false;
+  }
+  DateTime now = getCurrentDateTime();
   uint16_t nowMin = ScheduleManager::toMinutes(now.hour(), now.minute());
   return !ScheduleManager::isDayTime(nowMin);
 }
 
-static bool canEnterNightDeepSleep(unsigned long nowMs,
-                                   unsigned long lastActionMs) {
-  if (SystemController::getCurrentState() == ControllerState::OTA_ACTIVE ||
-      SystemController::getCurrentState() == ControllerState::AP_ACTIVE ||
-      SystemController::getCurrentState() == ControllerState::BLE_ACTIVE) {
+bool SystemController::canEnterDeepSleep(unsigned long nowMs,
+                                         unsigned long lastActionMs) {
+  if ((nowMs - lastActionMs) < DEEP_SLEEP_IDLE_MS) {
     return false;
   }
-  if ((nowMs - lastActionMs) < 300000UL) {
+  if (OtaManager::isOtaInProgress()) {
     return false;
   }
-  if (WiFi.status() == WL_CONNECTED) {
+  if (AkwariumWifi::getIsAPMode()) {
+    return false;
+  }
+  if (!AkwariumWifi::isStaOff()) {
+    return false;
+  }
+  if (BleManager::isAdvertising() || BleManager::isConnected()) {
     return false;
   }
   if (SystemController::isFeedingNow()) {
@@ -362,10 +495,9 @@ static bool canEnterNightDeepSleep(unsigned long nowMs,
 }
 
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
-  const Config cfg = ConfigManager::getConfigSnapshot();
+  const Config cfg = ConfigManager::getCopy();
   if (cfg.dayStartHour > 23 || cfg.dayStartMinute > 59) {
-    LogManager::logWarn(
-        "Niepoprawny start dnia, timer sleep ustawiony na 30 min.");
+    LogManager::logWarn("Niepoprawny start dnia, timer sleep ustawiony na 30 min.");
     return 30ULL * 60ULL * 1000000ULL;
   }
 
@@ -381,25 +513,29 @@ static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
   }
 
   char msg[96];
-  snprintf(msg, sizeof(msg), "Timer wakeup za %lu s (start dnia %02u:%02u).",
-           static_cast<unsigned long>(diffSec),
-           static_cast<unsigned>(cfg.dayStartHour),
+  snprintf(msg, sizeof(msg),
+           "Timer wakeup za %lu s (start dnia %02u:%02u).",
+           static_cast<unsigned long>(diffSec), static_cast<unsigned>(cfg.dayStartHour),
            static_cast<unsigned>(cfg.dayStartMinute));
   LogManager::logInfo(msg);
 
   return static_cast<uint64_t>(diffSec) * 1000000ULL;
 }
 
-static bool configureExt0Wakeup() {
+static bool configureButtonWakeup() {
   if (!esp_sleep_is_valid_wakeup_gpio(BUTTON_DOWN_PIN) ||
       !rtc_gpio_is_valid_gpio(BUTTON_DOWN_PIN)) {
-    LogManager::logError("GPIO14 nie jest poprawnym RTC wake pin dla EXT0.");
+    LogManager::logError("GPIO14 nie jest poprawnym RTC wake pin.");
     return false;
   }
 
-  pinMode(static_cast<uint8_t>(BUTTON_DOWN_PIN), INPUT_PULLUP);
+  esp_err_t err = rtc_gpio_deinit(BUTTON_DOWN_PIN);
+  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    logEspErr("rtc_gpio_deinit(BUTTON_DOWN_PIN)", err);
+    return false;
+  }
 
-  esp_err_t err = rtc_gpio_init(BUTTON_DOWN_PIN);
+  err = rtc_gpio_init(BUTTON_DOWN_PIN);
   if (err != ESP_OK) {
     logEspErr("rtc_gpio_init(BUTTON_DOWN_PIN)", err);
     return false;
@@ -423,9 +559,10 @@ static bool configureExt0Wakeup() {
     return false;
   }
 
-  err = esp_sleep_enable_ext0_wakeup(BUTTON_DOWN_PIN, 0); // LOW = wakeup
+  uint64_t wakeMask = (1ULL << static_cast<uint64_t>(BUTTON_DOWN_PIN));
+  err = esp_sleep_enable_ext1_wakeup(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
   if (err != ESP_OK) {
-    logEspErr("esp_sleep_enable_ext0_wakeup", err);
+    logEspErr("esp_sleep_enable_ext1_wakeup", err);
     return false;
   }
 
@@ -566,7 +703,11 @@ void SystemController::runFeederCalibrationOnPowerUp(U8G2 *display) {
 }
 
 void SystemController::enterNightDeepSleep() {
-  DateTime now = rtc.now();
+  if (!rtcReady) {
+    LogManager::logWarn("RTC niedostepny - pomijam deep sleep.");
+    return;
+  }
+  DateTime now = getCurrentDateTime();
 
   LogManager::logInfo("Noc: wylaczam urzadzenia i przechodze do deep sleep.");
 
@@ -574,8 +715,7 @@ void SystemController::enterNightDeepSleep() {
   SharedState::updateRelays(false, false, false, false);
 
   if (!holdOutputsInOffState()) {
-    LogManager::logError(
-        "Nie udalo sie zablokowac wyjsc OFF przed deep sleep.");
+    LogManager::logError("Nie udalo sie zablokowac wyjsc OFF przed deep sleep.");
     return;
   }
 
@@ -588,8 +728,8 @@ void SystemController::enterNightDeepSleep() {
     return;
   }
 
-  if (!configureExt0Wakeup()) {
-    LogManager::logError("Konfiguracja EXT0 nieudana - pomijam deep sleep.");
+  if (!configureButtonWakeup()) {
+    LogManager::logError("Konfiguracja wakeup GPIO14 nieudana - pomijam deep sleep.");
     return;
   }
 
@@ -606,45 +746,45 @@ void SystemController::enterNightDeepSleep() {
 
 void SystemController::handlePowerManagement(U8G2 *display,
                                              AquariumAnimation *anim) {
-  const Config cfg = ConfigManager::getConfigSnapshot();
+  (void)anim;
+  unsigned long nowMs = millis();
+  unsigned long lastAction = PowerManager::getLastActivityTime();
+  const Config cfg = ConfigManager::getCopy();
 
-  if (currentState == ControllerState::DAY_IDLE && !cfg.alwaysScreenOn) {
-    if (PowerManager::getCurrentMode() == MODE_ACTIVE) {
-      PowerManager::setMode(MODE_LOW_POWER);
-      if (display)
-        display->setPowerSave(1);
-      setCpuFrequencyMhz(80); // Zmniejszenie VCore i pradu
-    }
-    return;
-  }
-
-  if (currentState == ControllerState::DAY_ACTIVE ||
-      currentState == ControllerState::AP_ACTIVE ||
-      currentState == ControllerState::BLE_ACTIVE ||
-      currentState == ControllerState::OTA_ACTIVE) {
-    if (PowerManager::getCurrentMode() != MODE_ACTIVE) {
-      PowerManager::setMode(MODE_ACTIVE);
-      setCpuFrequencyMhz(240);
-      if (display)
-        display->setPowerSave(0);
-    }
-    return;
-  }
-
-  if (currentState == ControllerState::NIGHT_PREPARE) {
-    if (display)
-      display->setPowerSave(1);
-    PowerManager::setMode(MODE_LOW_POWER);
-    return;
-  }
-
-  if (currentState == ControllerState::NIGHT_SLEEP) {
+  if (!isNightTimeNow()) {
+    bool keepScreenOn = cfg.alwaysScreenOn || ((nowMs - lastAction) <= 240000UL);
+    PowerManager::setMode(keepScreenOn ? MODE_ACTIVE : MODE_LOW_POWER);
     if (display) {
-      display->clearBuffer();
-      display->sendBuffer();
-      display->setPowerSave(1);
+      display->setPowerSave(keepScreenOn ? 0 : 1);
+      if (keepScreenOn) {
+        display->setContrast(255);
+      }
     }
-    PowerManager::setMode(MODE_DEEP_SLEEP);
-    enterNightDeepSleep();
+    return;
   }
+
+  if (!AkwariumWifi::isStaOff()) {
+    AkwariumWifi::requestStaOffForDeepSleep();
+  }
+
+  if (!canEnterDeepSleep(nowMs, lastAction)) {
+    bool keepInteractive = ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
+    PowerManager::setMode(keepInteractive ? MODE_ACTIVE : MODE_LOW_POWER);
+    if (display) {
+      display->setPowerSave(keepInteractive ? 0 : 1);
+      if (keepInteractive) {
+        display->setContrast(255);
+      }
+    }
+    return;
+  }
+
+  if (display) {
+    display->clearBuffer();
+    display->sendBuffer();
+    display->setPowerSave(1);
+  }
+
+  PowerManager::setMode(MODE_DEEP_SLEEP);
+  enterNightDeepSleep();
 }

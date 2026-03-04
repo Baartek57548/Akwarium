@@ -212,7 +212,8 @@
  .pio/libdeps/esp32-s3-devkitc-1/U8g2/src/clib/u8x8.h \
  .pio/libdeps/esp32-s3-devkitc-1/U8g2/src/clib/u8g2.h \
  .pio/libdeps/esp32-s3-devkitc-1/U8g2/src/clib/u8x8.h src/BleManager.h \
- src/ConfigManager.h src/ConfigData.h src/OtaManager.h src/PowerManager.h \
+ src/ConfigManager.h src/ConfigData.h src/InterfaceCore.h \
+ src/ConfigValidation.h src/OtaManager.h src/PowerManager.h \
  src/BatteryReader.h src/SharedState.h src/SystemController.h \
  .pio/libdeps/esp32-s3-devkitc-1/RTClib/src/RTClib.h \
  .pio/libdeps/esp32-s3-devkitc-1/Adafruit\ BusIO/Adafruit_I2CDevice.h \

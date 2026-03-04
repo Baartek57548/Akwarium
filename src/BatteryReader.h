@@ -3,11 +3,11 @@
 
 #include <Arduino.h>
 
-// Czytnik napiecia baterii RTC (CR2032) przez dzielnik rezystorowy.
-// Implementacja: oversampling 16 prob, mnoznik dzielnika 1.597 (skalibrowany)
+// Czytnik napiecia baterii podtrzymania RTC (CR2025/CR2032).
+// Dla tej plytki pomiar jest 1:1 (bez dzielnika), z mozliwoscia kalibracji.
 class BatteryReader {
 public:
-  // pinAdc  - pin ADC do pomiaru napiecia (przez dzielnik)
+  // pinAdc  - pin ADC do pomiaru napiecia baterii
   BatteryReader(uint8_t pinAdc);
 
   void init();
@@ -23,9 +23,10 @@ public:
 private:
   uint8_t _pinAdc;
 
-  static constexpr float V_REF = 3.3f;
-  static constexpr float ADC_RESOLUTION = 4095.0f;
-  static constexpr float DIVIDER_MULT = 1.57769f;
+  // Jesli w hardware jest dzielnik, ustaw tu odpowiedni mnoznik > 1.0f.
+  static constexpr float INPUT_SCALE_MULT = 1.0f;
+  // Dodatkowa kalibracja jednopunktowa (1.0f = brak korekty).
+  static constexpr float CALIBRATION_MULT = 1.0f;
   static constexpr uint8_t SAMPLES = 30;
 
   // Stan pomiaru asynchronicznego
@@ -35,7 +36,7 @@ private:
   uint8_t _measCount = 0;
   float _measResult = NAN;
 
-  float convertRawToVoltage(float rawValue) const;
+  float convertMilliVoltsToVoltage(float milliVolts) const;
 };
 
 #endif

@@ -4,12 +4,13 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
+
 Config ConfigManager::sysConfig;
 static Preferences preferences;
 static const char *PREF_NAMESPACE = "Akwarium";
 static SemaphoreHandle_t configMutex = nullptr;
 
-static bool lockConfig(TickType_t timeoutTicks = pdMS_TO_TICKS(100)) {
+static bool lockConfig(TickType_t timeoutTicks = portMAX_DELAY) {
   if (configMutex == nullptr) {
     return false;
   }
@@ -110,9 +111,8 @@ void ConfigManager::init() {
 
   preferences.begin(PREF_NAMESPACE, false);
 
-  if (!lockConfig()) {
-    Serial.println(
-        "[CONFIG] BLAD: timeout lock podczas init(), ladowanie default.");
+  if (!lockConfig(portMAX_DELAY)) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas init(), ladowanie default.");
     loadDefaultConfig();
     save();
     return;
@@ -189,58 +189,69 @@ void ConfigManager::init() {
 }
 
 void ConfigManager::save() {
-  if (!lockConfig()) {
+  if (!lockConfig(portMAX_DELAY)) {
     Serial.println("[CONFIG] BLAD: timeout lock podczas save().");
     return;
   }
 
-  sysConfig.version = CONFIG_VERSION;
-  sysConfig.magic = CONFIG_MAGIC;
-  sysConfig.crc32 = calculateCrc32(sysConfig);
-  preferences.putBytes("sysConfig", &sysConfig, sizeof(Config));
+  Config cfg = sysConfig;
   unlockConfig();
 
-  Serial.println("[CONFIG] Zapisano nowa konfiguracje (zabezpieczona CRC32)");
+  if (!updateAndSave(cfg)) {
+    Serial.println("[CONFIG] BLAD: nie udalo sie zapisac konfiguracji w save().");
+  }
 }
 
-void ConfigManager::saveConfig(const Config &cfg) {
-  if (!lockConfig()) {
-    Serial.println("[CONFIG] BLAD: timeout lock podczas saveConfig().");
-    return;
+bool ConfigManager::updateAndSave(const Config &cfg) {
+  if (!lockConfig(portMAX_DELAY)) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas updateAndSave().");
+    return false;
   }
 
   sysConfig = cfg;
   sysConfig.version = CONFIG_VERSION;
   sysConfig.magic = CONFIG_MAGIC;
   sysConfig.crc32 = calculateCrc32(sysConfig);
-  preferences.putBytes("sysConfig", &sysConfig, sizeof(Config));
+  size_t written = preferences.putBytes("sysConfig", &sysConfig, sizeof(Config));
   unlockConfig();
 
-  Serial.println("[CONFIG] Zapisano konfiguracje przez saveConfig().");
+  if (written != sizeof(Config)) {
+    Serial.println("[CONFIG] BLAD: niepelny zapis konfiguracji.");
+    return false;
+  }
+
+  Serial.println("[CONFIG] Zapisano konfiguracje przez updateAndSave().");
+  return true;
 }
 
+Config ConfigManager::getCopy() {
+  Config snapshot = {};
+  if (!lockConfig(portMAX_DELAY)) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas getCopy().");
+    return snapshot;
+  }
+
+  snapshot = sysConfig;
+  unlockConfig();
+  return snapshot;
+}
+
+void ConfigManager::saveConfig(const Config &cfg) {
+  if (!updateAndSave(cfg)) {
+    Serial.println("[CONFIG] BLAD: zapis saveConfig() nieudany.");
+  }
+}
+
+Config ConfigManager::getConfigSnapshot() { return getCopy(); }
+
 void ConfigManager::resetToDefault() {
-  if (!lockConfig()) {
+  if (!lockConfig(portMAX_DELAY)) {
     Serial.println("[CONFIG] BLAD: timeout lock podczas resetToDefault().");
     return;
   }
 
   loadDefaultConfig();
+  Config defaults = sysConfig;
   unlockConfig();
-  save();
+  updateAndSave(defaults);
 }
-
-Config ConfigManager::getConfigSnapshot() {
-  Config snapshot = {};
-
-  if (lockConfig(pdMS_TO_TICKS(20))) {
-    snapshot = sysConfig;
-    unlockConfig();
-  } else {
-    snapshot = sysConfig;
-  }
-
-  return snapshot;
-}
-
-Config ConfigManager::getCopy() { return sysConfig; }

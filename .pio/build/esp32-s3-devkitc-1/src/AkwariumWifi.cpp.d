@@ -206,7 +206,7 @@
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/Uri.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/detail/RequestHandler.h \
  src/OtaManager.h src/PowerManager.h src/BatteryReader.h src/ConfigData.h \
- src/WebAssets.h src/arduino_secrets.h \
+ src/SecretConfig.h src/arduino_secrets.template.h src/WebAssets.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/DNSServer/src/DNSServer.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/Update/src/Update.h \

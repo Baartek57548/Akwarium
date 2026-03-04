@@ -4,4 +4,5 @@ src/build/
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
-
+do wykonania.txt
+src/arduino_secrets.h
