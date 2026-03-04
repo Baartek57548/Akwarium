@@ -2,7 +2,6 @@
 #include "AkwariumWifi.h"
 #include "ConfigManager.h"
 #include "ConfigValidation.h"
-#include "InterfaceCore.h"
 #include "LogManager.h"
 #include "PowerManager.h"
 #include "SecretConfig.h"
@@ -19,10 +18,8 @@
 #include <esp_err.h>
 
 #include <cstdlib>
-#include <errno.h>
 #include <map>
 #include <string>
-#include <sys/time.h>
 
 // UUIDs
 #define SERVICE_UUID "4fafc201-1fb5-459e-8bcc-c5c9c331914b"
@@ -117,79 +114,6 @@ static bool tryGetInt(JsonObjectConst obj, const char *key, long &out) {
   }
 
   return false;
-}
-
-static bool tryGetUInt64(JsonObjectConst obj, const char *key, uint64_t &out) {
-  if (!obj.containsKey(key)) {
-    return false;
-  }
-
-  JsonVariantConst v = obj[key];
-  if (v.is<unsigned long>()) {
-    out = static_cast<uint64_t>(v.as<unsigned long>());
-    return true;
-  }
-  if (v.is<unsigned int>()) {
-    out = static_cast<uint64_t>(v.as<unsigned int>());
-    return true;
-  }
-  if (v.is<long>()) {
-    long value = v.as<long>();
-    if (value < 0) {
-      return false;
-    }
-    out = static_cast<uint64_t>(value);
-    return true;
-  }
-  if (v.is<int>()) {
-    int value = v.as<int>();
-    if (value < 0) {
-      return false;
-    }
-    out = static_cast<uint64_t>(value);
-    return true;
-  }
-  if (v.is<const char *>()) {
-    const char *raw = v.as<const char *>();
-    if (raw == nullptr || raw[0] == '\0') {
-      return false;
-    }
-
-    errno = 0;
-    char *endPtr = nullptr;
-    unsigned long long parsed = strtoull(raw, &endPtr, 10);
-    if (errno == ERANGE || endPtr == raw || *endPtr != '\0') {
-      return false;
-    }
-
-    out = static_cast<uint64_t>(parsed);
-    return true;
-  }
-
-  return false;
-}
-
-static bool parseEpochForRtc(uint64_t rawEpoch, uint32_t &epochUtc,
-                             uint32_t &epochRtc, long tzOffsetMin) {
-  uint64_t normalized = rawEpoch;
-
-  // Akceptujemy epoch w sekundach lub milisekundach.
-  if (normalized > 4102444800ULL && normalized <= 4102444800000ULL) {
-    normalized /= 1000ULL;
-  }
-  if (normalized < 1704067200ULL || normalized > 4102444800ULL) {
-    return false;
-  }
-
-  int64_t adjusted = static_cast<int64_t>(normalized) -
-                     static_cast<int64_t>(tzOffsetMin) * 60LL;
-  if (adjusted < 1704067200LL || adjusted > 4102444800LL) {
-    return false;
-  }
-
-  epochUtc = static_cast<uint32_t>(normalized);
-  epochRtc = static_cast<uint32_t>(adjusted);
-  return true;
 }
 
 static void publishResult(const char *type, const char *code) {
@@ -340,7 +264,7 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
     Serial.println("[BLE] Command action: " + String(action));
 
     if (strcmp(action, "feed_now") == 0) {
-      InterfaceCore::triggerFeedNow();
+      SystemController::feedNow();
       publishResult("ack", "feed_now");
       BleManager::notifyStatus();
       return;
@@ -352,60 +276,22 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
         publishResult("err", "missing_angle");
         return;
       }
-      InterfaceRuleResult servoResult = InterfaceCore::setManualServoAngle(angle);
-      if (!servoResult.isOk()) {
-        publishResult("err", "invalid_angle");
-        return;
-      }
+      SystemController::setManualServo(constrain(static_cast<int>(angle), 0, 90));
       publishResult("ack", "set_servo");
       BleManager::notifyStatus();
       return;
     }
 
     if (strcmp(action, "clear_servo") == 0) {
-      InterfaceCore::clearManualServo();
+      SystemController::clearManualServo();
       publishResult("ack", "clear_servo");
       BleManager::notifyStatus();
       return;
     }
 
     if (strcmp(action, "clear_critical_logs") == 0) {
-      InterfaceCore::clearCriticalLogs();
+      LogManager::clearCriticalLogs();
       publishResult("ack", "clear_logs");
-      return;
-    }
-
-    if (strcmp(action, "set_time") == 0) {
-      uint64_t rawEpoch = 0;
-      if (!tryGetUInt64(root, "epoch", rawEpoch)) {
-        publishResult("err", "missing_epoch");
-        return;
-      }
-
-      long tzOffsetMin = 0;
-      if (root.containsKey("tzOffsetMin")) {
-        if (!tryGetInt(root, "tzOffsetMin", tzOffsetMin) ||
-            tzOffsetMin < -840 || tzOffsetMin > 840) {
-          publishResult("err", "invalid_tz");
-          return;
-        }
-      }
-
-      uint32_t epochUtc = 0;
-      uint32_t epochRtc = 0;
-      if (!parseEpochForRtc(rawEpoch, epochUtc, epochRtc, tzOffsetMin)) {
-        publishResult("err", "invalid_epoch");
-        return;
-      }
-
-      timeval tv = {};
-      tv.tv_sec = static_cast<time_t>(epochUtc);
-      tv.tv_usec = 0;
-      settimeofday(&tv, nullptr);
-      syncSystemTime(epochRtc);
-
-      publishResult("ack", "set_time");
-      BleManager::notifyStatus();
       return;
     }
 
@@ -628,20 +514,25 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    InterfaceRuleResult patchResult =
-        InterfaceCore::applyConfigPatchAndSave(patch, parseInvalidFields);
+    Config cfg = ConfigManager::getCopy();
+    ConfigValidationResult validation = {};
+    ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
+    uint8_t invalidFields = validation.invalidFields + parseInvalidFields;
 
-    if (!patchResult.isOk()) {
-      publishResult("err", patchResult.code == InterfaceRuleCode::SAVE_FAILED
-                               ? "save_failed"
-                               : "invalid_values");
+    if (validation.hasAnyApplied()) {
+      if (!ConfigManager::updateAndSave(cfg)) {
+        publishResult("err", "save_failed");
+        return;
+      }
+
+      BleManager::notifyStatus();
+      Serial.println("[BLE] Settings updated & saved.");
+      publishResult("ack", invalidFields > 0 ? "settings_partial"
+                                            : "settings_saved");
       return;
     }
 
-    BleManager::notifyStatus();
-    Serial.println("[BLE] Settings updated & saved.");
-    publishResult("ack", patchResult.isPartial() ? "settings_partial"
-                                                 : "settings_saved");
+    publishResult("err", "invalid_values");
   }
 
   void onRead(BLECharacteristic *pCharacteristic) override {

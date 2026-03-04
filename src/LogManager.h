@@ -2,41 +2,53 @@
 #define LOG_MANAGER_H
 
 #include <Arduino.h>
+#include <RTClib.h>
 
 class LogManager {
 public:
+  struct LogRecord {
+    uint32_t epoch;
+    char level; // 'I' / 'W' / 'E'
+    char message[72];
+  };
+
   static void init();
 
-  // Normalne logowanie do terminala (tylko w pamieci)
+  // Logi dzienne (kasowane automatycznie po zmianie dnia)
   static void logInfo(const char *msg);
-  static void logWarn(const char *msg);
 
-  // Zapisywane asynchronicznie krytyczne bledy w NVS
+  // Logi wazne (oznaczone '*', trwale w NVS)
+  static void logWarn(const char *msg);
   static void logError(const char *msg);
 
+  static void syncOledLogs();
   static void clearCriticalLogs();
   static String getLogsAsJson();
 
 private:
-  static void appendWebLog(const char *msg);
+  static const int MAX_DAILY_LOGS = 80;
+  static const int MAX_IMPORTANT_LOGS = 40;
 
-  static const int WEB_MAX_LOGS = 20;
-  static String webLogs[WEB_MAX_LOGS];
-  static int webLogsHead;
-  static int webLogsCount;
+  static LogRecord dailyLogs[MAX_DAILY_LOGS];
+  static int dailyLogsHead;
+  static int dailyLogsCount;
 
-  struct CriticalLog {
-    uint32_t epoch;
-    char message[64];
-  };
+  static LogRecord importantLogs[MAX_IMPORTANT_LOGS];
+  static int importantLogsHead;
+  static int importantLogsCount;
 
-  static const int MAX_CRITICAL_LOGS = 20;
-  static CriticalLog criticalLogs[MAX_CRITICAL_LOGS];
-  static int criticalLogsCount;
-  static int criticalLogsHead;
+  static int currentDayKey;
+  static bool initialized;
 
-  static void loadCriticalLogs();
-  static void saveCriticalLog(const CriticalLog &log, int index);
+  static void logMessage(char level, const char *msg);
+  static void appendDailyLogLocked(const LogRecord &log);
+  static void appendImportantLogLocked(const LogRecord &log);
+  static void pushLogToOled(const LogRecord &log, bool important);
+  static void rotateDailyIfNeededLocked(const DateTime &now);
+
+  static void loadImportantLogsLocked();
+  static void saveImportantLogLocked(const LogRecord &log, int index);
+  static void saveImportantMetaLocked();
 };
 
 #endif // LOG_MANAGER_H

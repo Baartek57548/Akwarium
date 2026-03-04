@@ -11,6 +11,8 @@ ServoController::ServoController(int pin, int startAngle)
 }
 
 void ServoController::begin() {
+  // Przywrocenie zachowania ze stabilnej, starszej wersji:
+  // inicjalne ustawienie pozycji startowej po boot.
   servoMotor.attach(servoPin);
   servoMotor.write(initialAngle);
   delay(MOVE_TIME);

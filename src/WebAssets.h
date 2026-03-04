@@ -1016,6 +1016,7 @@ const radioLogs = document.getElementsByName('logTypeToggle');
 
 // State for active log view
 let currentLogView = 'normal'; // normal or critical
+let lastDiagSignature = "";
 
 radioLogs.forEach(radio => {
     radio.addEventListener('change', (e) => {
@@ -1165,6 +1166,14 @@ function updateUI(data) {
         otaNetworkMode.innerText = data.network.apMode ? "Access Point" : "Station (WIFI DOM)";
         otaNetworkMode.style.color = data.network.apMode ? "var(--warning)" : "var(--success)";
     }
+
+    if (data.diag) {
+        const sig = `${data.diag.bootCount}|${data.diag.lastResetReason}|${data.diag.lastWakeupCause}|${data.diag.brownoutCount}|${data.diag.wdtCount}|${data.diag.panicCount}`;
+        if (sig !== lastDiagSignature) {
+            lastDiagSignature = sig;
+            addLogLine(`DIAG boot=${data.diag.bootCount} reset=${data.diag.lastResetReason} wake=${data.diag.lastWakeupCause} brownout=${data.diag.brownoutCount} wdt=${data.diag.wdtCount} panic=${data.diag.panicCount}`, "system");
+        }
+    }
 }
 
 function updateRelayUI(isOn, badgeEl, indicatorEl) {
@@ -1196,11 +1205,10 @@ function padTime(hour, min) {
 function syncDeviceTime() {
     const now = new Date();
     const epoch = Math.floor(now.getTime() / 1000);
-    const tzOffsetMin = now.getTimezoneOffset();
 
     addLogLine(`Żądanie synchronizacji czasu (Epoch: ${epoch})...`, "system");
 
-    fetch(`${API_TIME}?epoch=${epoch}&tzOffsetMin=${tzOffsetMin}`, { method: 'POST' })
+    fetch(`${API_TIME}?epoch=${epoch}`, { method: 'POST' })
         .then(response => {
             if (response.ok) {
                 addLogLine("Czas zsynchronizowany z układem ESP32 pomyślnie.", "success");

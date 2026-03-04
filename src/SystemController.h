@@ -27,9 +27,14 @@ public:
   static void setManualServo(int angle);
   static void clearManualServo();
   static int getServoPosition();
+  static void setTestOverride(bool lightOn, bool heaterOn, bool filterOn,
+                              uint8_t aerationPercent);
+  static void clearTestOverride();
+  static bool isTestOverrideActive();
 
   // Kalibracja karmnika przy uruchomieniu (wywoływane w setup przed VideoTask)
   static void runFeederCalibrationOnPowerUp(U8G2 *display);
+  static void runFeederCalibrationFromMenu(U8G2 *display);
 
   // Funkcja zarzadzania energia, wywolywana glownie przez VideoTask lub loop
   static void handlePowerManagement(U8G2 *display, AquariumAnimation *anim);
@@ -56,6 +61,11 @@ private:
   static bool manualServoOverride;
   static int manualServoAngle;
   static unsigned long manualServoTimer;
+  static bool testOverrideActive;
+  static bool testLightOn;
+  static bool testHeaterOn;
+  static bool testFilterOn;
+  static uint8_t testAerationPercent;
 
   static uint8_t tempInvalidReadCount;
   static bool tempSensorErrorLogged;

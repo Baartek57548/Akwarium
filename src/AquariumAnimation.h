@@ -4,8 +4,9 @@
 #include <U8g2lib.h>
 
 struct LogEntry {
-  char message[20];
-  char time[6];
+  char message[24];
+  char stamp[12]; // DD.MM HH:MM
+  bool important;
 };
 
 // Struktury do animacji proceduralnej (rybki)
@@ -52,6 +53,7 @@ private:
   bool isFilterOn;
   bool isLightOn;
   bool isHeaterOn;
+  uint8_t currentAerationPercent;
 
   // Harmonogram Karmienia
   uint8_t feedFreq; // 0=OFF, 1=Codziennie, 2=Co 2 dni, 3=Co 3 dni
@@ -204,7 +206,7 @@ public:
   }
   void setTargetTempSetting(uint8_t value);
   void logScrollNext();
-  void addLog(const char *message, const char *time);
+  void addLog(const char *message, const char *stamp, bool important);
   void clearLogs();
   void scheduleEditIncrement();
   void startEditing();

@@ -7,7 +7,6 @@
 #include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
-#include <errno.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -34,57 +33,6 @@ static volatile bool staOffRequested = false;
 static volatile bool staIsOff = false;
 
 WebServer &AkwariumWifi::getServer() { return server; }
-
-static bool parseUintStrict(const String &raw, uint64_t &out) {
-  if (raw.length() == 0) {
-    return false;
-  }
-
-  errno = 0;
-  char *endPtr = nullptr;
-  unsigned long long parsed = strtoull(raw.c_str(), &endPtr, 10);
-  if (errno == ERANGE || endPtr == raw.c_str() || *endPtr != '\0') {
-    return false;
-  }
-
-  out = static_cast<uint64_t>(parsed);
-  return true;
-}
-
-static bool parseLongStrict(const String &raw, long &out) {
-  if (raw.length() == 0) {
-    return false;
-  }
-
-  errno = 0;
-  char *endPtr = nullptr;
-  long parsed = strtol(raw.c_str(), &endPtr, 10);
-  if (errno == ERANGE || endPtr == raw.c_str() || *endPtr != '\0') {
-    return false;
-  }
-
-  out = parsed;
-  return true;
-}
-
-static bool parseEpochArg(const String &raw, uint32_t &epochSec) {
-  uint64_t parsed = 0;
-  if (!parseUintStrict(raw, parsed)) {
-    return false;
-  }
-
-  // Akceptujemy epoch w sekundach lub milisekundach.
-  if (parsed > 4102444800ULL && parsed <= 4102444800000ULL) {
-    parsed /= 1000ULL;
-  }
-
-  if (parsed < 1704067200ULL || parsed > 4102444800ULL) {
-    return false;
-  }
-
-  epochSec = static_cast<uint32_t>(parsed);
-  return true;
-}
 
 static void setupNetwork() {
   WiFi.mode(WIFI_STA);
@@ -131,38 +79,8 @@ static void setupWebServer() {
   server.on("/settime", HTTP_POST, []() {
     if (server.hasArg("epoch")) {
       PowerManager::registerActivity();
-      uint32_t epochUtc = 0;
-      if (!parseEpochArg(server.arg("epoch"), epochUtc)) {
-        server.send(400, "text/plain", "Niepoprawny epoch");
-        return;
-      }
-
-      uint32_t rtcEpoch = epochUtc;
-      if (server.hasArg("tzOffsetMin")) {
-        long tzOffsetMin = 0;
-        if (!parseLongStrict(server.arg("tzOffsetMin"), tzOffsetMin) ||
-            tzOffsetMin < -840 || tzOffsetMin > 840) {
-          server.send(400, "text/plain", "Niepoprawny tzOffsetMin");
-          return;
-        }
-
-        // JS: getTimezoneOffset() = UTC - LOCAL (w minutach).
-        int64_t adjusted = static_cast<int64_t>(epochUtc) -
-                           static_cast<int64_t>(tzOffsetMin) * 60LL;
-        if (adjusted < 1704067200LL || adjusted > 4102444800LL) {
-          server.send(400, "text/plain", "Epoch poza zakresem");
-          return;
-        }
-        rtcEpoch = static_cast<uint32_t>(adjusted);
-      }
-
-      time_t epoch = static_cast<time_t>(epochUtc);
-      struct timeval tv;
-      tv.tv_sec = epoch;
-      tv.tv_usec = 0;
-      settimeofday(&tv, NULL);
-
-      syncSystemTime(rtcEpoch);
+      time_t epoch = server.arg("epoch").toInt();
+      syncSystemTime((uint32_t)epoch);
 
       struct tm timeinfo;
       getLocalTime(&timeinfo);
@@ -378,4 +296,3 @@ String AkwariumWifi::getIP() {
 uint8_t AkwariumWifi::getConnectedClients() {
   return isAPMode ? WiFi.softAPgetStationNum() : 0;
 }
-
