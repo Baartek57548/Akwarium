@@ -228,7 +228,6 @@
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/detail/RequestHandler.h \
  src/AquariumAnimation.h src/BleManager.h src/LogManager.h \
  src/OtaManager.h src/PowerManager.h src/ScheduleManager.h \
- C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/libraries/Preferences/src/Preferences.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/driver/include/driver/rtc_io.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/include/soc/rtc_io_periph.h \
  C:/Users/Bartek/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/soc/esp32s3/include/soc/rtc_io_channel.h \
