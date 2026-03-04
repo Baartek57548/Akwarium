@@ -1,9 +1,10 @@
 {
-	"folders": [
-		{
-			"name": "AkwariumV2_wifi",
-			"path": "."
-		}
+    "folders": [
+        {
+            "path": "."
+        }
 	],
-	"settings": {}
+	"settings": {
+		"DockerRun.DisableAutoGenerateConfig": true
+	}
 }
