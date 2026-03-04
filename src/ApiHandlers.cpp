@@ -5,7 +5,6 @@
 #include "LogManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
-#include "SystemDiagnostics.h"
 #include "SystemController.h"
 #include <WebServer.h>
 #include <cstdlib>
@@ -71,9 +70,7 @@ void setupApiEndpoints() {
     if (isnan(voltage))
       voltage = 0.0f;
 
-    const SystemDiagSnapshot diag = SystemDiagnostics::getSnapshot();
-
-    char json[1024];
+    char json[700];
     snprintf(
         json, sizeof(json),
         "{\"temperature\":{\"current\":%.1f,\"target\":%.1f,\"hysteresis\":%."
@@ -91,10 +88,7 @@ void setupApiEndpoints() {
         "\"servoPreOffMins\":%d},"
         "\"feeding\":{\"hour\":%d,\"minute\":%d,\"freq\":%d,\"lastFeedEpoch\":%"
         "u},"
-        "\"network\":{\"ip\":\"%s\",\"apMode\":%s},"
-        "\"diag\":{\"bootCount\":%u,\"lastResetReason\":\"%s\","
-        "\"lastWakeupCause\":\"%s\",\"brownoutCount\":%u,\"wdtCount\":%u,"
-        "\"panicCount\":%u}}",
+        "\"network\":{\"ip\":\"%s\",\"apMode\":%s}}",
         isnan(snap.temperature) ? -99.9 : snap.temperature, cfg.targetTemp,
         cfg.tempHysteresis, isnan(snap.minTemp) ? 20.0 : snap.minTemp,
         (unsigned int)snap.minTempEpoch, voltage,
@@ -108,10 +102,7 @@ void setupApiEndpoints() {
         cfg.feedHour, cfg.feedMinute, cfg.feedMode,
         (unsigned int)cfg.lastFeedEpoch,
         AkwariumWifi::getIP().c_str(),
-        AkwariumWifi::getIsAPMode() ? "true" : "false",
-        (unsigned int)diag.bootCount, diag.lastResetReason, diag.lastWakeupCause,
-        (unsigned int)diag.brownoutCount, (unsigned int)diag.wdtCount,
-        (unsigned int)diag.panicCount);
+        AkwariumWifi::getIsAPMode() ? "true" : "false");
     server.sendHeader("Connection", "close");
     server.send(200, "application/json", json);
   });

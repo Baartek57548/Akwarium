@@ -385,7 +385,6 @@ AquariumAnimation::AquariumAnimation(U8G2 *u8g2_instance) {
   isFilterOn = false;
   isLightOn = false;
   isHeaterOn = false;
-  currentAerationPercent = 0;
   feedFreq = 1;
   feedDaysPassed = 0;
 
@@ -590,7 +589,6 @@ void AquariumAnimation::setDate(int day, int month, int year) {
 void AquariumAnimation::setAeration(uint8_t percent) {
   if (percent > 100)
     percent = 100;
-  currentAerationPercent = percent;
   snprintf(valBuffer, sizeof(valBuffer), "%d%%", percent);
 }
 void AquariumAnimation::setBattery(uint8_t percent) {
@@ -645,7 +643,7 @@ void AquariumAnimation::updatePhysics() {
 // --- LOGIKA NAWIGACJI MENU ---
 void AquariumAnimation::menuNext() {
   menuSelection++;
-  if (menuSelection > 6) {
+  if (menuSelection > 5) {
     menuSelection = 0;
     menuScrollOffset = 0;
   } else if (menuSelection > menuScrollOffset + 2) {
@@ -982,19 +980,17 @@ void AquariumAnimation::drawFeedingScreen() {
 }
 
 // LOGI
-void AquariumAnimation::addLog(const char *message, const char *stamp,
-                               bool important) {
+void AquariumAnimation::addLog(const char *message, const char *time) {
   if (logCount >= 20) {
     for (int i = 0; i < 19; i++) {
       logs[i] = logs[i + 1];
     }
     logCount = 19;
   }
-  strncpy(logs[logCount].message, message, sizeof(logs[logCount].message) - 1);
-  logs[logCount].message[sizeof(logs[logCount].message) - 1] = '\0';
-  strncpy(logs[logCount].stamp, stamp, sizeof(logs[logCount].stamp) - 1);
-  logs[logCount].stamp[sizeof(logs[logCount].stamp) - 1] = '\0';
-  logs[logCount].important = important;
+  strncpy(logs[logCount].message, message, 19);
+  logs[logCount].message[19] = '\0';
+  strncpy(logs[logCount].time, time, 5);
+  logs[logCount].time[5] = '\0';
   logCount++;
   if (logCount > 3)
     logScroll = logCount - 3;
@@ -1016,12 +1012,12 @@ void AquariumAnimation::drawLogs(bool btnBackState, bool btnSelectState,
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(95, 0, 95, 31);
+  display->drawLine(98, 0, 98, 31);
   display->drawLine(18, 0, 18, 31);
   display->drawLine(19, 10, 127, 10);
   display->drawLine(19, 21, 127, 21);
   display->drawXBMP(1, 8, 16, 16, image_operation_warning_bits);
-  display->setFont(u8g2_font_4x6_tr);
+  display->setFont(u8g2_font_profont10_tr);
   if (logCount == 0) {
     display->drawStr(26, 8, "Brak logow");
   } else {
@@ -1029,14 +1025,11 @@ void AquariumAnimation::drawLogs(bool btnBackState, bool btnSelectState,
       int index = logScroll + i;
       if (index < logCount) {
         int yPos = 8 + (i * 11);
-        char msgShort[16];
-        strncpy(msgShort, logs[index].message, 15);
-        msgShort[15] = '\0';
+        char msgShort[13];
+        strncpy(msgShort, logs[index].message, 12);
+        msgShort[12] = '\0';
         display->drawStr(26, yPos, msgShort);
-        display->drawStr(97, yPos, logs[index].stamp);
-        if (logs[index].important) {
-          display->drawStr(20, yPos, "*");
-        }
+        display->drawStr(101, yPos, logs[index].time);
         int arrowY = 3 + (i * 11);
         display->drawXBMP(21, arrowY, 3, 5, image_ButtonRightSmall_copy_bits);
       }
@@ -1063,7 +1056,7 @@ void AquariumAnimation::drawMenu(bool btnBackState, bool btnSelectState,
   display->drawLine(127, 1, 127, 32);
   display->drawLine(114, 0, 114, 31);
   const char *items[] = {"Harmonogramy", "Logi", "Data i Czas",
-                         "Test", "Kalibracja", "Wifi", "Bluetooth"};
+                         "Test", "Wifi", "Bluetooth"};
   for (int i = 0; i < 3; i++) {
     int itemIndex = menuScrollOffset + i;
     int yPos = 9 + (i * 11);
@@ -1689,7 +1682,7 @@ void AquariumAnimation::enterTestMode() {
   testLight = isLightOn;
   testHeater = isHeaterOn;
   testFilter = isFilterOn;
-  testAerationVal = currentAerationPercent;
+  testAerationVal = 0;
   testSelection = 0;
   isEditing = false;
 }
@@ -1729,3 +1722,4 @@ uint8_t AquariumAnimation::getTestAeration() { return testAerationVal; }
 
 // EKRAN GĹĂ“WNY (FRAME)
 void AquariumAnimation::drawFrame() { HomeRenderer::drawFrame(this); }
+

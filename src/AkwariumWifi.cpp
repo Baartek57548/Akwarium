@@ -80,6 +80,11 @@ static void setupWebServer() {
     if (server.hasArg("epoch")) {
       PowerManager::registerActivity();
       time_t epoch = server.arg("epoch").toInt();
+      struct timeval tv;
+      tv.tv_sec = epoch;
+      tv.tv_usec = 0;
+      settimeofday(&tv, NULL);
+
       syncSystemTime((uint32_t)epoch);
 
       struct tm timeinfo;
@@ -296,3 +301,4 @@ String AkwariumWifi::getIP() {
 uint8_t AkwariumWifi::getConnectedClients() {
   return isAPMode ? WiFi.softAPgetStationNum() : 0;
 }
+

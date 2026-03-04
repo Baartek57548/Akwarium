@@ -1,148 +1,42 @@
-# AKWARIUM-1.2.1
+# Sterownik Akwarium PRO v5.1
 
-Sterownik akwarium oparty o ESP32-S3. Uklad automatyzuje oswietlenie, filtracje, napowietrzanie, dogrzewanie i karmienie, a jednoczesnie udostepnia lokalna obsluge (OLED + przyciski), panel WWW i BLE.
+Dokumentacja tego pliku jest zaktualizowana pod aktualny kod w folderze `src/`.
 
-Pelna specyfikacja inzynierska jest w `Info.md`. Ten plik to opis urzadzenia i sposobu uzywania.
+## 1. Co robi projekt
 
-## 1. Co to jest to urzadzenie
+Sterownik pracuje na ESP32-S3 (FreeRTOS, dual core) i obsluguje:
 
-Jest to centralny kontroler akwarium, ktory:
+- harmonogram swiatla, filtra i napowietrzania
+- pomiar temperatury DS18B20 + sterowanie grzalka (histereza + ograniczenie przelaczen)
+- karmnik automatyczny i reczny (z czujnikiem i timeoutem)
+- pomiar napiecia baterii RTC CR2032
+- lokalny panel WWW + OTA przez upload pliku `.bin`
+- lokalny interfejs OLED 128x32 + przyciski fizyczne
+- logi systemowe (RAM + trwale logi krytyczne w Preferences)
+- usypianie ekranu i Deep Sleep
 
-- wlacza/wylacza swiatlo wg harmonogramu dnia
-- steruje pompka filtracyjna wg harmonogramu filtra
-- steruje grzalka na podstawie DS18B20 (setpoint + histereza)
-- steruje serwem napowietrzania wg harmonogramu i warunkow temperatury
-- uruchamia karmnik automatycznie i recznie
-- pokazuje status na ekranie OLED
-- udostepnia konfiguracje i podglad stanu przez WWW i BLE
+## 2. Architektura (aktualna)
 
-## 2. Najwazniejsze funkcje
+Najwazniejsze moduly:
 
-- harmonogramy:
-  - dzien (swiatlo)
-  - filtr (pompka)
-  - aeracja (serwo)
-  - karmienie
-- lokalna obsluga przez 3 przyciski
-- REST API (`/api/status`, `/api/logs`, `/api/action`)
-- OTA przez `/update`
-- BLE GATT z szyfrowaniem (MITM + bond + PIN)
-- logi i diagnostyka resetow zapisane trwale w NVS
-- RTC DS3231 z czasem UTC i strefa Europe/Warsaw po stronie logiki
+- `AkwariumV4.ino` - setup, loop i UI state machine
+- `SystemController.*` - glowna logika sterowania i decyzje runtime
+- `AkwariumWifi.*` - WiFi STA/AP, HTTP server, captive portal DNS, OTA upload endpoint
+- `BleManager.*` - serwer BLE GATT (status, komendy, ustawienia)
+- `ApiHandlers.*` - endpointy `/api/status`, `/api/logs`, `/api/action`
+- `ConfigManager.*` + `ConfigData.h` - konfiguracja w Preferences (CRC32)
+- `ConfigValidation.*` - wspolna walidacja i clamp configu (UI/BLE/HTTP)
+- `ScheduleManager.*` - okna czasowe i auto-feeding
+- `PowerManager.*` + `BatteryReader.*` - bateria, aktywnosc, tryby zasilania
+- `TemperatureController.*` - DS18B20 i grzalka
+- `FeederController.*` - silnik karmnika + logika czujnika
+- `ServoController.*` - serwo napowietrzania (attach tylko na czas ruchu)
+- `SharedState.*` - bezpieczny snapshot danych miedzy rdzeniami
+- `AquariumAnimation.*` + `UIRenderers.*` - OLED/UI
 
-## 3. Jak urzadzenie dziala na co dzien
+## 3. Piny (z kodu)
 
-## 3.1 Cykl dzienny
-
-W kazdej iteracji firmware:
-
-1. odczytuje sensory (temperatura, bateria podtrzymania RTC)
-2. liczy, czy trwa dzien i czy aktywne sa okna harmonogramow
-3. wyznacza docelowe stany wyjsc
-4. zapisuje te stany na piny
-
-## 3.2 Logika wykonawcza (wyjscia)
-
-Aktualnie wszystkie 3 wyjscia glowne maja ten sam model pinowy:
-
-- `ON => LOW`
-- `OFF => HIGH`
-
-Dotyczy:
-
-- swiatlo (`LIGHT_PIN`)
-- pompka (`PUMP_PIN`)
-- grzalka (`HEATER_PIN`)
-
-Tryb AUTO:
-
-- swiatlo = stan dnia
-- pompka = okno filtra (z wymuszeniem OFF w nocy)
-- grzalka = tylko w dzien i tylko przy poprawnym odczycie temperatury
-
-Tryb TESTS (menu testowe):
-
-- recznie nadpisuje stany swiatla, grzalki i pompki
-- po wyjsciu z TESTS wraca do automatyki
-
-## 3.3 Grzalka i bezpieczenstwo
-
-- setpoint i histereza sa konfigurowalne
-- minimalny odstep miedzy przelaczeniami: 120 s
-- hard cut-off: przy `>= 28.0C` grzalka OFF
-- w nocy i przy awarii czujnika grzalka jest wymuszana na OFF
-
-## 3.4 Karmienie
-
-Karmnik mozna uruchomic:
-
-- z harmonogramu
-- z web API
-- z BLE
-- z lokalnego skrotu (3 przyciski przytrzymane)
-
-Sterownik karmnika ma timeout bezpieczenstwa i logike stopu po cyklu czujnika.
-
-## 4. Interfejsy uzytkownika
-
-## 4.1 OLED + przyciski
-
-Urzadzenie ma lokalne menu:
-
-- HOME (status)
-- MENU
-- harmonogramy (light/aeration/filter/temp/feeding)
-- logi
-- ustawianie daty/czasu
-- testy
-- AP mode
-- Bluetooth mode
-- ekran karmienia
-
-Uwaga praktyczna:
-
-- po wygaszeniu OLED pierwsze nacisniecie tylko wybudza ekran
-
-## 4.2 Panel WWW
-
-Po wejsciu na IP sterownika dostepny jest panel:
-
-- status temperatury, baterii, przelacznikow i diagnostyki
-- edycja harmonogramow
-- reczne akcje (`feed_now`, serwo)
-- podglad logow
-- OTA firmware (`/update`)
-
-## 4.3 BLE
-
-- nazwa urzadzenia: `Akwarium_BLE`
-- parowanie: statyczny PIN (`SECRET_BLE_PASSKEY`)
-- status i ustawienia dostepne przez characteristic GATT
-
-## 5. Komunikacja i API
-
-## 5.1 Endpoints
-
-- `GET /` - panel web
-- `POST /settime?epoch=<unix_utc>` - ustawienie czasu
-- `POST /update` - OTA
-- `GET /api/status` - status runtime
-- `GET /api/logs` - logi
-- `POST /api/action` - akcje i zapis harmonogramu
-
-## 5.2 `/api/action` (najwazniejsze akcje)
-
-- `action=feed_now`
-- `action=set_servo&angle=<0..90>`
-- `action=clear_servo`
-- `action=clear_critical_logs`
-- `action=save_schedule` + pola harmonogramow/temperatury
-
-## 6. Sprzet i podlaczenie
-
-## 6.1 Piny
-
-```text
+```
 BUTTON_UP_PIN      GPIO15
 BUTTON_SELECT_PIN  GPIO16
 BUTTON_DOWN_PIN    GPIO14
@@ -157,29 +51,22 @@ BAT_ADC_PIN        GPIO7
 BAT_EN_PIN         GPIO10
 FEEDER_SENSOR_PIN  GPIO12
 LIGHT_PIN          GPIO17
-
-I2C SDA            GPIO8
-I2C SCL            GPIO9
 ```
 
-## 6.2 Uwaga o przekaznikach
+Uwagi:
 
-Firmware zaklada, ze wyjscia sa aktywne stanem `LOW` (przekazniki active-low).
-Jesli modul wykonawczy jest aktywny stanem `HIGH`, nalezy dostosowac warstwe sprzetowa albo logike mapowania poziomow.
+- `LIGHT_PIN` jest aktywny w logice odwrotnej (`LOW = ON`, `HIGH = OFF`).
+- `PUMP_PIN` i `HEATER_PIN` dzialaja klasycznie (`HIGH = ON`).
 
-## 7. Szybki start
+## 4. Build i upload (PlatformIO)
 
-## 7.1 Konfiguracja sekretow
+Aktualne srodowisko w `platformio.ini`:
 
-1. Skopiuj `src/arduino_secrets.template.h` do `src/arduino_secrets.h`.
-2. Ustaw:
-   - `SECRET_SSID`
-   - `SECRET_PASS`
-   - `AP_SSID`
-   - `AP_PASSWORD`
-   - `SECRET_BLE_PASSKEY`
+- `env:esp32-s3-devkitc-1`
+- `platform = espressif32`
+- `framework = arduino`
 
-## 7.2 Build i upload
+Przyklady (zalecane, dziala nawet gdy `pio` nie jest w PATH):
 
 ```bash
 python -m platformio run
@@ -187,52 +74,111 @@ python -m platformio run -t upload
 python -m platformio device monitor -b 115200
 ```
 
-## 7.3 Pierwsze uruchomienie
+Alternatywnie (jesli masz `pio` w PATH):
 
-1. Sprawdz logi UART po starcie.
-2. Ustaw czas przez panel WWW (`/settime`), jesli RTC nie ma poprawnej daty.
-3. Zweryfikuj harmonogramy i temperatury w panelu.
-4. Sprawdz testowo `feed_now`.
+```bash
+pio run
+pio run -t upload
+pio device monitor -b 115200
+```
 
-## 8. Aktualny stan power management
+## 5. Konfiguracja WiFi/AP
 
-Aktualnie deep sleep runtime jest wylaczony.
-Aktywne jest tylko wygaszanie OLED po bezczynnosci (4 min, o ile `alwaysScreenOn=false`).
+Sekrety:
 
-Kod deep sleep istnieje, ale nie jest obecnie wlaczony w glownej sciezce pracy.
+- `SECRET_SSID`, `SECRET_PASS` - domowa siec WiFi (tryb STA)
+- `AP_SSID`, `AP_PASSWORD` - dane Access Point urzadzenia
+- `SECRET_BLE_PASSKEY` - PIN parowania BLE
 
-## 9. Diagnostyka i logi
+Start systemu:
 
-Urzadzenie zapisuje:
+- urzadzenie probuje polaczyc sie jako STA przez 6 s
+- po timeout pracuje offline (bez automatycznego AP)
+- AP uruchamia sie recznie z menu `Wifi`
 
-- logi biezace (RAM)
-- logi krytyczne trwale (NVS)
-- licznik bootow i przyczyny resetow (brownout/wdt/panic)
+Pliki:
 
-W panelu WWW i API mozna szybko sprawdzic:
+- `src/arduino_secrets.template.h` - bezpieczny template (fallback build/CI)
+- `src/arduino_secrets.h` - lokalny plik z prawdziwymi sekretami (ignorowany przez git)
 
-- `diag.bootCount`
-- `diag.lastResetReason`
-- `diag.lastWakeupCause`
-- `diag.brownoutCount`
-- `diag.wdtCount`
-- `diag.panicCount`
+## 6. Web panel i API
 
-## 10. Ograniczenia i uwagi praktyczne
+HTTP:
 
-- serwo i silnik karmnika moga generowac piki pradowe (dobry zapas zasilania jest wymagany)
-- brak poprawnej daty/czasu pogorszy dzialanie harmonogramow
-- przy OTA logika runtime jest wstrzymana do konca aktualizacji/restartu
+- `GET /` - panel WWW
+- `GET /style.css`, `GET /script.js` - assety
+- `POST /settime?epoch=<unix>` - synchronizacja czasu RTC
+- `POST /update` - OTA upload firmware
 
-## 11. Struktura projektu
+REST API:
 
-- `src/src.ino` - setup/loop i UI state machine
-- `src/SystemController.*` - logika runtime i I/O
-- `src/AkwariumWifi.*` - WiFi/AP/HTTP/OTA
-- `src/BleManager.*` - BLE
-- `src/ApiHandlers.*` - REST API
-- `src/Config*.{h,cpp}` - konfiguracja, walidacja, NVS
-- `src/TimeUtils.*` - czas i strefa
-- `src/SystemDiagnostics.*` - diagnostyka resetow
-- `src/LogManager.*` - logi
-- `Info.md` - pelna dokumentacja techniczna
+- `GET /api/status` - status urzadzenia (temp, bateria, przekazniki, serwo, harmonogram, siec)
+- `GET /api/logs` - logi normalne + krytyczne
+- `POST /api/action` - akcje sterujace
+
+Dozwolone akcje `action`:
+
+- `feed_now`
+- `set_servo` (wymaga `angle` 0..90)
+- `clear_servo`
+- `clear_critical_logs`
+- `save_schedule` (parametry harmonogramu i temperatury)
+
+## 7. UI i przyciski
+
+Menu glowne (OLED): `Harmonogramy`, `Logi`, `Data i Czas`, `Test`, `Wifi`.
+
+Skrot zachowania:
+
+- HOME: `SELECT` -> MENU
+- MENU: `DOWN` nastepna pozycja, `SELECT` wejscie, `UP` powrot
+- Ekrany harmonogramow / czasu: `SELECT` edycja/nastepne pole, `DOWN` zmiana wartosci
+- LOGI: `DOWN` przewijanie
+- Wifi/AP: `UP` reczne wylaczenie AP i powrot do menu
+
+## 8. Zasilanie i sleep
+
+- po 4 min bez aktywnosci ekran przechodzi w power-save (jesli `alwaysScreenOn == false`)
+- po 5 min bez aktywnosci i przy spelnieniu warunkow system wchodzi w Deep Sleep na 30 min
+- wybudzanie: przyciski (`ESP_EXT1_WAKEUP_ANY_LOW`) lub timer RTC
+
+Warunki Deep Sleep (w skrocie):
+
+- grzalka wylaczona
+- OTA nie jest w trakcie
+- AP wylaczony
+- STA/radio calkowicie wylaczone
+- BLE nie jest aktywne (brak advertising i brak klienta)
+- bezczynnosc > 5 min
+
+## 12. Smoke test manualny
+
+Checklista testow smoke znajduje sie w:
+
+- `docs/manual_smoke_test.md`
+
+## 9. Domyslna konfiguracja
+
+Domyslne wartosci z `ConfigManager::loadDefaultConfig()`:
+
+- dzien: `10:00 -> 21:30`
+- napowietrzanie: `10:00 -> 21:00`
+- filtr: `10:30 -> 20:30`
+- temperatura docelowa: `25.0 C`
+- histereza temperatury: `0.5 C`
+- karmienie: `18:00`, tryb `1` (codziennie)
+- `servoPreOffMins = 30`
+- `alwaysScreenOn = false`
+
+## 10. Logi i diagnostyka
+
+- logi normalne: ring buffer 20 wpisow (RAM)
+- logi krytyczne: ring buffer 20 wpisow (trwale, Preferences)
+- czyszczenie logow krytycznych: `POST /api/action` z `action=clear_critical_logs`
+
+## 11. Bezpieczenstwo runtime
+
+- brak poprawnego odczytu DS18B20 (seria bledow) -> fail-safe, grzalka OFF
+- twardy limit temperatury: przy `>= 28.0 C` grzalka jest natychmiast odcinana
+- manualny override serwa wygasa automatycznie po 5 minutach
+- karmnik ma timeout bezpieczenstwa (`15 s`) i logike cyklu czujnika

@@ -1,532 +1,384 @@
-# AKWARIUM-1.2.1 - Pelna dokumentacja techniczna
+# Sterownik Akwarium PRO v5.1 - dokumentacja techniczna
 
-Dokument opisuje aktualna implementacje firmware w katalogu `src/`.
-Wersja dokumentu odpowiada stanowi kodu po ujednoliceniu logiki wyjsc:
-`LIGHT`, `PUMP`, `HEATER` sa sterowane tym samym modelem pinowym (`ON => LOW`, `OFF => HIGH`).
+Plik opisuje aktualna architekture kodu i API modulow na podstawie `src/`.
 
-## 1. Zakres systemu
+## 1. Przeplyw startu
 
-Sterownik oparty o ESP32-S3 (Arduino + FreeRTOS) realizuje:
+Kolejnosc startu (`setup()` w `Akwarium.ino`):
 
-- harmonogram dnia (swiatlo), filtra (pompka), napowietrzania (serwo), karmienia
-- pomiar temperatury DS18B20 i sterowanie grzalka z histereza i limitami bezpieczenstwa
-- karmnik z kontrola cyklu czujnika i timeoutami
-- panel WWW (SPA), REST API, OTA przez HTTP
-- BLE GATT (status, komendy, ustawienia)
-- OLED 128x32 i lokalna obsluga 3 przyciskami
-- logi RAM + logi trwale (NVS)
-- diagnostyke resetow i wakeupow (NVS)
-- RTC DS3231 (UTC), logika harmonogramow w czasie lokalnym Europe/Warsaw
+1. `Wire.begin()` + I2C 400 kHz.
+2. `SystemController::init()`:
+   - `SharedState::init()`
+   - `ConfigManager::init()` (Preferences + CRC32 + migracja legacy)
+   - `LogManager::init()`
+   - setup pinow i kontrolerow (temp, feeder, servo, battery, RTC)
+   - `OtaManager::init()`
+   - `PowerManager::init(...)`
+   - `ScheduleManager::init(...)`
+3. Inicjalizacja OLED i `AquariumAnimation`.
+4. `setupApiEndpoints()` (endpointy REST).
+5. `AkwariumWifi::begin()` (osobny task WiFi/WebServer na Core 1).
+6. `SystemController::runFeederCalibrationOnPowerUp(...)`.
+7. Start `VideoTask` na Core 0.
 
-## 2. Platforma, build i target
+## 2. Runtime i rdzenie
 
-## 2.1 Narzedzia i konfiguracja
+Core 1:
 
-- PlatformIO
-- framework: Arduino (espressif32)
-- board: `esp32s3_zero_4mb` (custom board json w `boards/`)
-- flash: 4MB
-- partitions: `min_spiffs.csv`
-- monitor: `115200`, UTF-8
-- build flag: `-DARDUINO_USB_CDC_ON_BOOT=1`
-
-## 2.2 Kluczowe biblioteki
-
-- U8g2 (OLED)
-- RTClib (DS3231)
-- ESP32Servo
-- DallasTemperature + OneWire
-- ArduinoJson
-- ESP32 WebServer + Update
-- ESP32 BLE Arduino
-- Preferences (NVS)
-
-## 2.3 Komendy
-
-```bash
-python -m platformio run
-python -m platformio run -t upload
-python -m platformio device monitor -b 115200
-```
-
-## 3. Architektura runtime
-
-## 3.1 Kolejnosc `setup()`
-
-1. `Serial.begin(115200)`
-2. I2C: `Wire.begin(8, 9)`, `Wire.setClock(100000L)`
-3. Start OLED i ekran "Wybudzanie..."
-4. `SystemController::init()`
-5. `animation = new AquariumAnimation(...)`
-6. `LogManager::syncOledLogs()`
-7. `setupApiEndpoints()`
-8. `AkwariumWifi::begin()` (tworzy task WiFi)
-9. `BleManager::init()`
-10. Start `VideoTask` na core 0
-
-Uwaga: metoda `runFeederCalibrationOnPowerUp()` istnieje, ale nie jest obecnie wywolywana w `setup()`.
-
-## 3.2 Taski i rdzenie
-
-- `loop()` (core 1):
-  - `applyPendingUiChanges()`
-  - `SystemController::update()`
+- `loop()`:
+  - `applyPendingUiChanges()` (zapis zmian UI -> Config/RTC)
+  - `SystemController::update()` (sensory, decyzje, wyjscia)
   - `OtaManager::update()`
-  - `BleManager::update()`
-  - `vTaskDelay(10ms)`
 
-- `VideoTask` (core 0, ~24 FPS):
-  - obsluga przyciskow i state machine UI
-  - synchronizacja UI z `SharedState`
-  - render ekranow OLED
+Core 0:
+
+- `VideoTask`:
+  - odczyt przyciskow i state machine UI
+  - snapshot danych (`SharedState::getSnapshot()`)
+  - render OLED (`AquariumAnimation`)
   - `SystemController::handlePowerManagement(...)`
-  - `vTaskDelay(42ms)`
+  - odswiezanie co ~42 ms (~24 FPS)
 
-- `WifiTask` (core 1):
-  - inicjalizacja STA i serwera HTTP
-  - AP/DNS captive portal (na zadanie)
-  - `server.handleClient()` + `dnsServer.processNextRequest()`
+Task WiFi (rowniez Core 1):
 
-## 3.3 Synchronizacja danych miedzy taskami
+- `AkwariumWifi::begin()` uruchamia `WifiTask`:
+  - laczenie STA (timeout 6 s)
+  - start HTTP servera
+  - obsluga DNS captive portal (gdy AP aktywny)
+  - `server.handleClient()` w petli
 
-- `SharedState` przechowuje snapshot stanu runtime (temp, bateria, przelaczniki, czas, aeracja).
-- Dostep przez mutex (`SemaphoreHandle_t`) i kopie przez wartosc.
-- `ConfigManager` ma osobny mutex oraz transakcyjny zapis NVS.
-- Zmiany harmonogramu/czasu z UI sa kolejkowane (`PendingScheduleUpdate`, `PendingTimeUpdate`) i aplikowane w `loop()`.
+## 3. SharedState
 
-## 4. Sprzet i mapowanie pinow
+`SharedStateData` przenosi miedzy taskami:
 
-```text
-BUTTON_UP_PIN      GPIO15
-BUTTON_SELECT_PIN  GPIO16
-BUTTON_DOWN_PIN    GPIO14
+- temperatura (`temperature`, `minTemp`, `minTempEpoch`, `maxTemp`)
+- bateria (`batteryVoltage`, `batteryPercent`)
+- stany wykonawcze (`isHeaterOn`, `isFilterOn`, `isLightOn`, `isDay`)
+- napowietrzanie (`aerationPercent`)
+- czas (`hour`, `minute`, `second`, `day`, `month`, `year`)
 
-ONE_WIRE_BUS       GPIO1    (DS18B20)
-HEATER_PIN         GPIO3
-PUMP_PIN           GPIO4
-FEEDER_PIN         GPIO5
-SERVO_PIN          GPIO6
+Synchronizacja:
 
-BAT_ADC_PIN        GPIO7
-BAT_EN_PIN         GPIO10
-FEEDER_SENSOR_PIN  GPIO12
-LIGHT_PIN          GPIO17
+- mutex FreeRTOS (`xSemaphoreCreateMutex`)
+- zapis przez update*()
+- odczyt atomowym snapshotem przez `getSnapshot()`
 
-I2C SDA            GPIO8
-I2C SCL            GPIO9
-```
+## 4. ConfigManager i ConfigData
 
-## 5. Logika wyjsc wykonawczych
+`Config` (w `ConfigData.h`) zawiera harmonogramy, temperature, serwo, karmienie i flagi systemowe.
 
-## 5.1 Model pinowy (aktualny)
+Wazne stale:
 
-Wszystkie trzy wyjscia glowne korzystaja z tego samego modelu:
+- `CONFIG_MAGIC = 0xCAFEBAC4`
+- `CONFIG_VERSION = 5`
+- katy serwa: `OPEN=0`, `PREOFF=45`, `CLOSED=90`
 
-- `ON => LOW`
-- `OFF => HIGH`
+Persystencja:
 
-Dotyczy:
+- namespace Preferences: `"Akwarium"`
+- klucz: `"sysConfig"`
+- CRC32 liczone po calej strukturze bez pola `crc32`
+- niezgodnosc CRC/magic/version -> fallback do default
+- migracja ze starego `ConfigV1Legacy` (bez CRC)
 
-- `LIGHT_PIN`
-- `PUMP_PIN`
-- `HEATER_PIN`
+## 5. SystemController
 
-Stan po inicjalizacji: wszystkie trzy OFF.
+Publiczne API:
 
-## 5.2 Decyzje AUTO
+- `init()`
+- `update()`
+- `feedNow()`
+- `setManualServo(int angle)`
+- `clearManualServo()`
+- `getServoPosition()`
+- `runFeederCalibrationOnPowerUp(U8G2 *display)`
+- `handlePowerManagement(U8G2 *display, AquariumAnimation *anim)`
+- `RTC_DS3231 rtc` (publiczny)
 
-W trybie automatycznym:
+### 5.1 updateSensors()
 
-- `isLightOn = isDay`
-- `isFilterOn = runFilter` (z harmonogramu filtra, ale noc wymusza OFF)
-- `isHeaterOn = isDay && tempController.isHeaterOn()`
+- temperatura: odczyt co 2 s (`TemperatureController`)
+- bateria: start pomiaru co 10 min (`BatteryReader::startMeasurement()`)
+- `PowerManager::update()` finalizuje i mapuje procent
+- seria >=3 blednych odczytow temp -> log bledu
 
-Nastepnie `applyOutputs()` zapisuje stan na piny.
+### 5.2 updateDecisions()
 
-## 5.3 Tryb TESTS (override)
+- `ScheduleManager::update(now)` (auto feed)
+- wyliczenie:
+  - `isDayTime`
+  - `isFilterActive`
+  - `isAerationActive`
+- sterowanie grzalka:
+  - target/histereza z config
+  - fail-safe OFF przy bledach sensora
+- target serwa:
+  - domyslnie CLOSED
+  - OPEN w oknie napowietrzania
+  - PREOFF gdy zbliza sie koniec okna filtra (`servoPreOffMins`)
+  - alarmowy kat przy temp > 30 C (`servoAlarmAngle`)
+  - reczny override z WebUI (wygasa po 5 min)
+- aktualizacja `SharedState`
 
-Gdy UI jest w `UiState::TESTS`, aktywny jest test override:
+### 5.3 applyOutputs()
 
-- relaye sa ustawiane bezposrednio z wartosci testowych `light/heater/filter`
-- sterowanie automatyczne jest pomijane
-- test override jest kasowany po wyjsciu z ekranu TESTS
+Bezposredni zapis na piny:
 
-## 5.4 OTA a wyjscia
+- `LIGHT_PIN`: `LOW=ON`, `HIGH=OFF`
+- `PUMP_PIN`: `HIGH=ON`
+- `HEATER_PIN`: `HIGH=ON`
 
-- `OtaManager::beginOtaUpdate()` ustawia `SharedState::updateRelays(false, false, false, false)`
-- podczas OTA `SystemController::updateDecisions()` i `applyOutputs()` zwracaja od razu (`return`)
+oraz `servoController.update()` i `feederController.update()`.
 
-Efekt praktyczny: decyzje i zapisy na piny sa zatrzymane na czas OTA.
+### 5.4 Zarzadzanie energia
 
-## 6. Temperatury i grzalka
+`handlePowerManagement()`:
 
-## 6.1 Odczyt DS18B20
+- po 4 min bezczynnosci -> OLED power-save (jesli `alwaysScreenOn=false`)
+- Deep Sleep po 5 min bezczynnosci i warunkach bezpieczenstwa:
+  - grzalka OFF
+  - OTA OFF
+  - AP OFF
+  - STA/radio OFF (wymagane `AkwariumWifi::isStaOff()`)
+- usypianie na 30 min
+- wakeup:
+  - `ESP_EXT1_WAKEUP_ANY_LOW` (przyciski)
+  - timer RTC
 
-- odczyt co `2s` (`TEMP_READ_INTERVAL = 2000`)
-- filtrowanie probek:
-  - odrzucenie `DEVICE_DISCONNECTED_C`
-  - odrzucenie stalej `85.0`
-  - zakres poprawny `(-50, 50)C`
+### 5.5 Kalibracja karmnika
 
-## 6.2 Warunki sterowania grzalka
+`runFeederCalibrationOnPowerUp()`:
 
-Grzalka dziala tylko gdy:
+- uruchamia sie tylko po zimnym starcie (nie po wakeup ze sleep)
+- prompt na OLED:
+  - `SELECT` start
+  - `UP` anuluj
+  - timeout 10 min -> autostart
+- wykonuje pojedynczy cykl `startFeed(1500, true)`
 
-- trwa dzien (`isDay == true`)
-- temperatura snapshot nie jest `NaN`
-- licznik blednych odczytow `< 3`
+## 6. ScheduleManager
 
-W przeciwnym razie `forceHeaterOff()`.
+Publiczne API:
 
-## 6.3 Parametry bezpieczenstwa
+- `init(FeederController *feeder)`
+- `update(const DateTime &now)`
+- `isDayTime(...)`
+- `isAerationActive(...)`
+- `isFilterActive(...)`
+- `getMinutesUntilFilterOff(...)`
+- `toMinutes(...)`
+- `isWithinWindow(...)`
 
-- setpoint: `cfg.targetTemp` (clamp w walidacji: `15.0..35.0`)
-- histereza: `cfg.tempHysteresis` (clamp: `0.1..5.0`)
-- minimalny odstep przelaczen: `120000 ms`
-- twardy limit: przy `>= 28.0C` natychmiastowe OFF
+Reguly:
 
-## 7. Harmonogramy i automatyka
+- obsluga okien przechodzacych przez polnoc
+- `dayStartHour == 24` -> dzien zawsze ON
+- `dayEndHour == 24` -> dzien zawsze OFF
 
-## 7.1 Semantyka okna czasowego
+Auto karmienie:
 
-`ScheduleManager::isWithinWindow(now, start, end)`:
+- aktywne gdy `feedMode != 0`
+- okno wyzwolenia: `hour/minute` zgodne i `second < 5`
+- odstepy:
+  - `feedMode=1` codziennie (~86000 s)
+  - `feedMode=2` co 2 dni (~172000 s)
+  - `feedMode=3` co 3 dni (~258000 s)
+- dodatkowy bezpiecznik: minimum 3 h od ostatniego karmienia
 
-- `start == end` => okno nieaktywne
-- `start < end` => zwykle okno dzienne
-- `start > end` => okno przechodzace przez polnoc
+## 7. TemperatureController
 
-## 7.2 Dzien/noc
+Publiczne API:
 
-- dzien z `dayStart/dayEnd`
-- specjalne wartosci:
-  - `dayStartHour == 24` => dzien zawsze ON
-  - `dayEndHour == 24` => dzien zawsze OFF
+- `begin()`
+- `readTemperature()`
+- `controlHeater(float currentTemp)`
+- `setTargetTemperature(float)`
+- `setHysteresis(float)`
+- `isHeaterOn()`
+- `resetDailyStats(float)`
+- `getDailyMin()`
+- `getDailyMax()`
 
-## 7.3 Filtr i napowietrzanie
+Szczegoly:
 
-- `runFilter` i `runAeration` liczone z harmonogramow
-- gdy noc, oba sa wymuszane na `false`
+- odczyt DS18B20 z cache co 2 s
+- odrzucane probki:
+  - `DEVICE_DISCONNECTED_C`
+  - `85.0 C` (typowy artefakt startowy)
+  - wartosci poza zakresem
+- histereza + min interwal przelaczen grzalki `120000 ms`
+- twarde odciecie grzalki przy `>= 28.0 C`
 
-## 7.4 Karmienie automatyczne
+## 8. FeederController
 
-Warunki startu auto-karmienia:
+Publiczne API:
 
-- `feedMode != 0`
-- biezacy czas rowny `feedHour:feedMinute`, sekunda `< 5`
-- odstep od `lastFeedEpoch`:
-  - mode 1: >= 86000 s (~1 dzien)
-  - mode 2: >= 172000 s (~2 dni)
-  - mode 3: >= 258000 s (~3 dni)
-- dodatkowy bezpiecznik: minimum 3h od ostatniego karmienia
-
-Po sukcesie aktualizowany jest `lastFeedEpoch` i zapisywany config.
-
-## 8. Serwo napowietrzania
-
-## 8.1 Cele pozycji
-
-Domyslne stale:
-
-- `SERVO_OPEN_ANGLE = 0`
-- `SERVO_PREOFF_ANGLE = 45`
-- `SERVO_CLOSED_ANGLE = 90`
-
-Priorytet logiki celu:
-
-1. noc/idle => closed
-2. aktywna aeracja => open
-3. okno "preoff" przed koncem filtra => preoff
-4. alarm temp (>=30.3 ON, <=29.7 OFF) => `cfg.servoAlarmAngle`
-5. manual override (5 min) => zadany kat
-
-## 8.2 Stabilizacja komend
-
-- zmiana celu musi byc stabilna przez `SERVO_TARGET_STABLE_MS = 1200 ms`
-- wyjatek: manual override idzie natychmiast
-- ruch serwa trwa `MOVE_TIME = 2000 ms` (po detach pin ustawiany na LOW)
-
-## 9. Karmnik
-
-## 9.1 Interfejs sterowania
-
+- `begin()`
 - `startFeed(durationMs, useSensor)`
 - `update()`
 - `isFeeding()`
-- `setSafetyTimeout()`
+- `setSafetyTimeout(timeoutMs)`
+- `getLastError()`
+- `clearError()`
 
-## 9.2 Algorytm czujnika (useSensor=true)
+`enum class Error`:
 
-Cykl zatrzymania oparty o krawedzie:
+- `NONE`
+- `SENSOR_NOT_OK` (zdefiniowane w API, aktualnie nieuzyte do walidacji pre-start)
+- `TIMEOUT`
 
-- oczekiwanie na `1`
-- potem na `0`
-- potem powrot na `1`
-- dopiero wtedy stop silnika
+Logika cyklu czujnika (gdy `useSensor=true`):
 
-Bezpieczniki:
+- fazy: `WAIT_FOR_FIRST_ONE -> WAIT_FOR_ZERO -> WAIT_FOR_FINAL_ONE`
+- silnik zatrzymuje sie po pelnym cyklu 1->0->1
+- timeout bezpieczenstwa domyslnie 15 s
 
-- globalny timeout (`safetyTimeout`, domyslnie 15s)
-- `EDGE_GUARD_MS = 100`
-- `RETURN_GUARD_MS = 20`
-- `MIN_CYCLE_MS = 300`
+## 9. ServoController
 
-## 9.3 Wywolania karmienia
+Publiczne API:
 
-- REST: `action=feed_now`
-- BLE command: `{"action":"feed_now"}`
-- UI: przytrzymanie 3 przyciskow przez `1000 ms`
-- harmonogram automatyczny (`ScheduleManager`)
+- `begin()`
+- `setPosition(int position)`
+- `update()`
+- `isMoving()`
+- `getCurrentPosition()`
 
-## 10. Bateria RTC (CR2032/CR2025)
+Szczegoly:
 
-- ADC 12-bit, attenuation `ADC_11db`
-- pomiar asynchroniczny: 30 probek
-- trigger pomiaru co 10 minut (`SystemController::updateSensors`)
-- mapowanie procentowe:
-  - `2.8V => 0%`
-  - `3.239V => 100%`
-- log krytyczny przy `<=10%`, reset flagi po `>25%`
+- zakres pozycji obcinany do `0..90`
+- attach tylko na czas ruchu
+- po `MOVE_TIME = 2000 ms` detach i wymuszenie `LOW` na pinie
 
-## 11. Czas i strefa
+## 10. PowerManager i BatteryReader
 
-- RTC DS3231 przechowuje UTC
-- strefa: `CET-1CEST,M3.5.0/2,M10.5.0/3` (Europe/Warsaw)
-- `getCurrentDateTime()` zwraca czas lokalny do UI/harmonogramow
-- `syncSystemTime(epochUtc)` ustawia:
-  - system time (`settimeofday`)
-  - RTC (`rtc.adjust`)
-- endpoint `POST /settime?epoch=<unix_utc>`
+`BatteryReader`:
 
-## 12. Konfiguracja (NVS, CRC, walidacja)
+- ADC 12-bit, attenuation 11 dB
+- asynchroniczny pomiar: 30 probek
+- konwersja: `V = raw * 3.3 / 4095 * 1.57769`
 
-## 12.1 Struktura i wersjonowanie
+`PowerManager`:
 
-- struct `Config` w `ConfigData.h`
-- `CONFIG_MAGIC = 0xCAFEBAC4`
-- `CONFIG_VERSION = 5`
-- CRC32 dla calej struktury (bez pola `crc32`)
+- trzyma `lastActivityTime` (reset przez przyciski i akcje API)
+- mapuje napiecie CR2032:
+  - `2.8 V -> 0%`
+  - `3.239 V -> 100%`
+- przy `<=10%` loguje krytyczny alarm baterii (z histereza odblokowania >25%)
+- publikuje wynik do `SharedState`
 
-## 12.2 Namespace i migracja
+## 11. AkwariumWifi i OTA HTTP
 
-- namespace NVS: `"Akwarium"`
-- przy braku/poprawce CRC:
-  - ladowanie default
-  - proba migracji ze struktury legacy (bez CRC)
+Publiczne API:
 
-## 12.3 Domyslne wartosci (loadDefaultConfig)
+- `begin()`
+- `getIsAPMode()`
+- `startAP()`
+- `stopAP()`
+- `getAPName()`
+- `getAPPassword()`
+- `getIP()`
+- `getConnectedClients()`
+- `getServer()`
 
-- dzien: `10:00-21:30`
-- aeracja: `10:00-21:00`
-- filtr: `10:30-20:30`
-- `servoPreOffMins = 30`
-- `targetTemp = 25.0`
-- `tempHysteresis = 0.5`
-- `feedMode = 1`, `feedHour = 18`, `feedMinute = 0`
-- `alwaysScreenOn = false`
+Tryby:
 
-## 12.4 Zakresy walidacji (ConfigValidation)
-
-- day start/end hour: `0..24`
-- minuty: `0..59`
-- aeration/filter hour: `0..23`
-- `servoPreOffMins`: `0..255`
-- `targetTemp`: `15.0..35.0`
-- `tempHysteresis`: `0.1..5.0`
-- `feedMode`: `0..3`
-- `feedHour`: `0..23`
-- `feedMinute`: `0..59`
-
-## 13. REST API
-
-## 13.1 HTTP zasoby GUI
-
-- `GET /` - panel WWW
-- `GET /style.css`
-- `GET /script.js`
-
-## 13.2 Czas
-
-- `POST /settime?epoch=<unix_utc>`
-
-## 13.3 OTA
-
-- `POST /update` (upload firmware)
-- po sukcesie restart urzadzenia
-
-## 13.4 API status/logs/action
-
-- `GET /api/status`
-  - `temperature`, `battery`, `relays`, `servo`, `schedule`, `feeding`, `network`, `diag`
-  - aktualnie `relays` zawiera `light` i `pump`
-
-- `GET /api/logs`
-  - `normal` (RAM)
-  - `critical` (trwale)
-
-- `POST /api/action`
-  - `action=feed_now`
-  - `action=set_servo&angle=<0..90>`
-  - `action=clear_servo`
-  - `action=clear_critical_logs`
-  - `action=save_schedule` + pola:
-    - `dayStart`, `dayEnd`
-    - `airOn`, `airOff`
-    - `filterOn`, `filterOff`
-    - `targetTemp`, `tempHyst`
-    - `feedTime`, `feedFreq`
-    - `servoPreOffMins`
-
-## 14. BLE GATT
-
-## 14.1 Parametry
-
-- nazwa: `Akwarium_BLE`
-- passkey: `SECRET_BLE_PASSKEY` (6 cyfr)
-- szyfrowanie: MITM + bond
-- preferowany MTU: 185
-
-## 14.2 UUID
-
-- Service: `4fafc201-1fb5-459e-8bcc-c5c9c331914b`
-- Status (read/notify): `beb5483e-36e1-4688-b7f5-ea07361b26a8`
-- Command (write): `828917c1-ea55-4d4a-a66e-fd202cea0645`
-- Settings (read/write): `d2912856-de63-11ed-b5ea-0242ac120002`
-- Result (read/notify): `8e22cb9c-1728-45f9-8c50-2f7252f07379`
-
-## 14.3 Command payload
-
-- `{"action":"feed_now"}`
-- `{"action":"set_servo","angle":45}`
-- `{"action":"clear_servo"}`
-- `{"action":"clear_critical_logs"}`
-
-## 14.4 Settings payload (skrocone klucze)
-
-- `tar`, `hys`
-- `fdH`, `fdM`, `fdF`
-- `lsH`, `lsM`, `leH`, `leM`
-- `asH`, `asM`, `aeH`, `aeM`
-- `fsH`, `fsM`, `feH`, `feM`
-- `spO`
-
-## 15. WiFi/AP i OTA
-
-## 15.1 STA
-
-- SSID/PASS z `SecretConfig` (przez `arduino_secrets.h`)
-- timeout polaczenia: 6s
-- po timeout urzadzenie dziala offline, bez autostartu AP
-
-## 15.2 AP
-
-- AP uruchamiany z menu
+- STA na starcie (timeout 6 s)
+- AP uruchamiany recznie z UI
 - DNS captive portal aktywny tylko w AP
-- AP stop:
-  - recznie (przycisk)
-  - automatycznie po odlaczeniu klienta (po pierwszym polaczeniu)
 
-## 15.3 Wylaczanie STA do deep sleep
+HTTP OTA:
 
-- `requestStaOffForDeepSleep()` ustawia flage
-- `WifiTask` wykonuje `WiFi.mode(WIFI_OFF)`
+- endpoint `POST /update`
+- upload obslugiwany przez `Update.h`
+- podczas uploadu:
+  - `OtaManager::beginOtaUpdate()`
+  - po zakonczeniu `OtaManager::endOtaUpdate(success)`
+- po sukcesie restart ESP
 
-## 16. Logi i diagnostyka
+## 12. ApiHandlers - endpointy REST
 
-## 16.1 LogManager
+### 12.1 GET /api/status
 
-- dzienne logi RAM: do 80 wpisow, rotacja po zmianie dnia
-- logi wazne trwale: do 40 wpisow w NVS
-- poziomy:
-  - `I` info
-  - `W` warn (wazne)
-  - `E` error (wazne)
-- JSON endpoint: `GET /api/logs`
+Zwraca JSON:
 
-## 16.2 SystemDiagnostics
+- `temperature`: `current`, `target`, `hysteresis`, `min`, `minTimeEpoch`
+- `battery`: `voltage`, `percent`
+- `relays`: `light`, `pump`
+- `servo`: `angle`
+- `schedule`:
+  - `dayStartHour`, `dayStartMin`, `dayEndHour`, `dayEndMin`
+  - `airStartHour`, `airStartMin`, `airEndHour`, `airEndMin`
+  - `filterStartHour`, `filterStartMin`, `filterEndHour`, `filterEndMin`
+  - `servoPreOffMins`
+- `feeding`: `hour`, `minute`, `freq`, `lastFeedEpoch`
+- `network`: `ip`, `apMode`
 
-NVS namespace: `Diag`
+### 12.2 GET /api/logs
 
-Przechowywane pola:
+Zwraca:
 
-- `bootCount`
-- `brownoutCount`
-- `wdtCount`
-- `panicCount`
-- `lastResetReason`
-- `lastWakeupCause`
+- `normal`: logi z RAM
+- `critical`: logi trwale z Preferences
 
-Dane sa publikowane w `GET /api/status.diag`.
+### 12.3 POST /api/action
 
-## 17. Power management i deep sleep
+Obslugiwane akcje:
 
-## 17.1 Aktualny tryb runtime
+- `feed_now`
+- `set_servo` (`angle`)
+- `clear_servo`
+- `clear_critical_logs`
+- `save_schedule`
 
-Deep sleep runtime jest aktualnie wylaczony.
-Aktywna jest tylko obsluga wygaszania OLED:
+Parametry `save_schedule`:
 
-- po 4 minutach bezczynnosci: `MODE_LOW_POWER`, `display->setPowerSave(1)`
-- po aktywnosci: `MODE_ACTIVE`, `display->setPowerSave(0)`
-- `alwaysScreenOn=true` blokuje wygaszanie
+- `feedTime`, `feedFreq`
+- `dayStart`, `dayEnd`
+- `targetTemp`, `tempHyst`
+- `airOn`, `airOff`
+- `filterOn`, `filterOff`
+- `servoPreOffMins`
 
-Pierwsze nacisniecie przy wygaszonym ekranie tylko wybudza ekran (bez akcji UI).
+Kazda akcja rejestruje aktywnosc (`PowerManager::registerActivity()`).
 
-## 17.2 Sciezka deep sleep (zaimplementowana, obecnie nieaktywna)
+## 13. LogManager
 
-Istnieja metody:
+Typy logow:
 
-- `canEnterDeepSleep()`
-- `enterNightDeepSleep()`
+- `logInfo()`, `logWarn()` -> RAM (`webLogs`, max 20)
+- `logError()` -> RAM + trwale (`criticalLogs`, max 20, Preferences)
 
-Sciezka obejmuje:
+`getLogsAsJson()`:
 
-- wymuszenie OFF na wyjsciach
-- hold GPIO
-- wakeup z GPIO14 i timera do startu dnia
+- serializuje oba ring buffery
+- sanitizuje znaki specjalne JSON (`escapeJsonString`)
 
-Aktualnie nie jest wywolywana z runtime.
+`clearCriticalLogs()`:
 
-## 18. Kalibracja karmnika
+- zeruje licznik i head pointer krytycznych logow
 
-Firmware zawiera dwa tryby:
+## 14. UI (AquariumAnimation + UIRenderers)
 
-- `runFeederCalibrationOnPowerUp()`:
-  - serwisowy, warunkowany przytrzymaniem SELECT na zimnym starcie
-  - nie jest aktualnie wywolywany w `setup()`
+Glowne ekrany:
 
-- `runFeederCalibrationFromMenu()`:
-  - dostepny z menu
-  - timeout kalibracji: 2 min
-  - po kalibracji przywracany domyslny timeout karmnika 15s
+- HOME
+- MENU
+- harmonogramy: swiatlo, napowietrzanie, filtr, temperatura, karmienie
+- logi
+- data i czas
+- testy
+- ekran Access Point
+- animacja karmienia
 
-## 19. Pliki i odpowiedzialnosci
+Menu glowne ma 5 pozycji:
 
-- `src/src.ino` - orchestracja setup/loop, UI state machine, task display
-- `src/SystemController.*` - runtime decisions, sensory, outputs, power
-- `src/ScheduleManager.*` - logika okien czasowych + auto feed
-- `src/TemperatureController.*` - DS18B20 + heater
-- `src/FeederController.*` - silnik karmnika + czujnik cyklu
-- `src/ServoController.*` - sterowanie serwem i detach
-- `src/AkwariumWifi.*` - STA/AP, HTTP, OTA, WifiTask
-- `src/ApiHandlers.*` - REST API
-- `src/BleManager.*` - BLE GATT, security, payloady
-- `src/ConfigManager.*` + `src/ConfigValidation.*` - NVS + walidacja
-- `src/LogManager.*` - logi RAM/NVS
-- `src/SystemDiagnostics.*` - metryki resetow
-- `src/PowerManager.*` + `src/BatteryReader.*` - bateria RTC i tryby pracy
-- `src/TimeUtils.*` - UTC/local, DST
+- `Harmonogramy`
+- `Logi`
+- `Data i Czas`
+- `Test`
+- `Wifi`
 
-## 20. Sekrety i konfiguracja lokalna
+`AkwariumV4.ino` mapuje zapis zmian UI do:
 
-Plik `src/SecretConfig.h` wymaga definicji:
-
-- `SECRET_SSID`
-- `SECRET_PASS`
-- `AP_SSID`
-- `AP_PASSWORD`
-- `SECRET_BLE_PASSKEY`
-
-Praktyka:
-
-1. Utworz `src/arduino_secrets.h` na podstawie `src/arduino_secrets.template.h`.
-2. Ustaw realne dane.
-3. Nie commituj pliku z sekretami.
+- `ConfigManager::getCopy()` + `ConfigManager::updateAndSave()` (harmonogramy)
+- `SystemController::rtc.adjust(...)` (data/czas)

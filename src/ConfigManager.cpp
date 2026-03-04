@@ -9,19 +9,8 @@ Config ConfigManager::sysConfig;
 static Preferences preferences;
 static const char *PREF_NAMESPACE = "Akwarium";
 static SemaphoreHandle_t configMutex = nullptr;
-static unsigned long lastLockTimeoutLogMs = 0;
 
-static void logLockTimeoutThrottled(const char *op) {
-  const unsigned long now = millis();
-  const bool isFirstLog = (lastLockTimeoutLogMs == 0);
-  if (!isFirstLog && (now - lastLockTimeoutLogMs) < 30000UL) {
-    return;
-  }
-  lastLockTimeoutLogMs = now;
-  Serial.printf("[CONFIG] BLAD: timeout lock podczas %s().\n", op);
-}
-
-static bool lockConfig(TickType_t timeoutTicks = pdMS_TO_TICKS(250)) {
+static bool lockConfig(TickType_t timeoutTicks = portMAX_DELAY) {
   if (configMutex == nullptr) {
     return false;
   }
@@ -122,8 +111,8 @@ void ConfigManager::init() {
 
   preferences.begin(PREF_NAMESPACE, false);
 
-  if (!lockConfig(pdMS_TO_TICKS(1000))) {
-    logLockTimeoutThrottled("init");
+  if (!lockConfig(portMAX_DELAY)) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas init(), ladowanie default.");
     loadDefaultConfig();
     save();
     return;
@@ -200,8 +189,8 @@ void ConfigManager::init() {
 }
 
 void ConfigManager::save() {
-  if (!lockConfig(pdMS_TO_TICKS(250))) {
-    logLockTimeoutThrottled("save");
+  if (!lockConfig(portMAX_DELAY)) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas save().");
     return;
   }
 
@@ -214,8 +203,8 @@ void ConfigManager::save() {
 }
 
 bool ConfigManager::updateAndSave(const Config &cfg) {
-  if (!lockConfig(pdMS_TO_TICKS(500))) {
-    logLockTimeoutThrottled("updateAndSave");
+  if (!lockConfig(portMAX_DELAY)) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas updateAndSave().");
     return false;
   }
 
@@ -237,10 +226,9 @@ bool ConfigManager::updateAndSave(const Config &cfg) {
 
 Config ConfigManager::getCopy() {
   Config snapshot = {};
-  if (!lockConfig(pdMS_TO_TICKS(30))) {
-    logLockTimeoutThrottled("getCopy");
-    // Awaryjny odczyt bez locka - lepszy od zwracania wyzerowanej konfiguracji.
-    return sysConfig;
+  if (!lockConfig(portMAX_DELAY)) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas getCopy().");
+    return snapshot;
   }
 
   snapshot = sysConfig;
@@ -257,8 +245,8 @@ void ConfigManager::saveConfig(const Config &cfg) {
 Config ConfigManager::getConfigSnapshot() { return getCopy(); }
 
 void ConfigManager::resetToDefault() {
-  if (!lockConfig(pdMS_TO_TICKS(500))) {
-    logLockTimeoutThrottled("resetToDefault");
+  if (!lockConfig(portMAX_DELAY)) {
+    Serial.println("[CONFIG] BLAD: timeout lock podczas resetToDefault().");
     return;
   }
 

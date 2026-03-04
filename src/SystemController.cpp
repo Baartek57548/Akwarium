@@ -8,14 +8,11 @@
 #include "PowerManager.h"
 #include "ScheduleManager.h"
 #include "SharedState.h"
-#include "SystemDiagnostics.h"
-#include "TimeUtils.h"
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 #include <esp_err.h>
 #include <esp_sleep.h>
 #include <esp_task_wdt.h>
-#include <sys/time.h>
 
 #define HEATER_PIN 3
 #define PUMP_PIN 4
@@ -36,31 +33,10 @@ static bool isNightTimeNow();
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
 static bool configureButtonWakeup();
 static bool holdOutputsInOffState();
-static int clampServoAngleByLimits(int angle);
-static uint8_t outputLevelFromState(bool isOn);
 
 static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
-static const unsigned long SERVO_TARGET_STABLE_MS = 1200UL;
-static bool brownoutMitigationActive = false;
-static unsigned long brownoutMitigationUntilMs = 0;
 static bool wokeFromButtonThisBoot = false;
-static int servoLastTarget = -1;
-static int servoPendingTarget = -1;
-static unsigned long servoPendingSinceMs = 0;
-static unsigned long servoLastCmdMs = 0;
-static portMUX_TYPE testOverrideMux = portMUX_INITIALIZER_UNLOCKED;
-
-static int clampServoAngleByLimits(int angle) {
-  const int servoMin = min(SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
-  const int servoMax = max(SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
-  return constrain(angle, servoMin, servoMax);
-}
-
-static uint8_t outputLevelFromState(bool isOn) {
-  // Relays are active-low: ON -> LOW, OFF -> HIGH.
-  return isOn ? LOW : HIGH;
-}
 
 TemperatureController SystemController::tempController(ONE_WIRE_BUS,
                                                        HEATER_PIN);
@@ -70,17 +46,9 @@ ServoController SystemController::servoController(SERVO_PIN, 90);
 BatteryReader SystemController::batteryReader(BAT_ADC_PIN);
 RTC_DS3231 SystemController::rtc;
 
-static DateTime getCurrentUtcDateTime() {
-  if (SystemController::isRtcReady()) {
-    return SystemController::rtc.now();
-  }
-  return DateTime(2025, 1, 1, 0, 0, 0) +
-         TimeSpan(static_cast<int32_t>(millis() / 1000UL));
-}
-
 DateTime getCurrentDateTime() {
   if (SystemController::isRtcReady()) {
-    return TimeUtils::utcDateTimeToLocal(getCurrentUtcDateTime());
+    return SystemController::rtc.now();
   }
   // Fallback bez RTC - monotoniczny czas oparty o millis, z neutralna data.
   return DateTime(2025, 1, 1, 0, 0, 0) +
@@ -88,11 +56,6 @@ DateTime getCurrentDateTime() {
 }
 
 void syncSystemTime(uint32_t epoch) {
-  struct timeval tv;
-  tv.tv_sec = static_cast<time_t>(epoch);
-  tv.tv_usec = 0;
-  settimeofday(&tv, NULL);
-
   if (SystemController::isRtcReady()) {
     SystemController::rtc.adjust(DateTime(epoch));
   }
@@ -101,11 +64,6 @@ void syncSystemTime(uint32_t epoch) {
 bool SystemController::manualServoOverride = false;
 int SystemController::manualServoAngle = 90;
 unsigned long SystemController::manualServoTimer = 0;
-bool SystemController::testOverrideActive = false;
-bool SystemController::testLightOn = false;
-bool SystemController::testHeaterOn = false;
-bool SystemController::testFilterOn = false;
-uint8_t SystemController::testAerationPercent = 0;
 
 uint8_t SystemController::tempInvalidReadCount = 0;
 bool SystemController::tempSensorErrorLogged = false;
@@ -120,11 +78,11 @@ bool SystemController::isRtcReady() { return rtcReady; }
 void SystemController::hardwareSetup() {
   releaseDeepSleepHolds();
   pinMode(LIGHT_PIN, OUTPUT);
-  digitalWrite(LIGHT_PIN, outputLevelFromState(false)); // OFF
+  digitalWrite(LIGHT_PIN, HIGH); // OFF (aktywny stan LOW)
   pinMode(PUMP_PIN, OUTPUT);
-  digitalWrite(PUMP_PIN, outputLevelFromState(false)); // OFF
+  digitalWrite(PUMP_PIN, LOW); // OFF
   pinMode(HEATER_PIN, OUTPUT);
-  digitalWrite(HEATER_PIN, outputLevelFromState(false)); // OFF
+  digitalWrite(HEATER_PIN, LOW); // OFF
 
   pinMode(BAT_EN_PIN, OUTPUT);
   digitalWrite(BAT_EN_PIN, HIGH); // Załączenie dzielnika pomiarowego
@@ -146,16 +104,13 @@ void SystemController::hardwareSetup() {
   } else if (rtc.lostPower()) {
     rtcReady = true;
     LogManager::logWarn("RTC zresetowany, przywracanie domyslnego czasu...");
-    DateTime fallbackLocal(2025, 1, 1, 12, 0, 0);
-    rtc.adjust(DateTime(TimeUtils::localDateTimeToUtcEpoch(fallbackLocal)));
+    rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
   } else {
     rtcReady = true;
   }
 }
 
 void SystemController::init() {
-  TimeUtils::initTimezone();
-
   SharedState::init();
   ConfigManager::init();
   LogManager::init();
@@ -176,34 +131,11 @@ void SystemController::init() {
   esp_task_wdt_add(NULL);
 
   esp_reset_reason_t reason = esp_reset_reason();
-  esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
-  SystemDiagnostics::init(reason, wakeCause);
-  const SystemDiagSnapshot diag = SystemDiagnostics::getSnapshot();
-
-  char diagMsg[200];
-  snprintf(diagMsg, sizeof(diagMsg),
-           "Diag boot=%lu reset=%s wake=%s brownout=%lu wdt=%lu panic=%lu",
-           static_cast<unsigned long>(diag.bootCount), diag.lastResetReason,
-           diag.lastWakeupCause, static_cast<unsigned long>(diag.brownoutCount),
-           static_cast<unsigned long>(diag.wdtCount),
-           static_cast<unsigned long>(diag.panicCount));
-  LogManager::logInfo(diagMsg);
-
-  if (reason == ESP_RST_BROWNOUT) {
-    brownoutMitigationActive = true;
-    brownoutMitigationUntilMs = millis() + (10UL * 60UL * 1000UL);
-    LogManager::logWarn(
-        "Brownout mitigation: ograniczam czestotliwosc ruchu serwa na 10 min.");
-    LogManager::logError("System zresetowany przez Brownout (spadek zasilania)!");
-  } else if (reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT ||
-             reason == ESP_RST_WDT) {
+  if (reason == ESP_RST_TASK_WDT) {
     LogManager::logError(
-        "System zresetowany przez Watchdog (Deadlock/Soft Lock)!");
+        "System zresetowany przez Task Watchdog (Deadlock/Soft Lock)!");
   } else if (reason == ESP_RST_PANIC) {
     LogManager::logError("System zresetowany przez Panic/Exception!");
-  } else if (reason == ESP_RST_DEEPSLEEP &&
-             wakeCause != ESP_SLEEP_WAKEUP_UNDEFINED) {
-    LogManager::logInfo("DEEP_SLEEP_WAKE: wybudzenie z deep sleep (to nie crash).");
   } else {
     LogManager::logInfo("System zainicjalizowany poprawnie.");
   }
@@ -248,12 +180,6 @@ void SystemController::updateDecisions() {
   if (OtaManager::isOtaInProgress())
     return;
 
-  if (brownoutMitigationActive &&
-      static_cast<long>(millis() - brownoutMitigationUntilMs) >= 0) {
-    brownoutMitigationActive = false;
-    LogManager::logInfo("Brownout mitigation: wygaszony.");
-  }
-
   DateTime now = getCurrentDateTime();
   SharedState::updateTime(now.hour(), now.minute(), now.second(), now.day(),
                           now.month(), now.year());
@@ -269,46 +195,6 @@ void SystemController::updateDecisions() {
   if (!isDay) {
     runFilter = false;
     runAeration = false;
-  }
-
-  bool testOverrideActiveSnap = false;
-  bool testLightOnSnap = false;
-  bool testHeaterOnSnap = false;
-  bool testFilterOnSnap = false;
-  uint8_t testAerationPercentSnap = 0;
-
-  portENTER_CRITICAL(&testOverrideMux);
-  testOverrideActiveSnap = testOverrideActive;
-  testLightOnSnap = testLightOn;
-  testHeaterOnSnap = testHeaterOn;
-  testFilterOnSnap = testFilterOn;
-  testAerationPercentSnap = testAerationPercent;
-  portEXIT_CRITICAL(&testOverrideMux);
-
-  if (testOverrideActiveSnap) {
-    tempController.forceHeaterOff();
-
-    const uint8_t aerationPercent = constrain(testAerationPercentSnap, 0, 100);
-    const int servoTarget =
-        map(aerationPercent, 0, 100, SERVO_CLOSED_ANGLE, SERVO_OPEN_ANGLE);
-
-    const unsigned long nowMs = millis();
-    if (servoTarget != servoPendingTarget) {
-      servoPendingTarget = servoTarget;
-      servoPendingSinceMs = nowMs;
-    }
-
-    const bool pendingChanged = (servoPendingTarget != servoLastTarget);
-    if (pendingChanged && !servoController.isMoving()) {
-      servoController.setPosition(servoPendingTarget);
-      servoLastCmdMs = nowMs;
-      servoLastTarget = servoPendingTarget;
-    }
-
-    SharedState::updateAeration(aerationPercent);
-    SharedState::updateRelays(testHeaterOnSnap, testFilterOnSnap, testLightOnSnap,
-                              isDay);
-    return;
   }
 
   // Sterowanie grzalka (Tylko jesli odczyt temp jest wzglednie swiezy)
@@ -327,66 +213,31 @@ void SystemController::updateDecisions() {
 
   // Servo logic
   int servoTarget = SERVO_CLOSED_ANGLE;
-  const char *servoReason = "night_or_idle";
-  if (runAeration) {
+  if (runAeration)
     servoTarget = SERVO_OPEN_ANGLE;
-    servoReason = "aeration_window";
-  }
   int minsToOff = ScheduleManager::getMinutesUntilFilterOff(nowMin);
-  if (minsToOff > 0 && minsToOff <= cfg.servoPreOffMins) {
+  if (minsToOff > 0 && minsToOff <= cfg.servoPreOffMins)
     servoTarget = SERVO_PREOFF_ANGLE;
-    servoReason = "filter_preoff_window";
-  }
 
-  static bool highTempServoAlarm = false;
-  if (!isnan(snap.temperature)) {
-    if (!highTempServoAlarm && snap.temperature >= 30.3f) {
-      highTempServoAlarm = true;
-    } else if (highTempServoAlarm && snap.temperature <= 29.7f) {
-      highTempServoAlarm = false;
-    }
-  }
-
-  if (highTempServoAlarm) {
-    servoTarget = clampServoAngleByLimits(cfg.servoAlarmAngle);
-    servoReason = "temp_alarm";
+  if (!isnan(snap.temperature) && snap.temperature > 30.0f) {
+    servoTarget =
+        constrain(cfg.servoAlarmAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
   }
 
   if (manualServoOverride) {
     if (millis() - manualServoTimer > 300000UL) {
       manualServoOverride = false;
     } else {
-      servoTarget = clampServoAngleByLimits(manualServoAngle);
-      servoReason = "manual_override";
+      servoTarget =
+          constrain(manualServoAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
     }
   }
 
   // Aplikacja Serwa
-  const unsigned long nowMs = millis();
-  if (servoTarget != servoPendingTarget) {
-    servoPendingTarget = servoTarget;
-    servoPendingSinceMs = nowMs;
-  }
-
-  const bool pendingChanged = (servoPendingTarget != servoLastTarget);
-  const bool pendingStable =
-      (nowMs - servoPendingSinceMs) >= SERVO_TARGET_STABLE_MS;
-  const bool manualImmediate = manualServoOverride;
-
-  if (pendingChanged && !servoController.isMoving() &&
-      (manualImmediate || pendingStable)) {
-    servoController.setPosition(servoPendingTarget);
-    servoLastCmdMs = nowMs;
-
-    char msg[170];
-    snprintf(msg, sizeof(msg),
-             "Servo -> %d (reason=%s, day=%d, aer=%d, filt=%d, minsToOff=%d, temp=%.2f)",
-             servoPendingTarget, servoReason, isDay ? 1 : 0, runAeration ? 1 : 0,
-             runFilter ? 1 : 0, minsToOff,
-             isnan(snap.temperature) ? -99.0f : snap.temperature);
-    LogManager::logInfo(msg);
-
-    servoLastTarget = servoPendingTarget;
+  static int lastServoTarget = -1;
+  if (servoTarget != lastServoTarget) {
+    servoController.setPosition(servoTarget);
+    lastServoTarget = servoTarget;
   }
 
   uint8_t aerationPct =
@@ -406,9 +257,12 @@ void SystemController::applyOutputs() {
     return;
 
   SharedStateData snap = SharedState::getSnapshot();
-  digitalWrite(LIGHT_PIN, outputLevelFromState(snap.isLightOn));
-  digitalWrite(PUMP_PIN, outputLevelFromState(snap.isFilterOn));
-  digitalWrite(HEATER_PIN, outputLevelFromState(snap.isHeaterOn));
+  digitalWrite(LIGHT_PIN,
+               snap.isLightOn
+                   ? LOW
+                   : HIGH); // Zakladajac LIGHT_ACTIVE_HIGH = false w legacy
+  digitalWrite(PUMP_PIN, snap.isFilterOn ? HIGH : LOW);
+  digitalWrite(HEATER_PIN, snap.isHeaterOn ? HIGH : LOW);
 
   servoController.update();
   feederController.update();
@@ -433,7 +287,8 @@ bool SystemController::isFeedingNow() { return feederController.isFeeding(); }
 
 void SystemController::setManualServo(int angle) {
   manualServoOverride = true;
-  manualServoAngle = clampServoAngleByLimits(angle);
+  manualServoAngle =
+      constrain(angle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
   manualServoTimer = millis();
 }
 
@@ -441,57 +296,6 @@ void SystemController::clearManualServo() { manualServoOverride = false; }
 
 int SystemController::getServoPosition() {
   return servoController.getCurrentPosition();
-}
-
-void SystemController::setTestOverride(bool lightOn, bool heaterOn,
-                                       bool filterOn, uint8_t aerationPercent) {
-  const uint8_t clampedAeration = constrain(aerationPercent, 0, 100);
-  bool changed = false;
-
-  portENTER_CRITICAL(&testOverrideMux);
-  changed = (!testOverrideActive) || (testLightOn != lightOn) ||
-            (testHeaterOn != heaterOn) || (testFilterOn != filterOn) ||
-            (testAerationPercent != clampedAeration);
-
-  testOverrideActive = true;
-  testLightOn = lightOn;
-  testHeaterOn = heaterOn;
-  testFilterOn = filterOn;
-  testAerationPercent = clampedAeration;
-  portEXIT_CRITICAL(&testOverrideMux);
-
-  if (changed) {
-    char msg[128];
-    snprintf(msg, sizeof(msg),
-             "TEST override: light=%d heater=%d filter=%d servo=%u%%",
-             testLightOn ? 1 : 0, testHeaterOn ? 1 : 0, testFilterOn ? 1 : 0,
-             static_cast<unsigned>(testAerationPercent));
-    LogManager::logInfo(msg);
-  }
-}
-
-void SystemController::clearTestOverride() {
-  bool wasActive = false;
-  portENTER_CRITICAL(&testOverrideMux);
-  wasActive = testOverrideActive;
-  testOverrideActive = false;
-  portEXIT_CRITICAL(&testOverrideMux);
-
-  if (!wasActive) {
-    return;
-  }
-  servoLastTarget = -1;
-  servoPendingTarget = -1;
-  servoPendingSinceMs = 0;
-  LogManager::logInfo("TEST override: OFF (powrot do harmonogramu).");
-}
-
-bool SystemController::isTestOverrideActive() {
-  bool active = false;
-  portENTER_CRITICAL(&testOverrideMux);
-  active = testOverrideActive;
-  portEXIT_CRITICAL(&testOverrideMux);
-  return active;
 }
 
 static void logEspErr(const char *prefix, esp_err_t err) {
@@ -571,9 +375,6 @@ bool SystemController::canEnterDeepSleep(unsigned long nowMs,
   if (SystemController::isFeedingNow()) {
     return false;
   }
-  if (digitalRead(static_cast<uint8_t>(BUTTON_DOWN_PIN)) == LOW) {
-    return false;
-  }
   return true;
 }
 
@@ -642,14 +443,6 @@ static bool configureButtonWakeup() {
     return false;
   }
 
-  // Dla pojedynczego przycisku EXT0 bywa stabilniejsze od EXT1.
-  err = esp_sleep_enable_ext0_wakeup(BUTTON_DOWN_PIN, 0);
-  if (err == ESP_OK) {
-    LogManager::logInfo("Wake GPIO14: EXT0 (LOW) aktywny.");
-    return true;
-  }
-
-  logEspErr("esp_sleep_enable_ext0_wakeup", err);
   uint64_t wakeMask = (1ULL << static_cast<uint64_t>(BUTTON_DOWN_PIN));
   err = esp_sleep_enable_ext1_wakeup(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
   if (err != ESP_OK) {
@@ -657,17 +450,16 @@ static bool configureButtonWakeup() {
     return false;
   }
 
-  LogManager::logWarn("Wake GPIO14: fallback do EXT1 (ANY_LOW).");
   return true;
 }
 
 static bool holdOutputsInOffState() {
   pinMode(LIGHT_PIN, OUTPUT);
-  digitalWrite(LIGHT_PIN, outputLevelFromState(false)); // OFF
+  digitalWrite(LIGHT_PIN, HIGH); // OFF
   pinMode(PUMP_PIN, OUTPUT);
-  digitalWrite(PUMP_PIN, outputLevelFromState(false)); // OFF
+  digitalWrite(PUMP_PIN, LOW); // OFF
   pinMode(HEATER_PIN, OUTPUT);
-  digitalWrite(HEATER_PIN, outputLevelFromState(false)); // OFF
+  digitalWrite(HEATER_PIN, LOW); // OFF
 
   esp_err_t err = gpio_hold_en(static_cast<gpio_num_t>(LIGHT_PIN));
   if (err != ESP_OK) {
@@ -715,27 +507,6 @@ static void drawFeederCalibrationPrompt(U8G2 *display, const char *line1,
   display->sendBuffer();
 }
 
-static void drawFeederCalibrationCountdown(U8G2 *display,
-                                           unsigned long remainingMs) {
-  if (!display)
-    return;
-
-  const unsigned long remainingSec = remainingMs / 1000UL;
-  const unsigned long minutes = remainingSec / 60UL;
-  const unsigned long seconds = remainingSec % 60UL;
-
-  char timerLine[24];
-  snprintf(timerLine, sizeof(timerLine), "Pozostalo %02lu:%02lu", minutes,
-           seconds);
-
-  display->clearBuffer();
-  display->setFont(u8g2_font_6x10_tr);
-  drawCenteredLine(display, "KALIBRACJA KARMNIKA", 10);
-  drawCenteredLine(display, timerLine, 22);
-  drawCenteredLine(display, "Prosze czekac...", 31);
-  display->sendBuffer();
-}
-
 static bool waitForCalibrationDecision(unsigned long timeoutMs) {
   const unsigned long startMs = millis();
 
@@ -772,28 +543,20 @@ void SystemController::runFeederCalibrationOnPowerUp(U8G2 *display) {
   if (!isPowerOnBoot)
     return;
 
-  const unsigned long HOLD_TO_CALIBRATE_MS = 1200UL;
-  if (digitalRead(BUTTON_SELECT_PIN) != LOW) {
-    LogManager::logInfo(
-        "Kalibracja karmnika pominieta (przytrzymaj SELECT przy starcie, aby uruchomic).");
+  const unsigned long CALIBRATION_TIMEOUT_MS = 10UL * 60UL * 1000UL; // 10 min
+
+  LogManager::logInfo("Wymagana kalibracja karmnika.");
+  drawFeederCalibrationPrompt(display, "KALIBRACJA KARMNIKA", "SELECT=start",
+                              "BACK=anuluj (10m)");
+
+  bool shouldCalibrate = waitForCalibrationDecision(CALIBRATION_TIMEOUT_MS);
+  if (!shouldCalibrate) {
+    LogManager::logInfo("Kalibracja pominieta.");
+    drawFeederCalibrationPrompt(display, "KALIBRACJA POMINIETA");
+    delay(1200);
     return;
   }
 
-  unsigned long holdStartMs = millis();
-  while (digitalRead(BUTTON_SELECT_PIN) == LOW) {
-    esp_task_wdt_reset();
-    if (millis() - holdStartMs >= HOLD_TO_CALIBRATE_MS) {
-      break;
-    }
-    delay(10);
-  }
-
-  if (millis() - holdStartMs < HOLD_TO_CALIBRATE_MS) {
-    LogManager::logInfo("Kalibracja pominieta (zbyt krotki hold SELECT).");
-    return;
-  }
-
-  LogManager::logInfo("Tryb serwisowy: uruchamiam kalibracje karmnika.");
   drawFeederCalibrationPrompt(display, "KALIBRACJA...", "Trwa ustawianie",
                               "pozycji start");
   feederController.clearError();
@@ -823,88 +586,14 @@ void SystemController::runFeederCalibrationOnPowerUp(U8G2 *display) {
   delay(1200);
 }
 
-void SystemController::runFeederCalibrationFromMenu(U8G2 *display) {
-  const unsigned long CALIBRATION_TIMEOUT_MS = 120000UL; // 2 min
-  const unsigned long UI_REFRESH_MS = 100UL;
-  const unsigned long FEEDER_DEFAULT_TIMEOUT_MS = 15000UL;
-
-  LogManager::logInfo("Kalibracja karmnika uruchomiona z menu.");
-  feederController.clearError();
-  feederController.setSafetyTimeout(CALIBRATION_TIMEOUT_MS);
-
-  Error startErr = feederController.startFeed(1500, true);
-  if (startErr != Error::NONE) {
-    LogManager::logError("Blad startu kalibracji z menu!");
-    feederController.setSafetyTimeout(FEEDER_DEFAULT_TIMEOUT_MS);
-    drawFeederCalibrationPrompt(display, "KALIBRACJA BLAD");
-    delay(1200);
-    return;
-  }
-
-  unsigned long startMs = millis();
-  unsigned long lastUiMs = 0;
-
-  while (feederController.isFeeding()) {
-    feederController.update();
-    esp_task_wdt_reset();
-
-    const unsigned long nowMs = millis();
-    if (nowMs - lastUiMs >= UI_REFRESH_MS) {
-      lastUiMs = nowMs;
-      const unsigned long elapsedMs = nowMs - startMs;
-      const unsigned long remainingMs =
-          (elapsedMs >= CALIBRATION_TIMEOUT_MS) ? 0UL
-                                                : (CALIBRATION_TIMEOUT_MS -
-                                                   elapsedMs);
-      drawFeederCalibrationCountdown(display, remainingMs);
-    }
-
-    delay(5);
-  }
-
-  feederController.setSafetyTimeout(FEEDER_DEFAULT_TIMEOUT_MS);
-
-  Error endErr = feederController.getLastError();
-  if (endErr == Error::NONE) {
-    LogManager::logInfo("Kalibracja z menu zakonczona poprawnie.");
-    drawFeederCalibrationPrompt(display, "KALIBRACJA OK");
-  } else if (endErr == Error::TIMEOUT) {
-    LogManager::logError("Kalibracja z menu: timeout.");
-    drawFeederCalibrationPrompt(display, "KALIBRACJA TIMEOUT");
-  } else {
-    LogManager::logError("Kalibracja z menu zakonczona bledem.");
-    drawFeederCalibrationPrompt(display, "KALIBRACJA BLAD");
-  }
-
-  delay(1200);
-}
-
 void SystemController::enterNightDeepSleep() {
   if (!rtcReady) {
     LogManager::logWarn("RTC niedostepny - pomijam deep sleep.");
     return;
   }
-  DateTime nowLocal = getCurrentDateTime();
-  DateTime nowUtc = getCurrentUtcDateTime();
+  DateTime now = getCurrentDateTime();
 
   LogManager::logInfo("Noc: wylaczam urzadzenia i przechodze do deep sleep.");
-  char gateMsg[180];
-  snprintf(gateMsg, sizeof(gateMsg),
-           "Sleep gate ota=%d ap=%d staOff=%d bleAdv=%d bleConn=%d feeding=%d",
-           OtaManager::isOtaInProgress() ? 1 : 0,
-           AkwariumWifi::getIsAPMode() ? 1 : 0,
-           AkwariumWifi::isStaOff() ? 1 : 0, BleManager::isAdvertising() ? 1 : 0,
-           BleManager::isConnected() ? 1 : 0,
-           SystemController::isFeedingNow() ? 1 : 0);
-  LogManager::logInfo(gateMsg);
-
-  char tsMsg[180];
-  snprintf(tsMsg, sizeof(tsMsg),
-           "Sleep start local=%04d-%02d-%02d %02d:%02d:%02d | utc=%04d-%02d-%02d %02d:%02d:%02d",
-           nowLocal.year(), nowLocal.month(), nowLocal.day(), nowLocal.hour(),
-           nowLocal.minute(), nowLocal.second(), nowUtc.year(), nowUtc.month(),
-           nowUtc.day(), nowUtc.hour(), nowUtc.minute(), nowUtc.second());
-  LogManager::logInfo(tsMsg);
 
   tempController.forceHeaterOff();
   SharedState::updateRelays(false, false, false, false);
@@ -928,7 +617,7 @@ void SystemController::enterNightDeepSleep() {
     return;
   }
 
-  uint64_t timerWakeUs = computeSleepUsUntilDayStart(nowLocal);
+  uint64_t timerWakeUs = computeSleepUsUntilDayStart(now);
   err = esp_sleep_enable_timer_wakeup(timerWakeUs);
   if (err != ESP_OK) {
     logEspErr("esp_sleep_enable_timer_wakeup", err);
@@ -941,38 +630,49 @@ void SystemController::enterNightDeepSleep() {
 
 void SystemController::handlePowerManagement(U8G2 *display,
                                              AquariumAnimation *anim) {
-  (void)anim;
   unsigned long nowMs = millis();
   unsigned long lastAction = PowerManager::getLastActivityTime();
   const Config cfg = ConfigManager::getCopy();
-  static bool deepSleepDisabledLogged = false;
-  static bool screenPowerSave = false;
 
-  // Tryb pracy bez deep sleep: wygaszamy tylko wyswietlacz po bezczynnosci.
-  if (!deepSleepDisabledLogged) {
-    LogManager::logInfo(
-        "Deep sleep wylaczony: aktywne tylko wygaszanie wyswietlacza.");
-    deepSleepDisabledLogged = true;
+  if (!isNightTimeNow()) {
+    if ((nowMs - lastAction) > 240000UL &&
+        !cfg.alwaysScreenOn) { // 4 minuty
+      if (PowerManager::getCurrentMode() == MODE_ACTIVE) {
+        PowerManager::setMode(MODE_LOW_POWER);
+        if (display) {
+          display->setPowerSave(1);
+        }
+      }
+    } else {
+      if (PowerManager::getCurrentMode() != MODE_ACTIVE) {
+        PowerManager::setMode(MODE_ACTIVE);
+        if (display) {
+          display->setPowerSave(0);
+        }
+      }
+    }
+    return;
   }
 
-  if ((nowMs - lastAction) > 240000UL &&
-      !cfg.alwaysScreenOn) { // 4 minuty
-    if (PowerManager::getCurrentMode() == MODE_ACTIVE) {
-      PowerManager::setMode(MODE_LOW_POWER);
-    }
-    if (!screenPowerSave && display) {
-        display->setPowerSave(1);
-        screenPowerSave = true;
-        LogManager::logInfo("Display: power-save ON (bezczynnosc).");
-    }
-  } else {
-    if (PowerManager::getCurrentMode() != MODE_ACTIVE) {
-      PowerManager::setMode(MODE_ACTIVE);
-    }
-    if (screenPowerSave && display) {
-        display->setPowerSave(0);
-        screenPowerSave = false;
-        LogManager::logInfo("Display: power-save OFF (aktywność).");
-    }
+  if (!AkwariumWifi::isStaOff()) {
+    AkwariumWifi::requestStaOffForDeepSleep();
   }
+
+  if (!canEnterDeepSleep(nowMs, lastAction)) {
+    bool keepInteractive = ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
+    if (display) {
+      display->setPowerSave(keepInteractive ? 0 : 1);
+    }
+    PowerManager::setMode(keepInteractive ? MODE_ACTIVE : MODE_LOW_POWER);
+    return;
+  }
+
+  if (display) {
+    display->clearBuffer();
+    display->sendBuffer();
+    display->setPowerSave(1);
+  }
+
+  PowerManager::setMode(MODE_DEEP_SLEEP);
+  enterNightDeepSleep();
 }

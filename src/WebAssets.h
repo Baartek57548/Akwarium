@@ -1016,7 +1016,6 @@ const radioLogs = document.getElementsByName('logTypeToggle');
 
 // State for active log view
 let currentLogView = 'normal'; // normal or critical
-let lastDiagSignature = "";
 
 radioLogs.forEach(radio => {
     radio.addEventListener('change', (e) => {
@@ -1165,14 +1164,6 @@ function updateUI(data) {
         otaIpAddress.innerText = data.network.ip || "192.168.x.x";
         otaNetworkMode.innerText = data.network.apMode ? "Access Point" : "Station (WIFI DOM)";
         otaNetworkMode.style.color = data.network.apMode ? "var(--warning)" : "var(--success)";
-    }
-
-    if (data.diag) {
-        const sig = `${data.diag.bootCount}|${data.diag.lastResetReason}|${data.diag.lastWakeupCause}|${data.diag.brownoutCount}|${data.diag.wdtCount}|${data.diag.panicCount}`;
-        if (sig !== lastDiagSignature) {
-            lastDiagSignature = sig;
-            addLogLine(`DIAG boot=${data.diag.bootCount} reset=${data.diag.lastResetReason} wake=${data.diag.lastWakeupCause} brownout=${data.diag.brownoutCount} wdt=${data.diag.wdtCount} panic=${data.diag.panicCount}`, "system");
-        }
     }
 }
 
