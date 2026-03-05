@@ -19,7 +19,7 @@ Kolejnosc startu (`setup()` w `Akwarium.ino`):
 4. `setupApiEndpoints()` (endpointy REST).
 5. `AkwariumWifi::begin()` (osobny task WiFi/WebServer na Core 1).
 6. `BleManager::init()`.
-7. `SystemController::runFeederCalibrationOnPowerUp(...)`.
+7. Ręczna opcja menu `Kalibracja karmnika` (bez wymuszania kalibracji na starcie).
 8. Start `VideoTask` na Core 0.
 
 ## 2. Runtime i rdzenie
@@ -93,7 +93,7 @@ Publiczne API:
 - `setManualServo(int angle)`
 - `clearManualServo()`
 - `getServoPosition()`
-- `runFeederCalibrationOnPowerUp(U8G2 *display)`
+- `runFeederCalibration(U8G2 *display)`
 - `handlePowerManagement(U8G2 *display, AquariumAnimation *anim)`
 - `RTC_DS3231 rtc` (publiczny)
 
@@ -150,14 +150,12 @@ oraz `servoController.update()` i `feederController.update()`.
 
 ### 5.5 Kalibracja karmnika
 
-`runFeederCalibrationOnPowerUp()`:
+`runFeederCalibration()`:
 
-- uruchamia sie tylko po zimnym starcie (nie po wakeup ze sleep)
-- prompt na OLED:
-  - `SELECT` start
-  - `UP` anuluj
-  - timeout 10 min -> autostart
-- wykonuje pojedynczy cykl `startFeed(1500, true)`
+- uruchamiana ręcznie z menu OLED (`Kalibracja karmnika`)
+- od razu startuje pojedynczy cykl `startFeed(7000, true)`
+- podczas pracy pokazuje animowany ekran postępu kalibracji
+- po zakończeniu pokazuje wynik `OK/BLAD`
 
 ## 6. ScheduleManager
 

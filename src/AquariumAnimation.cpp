@@ -643,7 +643,7 @@ void AquariumAnimation::updatePhysics() {
 // --- LOGIKA NAWIGACJI MENU ---
 void AquariumAnimation::menuNext() {
   menuSelection++;
-  if (menuSelection > 5) {
+  if (menuSelection > 6) {
     menuSelection = 0;
     menuScrollOffset = 0;
   } else if (menuSelection > menuScrollOffset + 2) {
@@ -1055,12 +1055,18 @@ void AquariumAnimation::drawMenu(bool btnBackState, bool btnSelectState,
   display->drawLine(10, 21, 127, 21);
   display->drawLine(127, 1, 127, 32);
   display->drawLine(114, 0, 114, 31);
-  const char *items[] = {"Harmonogramy", "Logi", "Data i Czas",
-                         "Test", "Wifi", "Bluetooth"};
+  const char *items[] = {"Harmonogramy", "Logi", "Data i Czas", "Test",
+                         "Kalibracja karmnika", "Wifi", "Bluetooth"};
   for (int i = 0; i < 3; i++) {
     int itemIndex = menuScrollOffset + i;
     int yPos = 9 + (i * 11);
-    display->drawStr(12, yPos, items[itemIndex]);
+    if (itemIndex == 4) {
+      display->setFont(u8g2_font_5x7_tr);
+      display->drawStr(12, yPos, items[itemIndex]);
+      display->setFont(u8g2_font_6x10_tr);
+    } else {
+      display->drawStr(12, yPos, items[itemIndex]);
+    }
   }
   int visualCursorPos = menuSelection - menuScrollOffset;
   if (visualCursorPos == 0)
@@ -1722,4 +1728,3 @@ uint8_t AquariumAnimation::getTestAeration() { return testAerationVal; }
 
 // EKRAN GĹĂ“WNY (FRAME)
 void AquariumAnimation::drawFrame() { HomeRenderer::drawFrame(this); }
-

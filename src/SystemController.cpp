@@ -36,6 +36,7 @@ static bool holdOutputsInOffState();
 
 static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
+static const unsigned long OLED_IDLE_TIMEOUT_MS = 120000UL;
 static bool wokeFromButtonThisBoot = false;
 
 TemperatureController SystemController::tempController(ONE_WIRE_BUS,
@@ -360,6 +361,10 @@ bool SystemController::canEnterDeepSleep(unsigned long nowMs,
   if ((nowMs - lastActionMs) < DEEP_SLEEP_IDLE_MS) {
     return false;
   }
+  const SharedStateData snap = SharedState::getSnapshot();
+  if (snap.isLightOn || snap.isFilterOn) {
+    return false;
+  }
   if (OtaManager::isOtaInProgress()) {
     return false;
   }
@@ -507,83 +512,119 @@ static void drawFeederCalibrationPrompt(U8G2 *display, const char *line1,
   display->sendBuffer();
 }
 
-static bool waitForCalibrationDecision(unsigned long timeoutMs) {
-  const unsigned long startMs = millis();
+static void drawFeederCalibrationAnimation(U8G2 *display, unsigned long elapsedMs,
+                                           unsigned long expectedMs) {
+  if (!display)
+    return;
 
-  while (true) {
-    if (digitalRead(BUTTON_SELECT_PIN) == LOW) {
-      while (digitalRead(BUTTON_SELECT_PIN) == LOW) {
-        esp_task_wdt_reset();
-        delay(5);
-      }
-      return true; // confirmed
+  static const int8_t spinnerX[8] = {0, 2, 3, 2, 0, -2, -3, -2};
+  static const int8_t spinnerY[8] = {-3, -2, 0, 2, 3, 2, 0, -2};
+  static const int8_t waveY[8] = {0, 1, 2, 1, 0, -1, -2, -1};
+
+  unsigned long clampedElapsed =
+      (expectedMs > 0) ? min(elapsedMs, expectedMs) : elapsedMs;
+  uint8_t progressPct = (expectedMs > 0)
+                            ? static_cast<uint8_t>((clampedElapsed * 100UL) /
+                                                   expectedMs)
+                            : 0;
+  uint8_t progressFill = (expectedMs > 0)
+                             ? static_cast<uint8_t>((clampedElapsed * 112UL) /
+                                                    expectedMs)
+                             : 0;
+  if (progressFill > 112)
+    progressFill = 112;
+
+  uint8_t spinnerPhase = static_cast<uint8_t>((elapsedMs / 90UL) % 8UL);
+  int pelletX = 30 + static_cast<int>((elapsedMs / 24UL) % 78UL);
+  uint8_t wavePhase = static_cast<uint8_t>(((elapsedMs / 60UL) + pelletX) % 8);
+  int pelletY = 18 + waveY[wavePhase];
+
+  display->clearBuffer();
+  display->setFont(u8g2_font_6x10_tr);
+  drawCenteredLine(display, "Kalibracja karmnika", 9);
+
+  display->drawFrame(3, 11, 122, 14);
+  display->drawHLine(26, 18, 94);
+  display->drawDisc(pelletX, pelletY, 2, U8G2_DRAW_ALL);
+
+  for (uint8_t i = 0; i < 8; i++) {
+    uint8_t idx = (spinnerPhase + i) % 8;
+    int x = 15 + spinnerX[idx];
+    int y = 18 + spinnerY[idx];
+    if (i < 2) {
+      display->drawDisc(x, y, 1, U8G2_DRAW_ALL);
+    } else {
+      display->drawPixel(x, y);
     }
-
-    if (digitalRead(BUTTON_UP_PIN) == LOW) {
-      while (digitalRead(BUTTON_UP_PIN) == LOW) {
-        esp_task_wdt_reset();
-        delay(5);
-      }
-      return false; // canceled by user
-    }
-
-    if (millis() - startMs >= timeoutMs) {
-      LogManager::logInfo("Kalibracja timeout -> autostart");
-      return true; // auto-start calibration on timeout
-    }
-
-    esp_task_wdt_reset();
-    delay(10);
   }
+
+  display->drawFrame(8, 27, 114, 4);
+  if (progressFill > 0)
+    display->drawBox(9, 28, progressFill, 2);
+
+  display->setFont(u8g2_font_5x7_tr);
+  char percentText[8];
+  snprintf(percentText, sizeof(percentText), "%3u%%",
+           static_cast<unsigned>(progressPct));
+  display->drawStr(97, 24, percentText);
+
+  display->sendBuffer();
 }
 
-void SystemController::runFeederCalibrationOnPowerUp(U8G2 *display) {
-  esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
-  bool isPowerOnBoot = (wakeup_reason == ESP_SLEEP_WAKEUP_UNDEFINED);
-  if (!isPowerOnBoot)
+static void drawFeederCalibrationResult(U8G2 *display, bool ok) {
+  if (!display)
     return;
 
-  const unsigned long CALIBRATION_TIMEOUT_MS = 10UL * 60UL * 1000UL; // 10 min
+  display->clearBuffer();
+  display->setFont(u8g2_font_6x10_tr);
+  drawCenteredLine(display, "Kalibracja karmnika", 9);
 
-  LogManager::logInfo("Wymagana kalibracja karmnika.");
-  drawFeederCalibrationPrompt(display, "KALIBRACJA KARMNIKA", "SELECT=start",
-                              "BACK=anuluj (10m)");
-
-  bool shouldCalibrate = waitForCalibrationDecision(CALIBRATION_TIMEOUT_MS);
-  if (!shouldCalibrate) {
-    LogManager::logInfo("Kalibracja pominieta.");
-    drawFeederCalibrationPrompt(display, "KALIBRACJA POMINIETA");
-    delay(1200);
-    return;
-  }
-
-  drawFeederCalibrationPrompt(display, "KALIBRACJA...", "Trwa ustawianie",
-                              "pozycji start");
-  feederController.clearError();
-
-  Error startErr = feederController.startFeed(1500, true);
-  if (startErr != Error::NONE) {
-    LogManager::logError("Blad startu kalibracji!");
-    drawFeederCalibrationPrompt(display, "KALIBRACJA BLAD");
-    delay(1200);
-    return;
-  }
-
-  while (feederController.isFeeding()) {
-    feederController.update();
-    esp_task_wdt_reset();
-    delay(2);
-  }
-
-  Error endErr = feederController.getLastError();
-  if (endErr == Error::NONE) {
-    LogManager::logInfo("Kalibracja OK.");
-    drawFeederCalibrationPrompt(display, "KALIBRACJA OK");
+  if (ok) {
+    drawCenteredLine(display, "zakonczona", 20);
+    display->drawLine(49, 25, 57, 30);
+    display->drawLine(57, 30, 77, 14);
   } else {
-    LogManager::logError("Kalibracja FAILED!");
-    drawFeederCalibrationPrompt(display, "KALIBRACJA BLAD");
+    drawCenteredLine(display, "BLAD", 20);
+    display->drawLine(54, 14, 74, 30);
+    display->drawLine(74, 14, 54, 30);
   }
+
+  display->sendBuffer();
+}
+
+bool SystemController::runFeederCalibration(U8G2 *display) {
+  constexpr unsigned long CALIBRATION_EXPECTED_MS = 7000UL;
+
+  LogManager::logInfo("Kalibracja karmnika uruchomiona z menu.");
+  drawFeederCalibrationPrompt(display, "Kalibracja karmnika", "Przygotowanie...");
+  delay(250);
+
+  feederController.clearError();
+  Error startErr = feederController.startFeed(CALIBRATION_EXPECTED_MS, true);
+  if (startErr != Error::NONE) {
+    LogManager::logError("Blad startu kalibracji karmnika.");
+    drawFeederCalibrationPrompt(display, "Kalibracja karmnika", "BLAD STARTU");
+    delay(1200);
+    return false;
+  }
+
+  const unsigned long startMs = millis();
+  while (feederController.isFeeding()) {
+    drawFeederCalibrationAnimation(display, millis() - startMs,
+                                   CALIBRATION_EXPECTED_MS);
+    delay(16);
+  }
+
+  bool ok = (feederController.getLastError() == Error::NONE);
+  if (ok) {
+    LogManager::logInfo("Kalibracja karmnika zakonczona powodzeniem.");
+  } else {
+    LogManager::logError("Kalibracja karmnika zakonczona bledem.");
+  }
+
+  drawFeederCalibrationResult(display, ok);
   delay(1200);
+  return ok;
 }
 
 void SystemController::enterNightDeepSleep() {
@@ -633,24 +674,37 @@ void SystemController::handlePowerManagement(U8G2 *display,
   unsigned long nowMs = millis();
   unsigned long lastAction = PowerManager::getLastActivityTime();
   const Config cfg = ConfigManager::getCopy();
+  const SharedStateData snap = SharedState::getSnapshot();
 
-  if (!isNightTimeNow()) {
-    if ((nowMs - lastAction) > 240000UL &&
-        !cfg.alwaysScreenOn) { // 4 minuty
+  auto handleOnlyOledTimeout = [&](unsigned long timeoutMs) {
+    if ((nowMs - lastAction) > timeoutMs && !cfg.alwaysScreenOn) {
       if (PowerManager::getCurrentMode() == MODE_ACTIVE) {
         PowerManager::setMode(MODE_LOW_POWER);
-        if (display) {
-          display->setPowerSave(1);
-        }
+      }
+      if (display) {
+        display->setPowerSave(1);
       }
     } else {
       if (PowerManager::getCurrentMode() != MODE_ACTIVE) {
         PowerManager::setMode(MODE_ACTIVE);
-        if (display) {
-          display->setPowerSave(0);
-        }
+      }
+      // OLED ma sie wybudzic po aktywnosci przyciskow nawet wtedy,
+      // gdy registerActivity() juz przelaczyl mode na ACTIVE.
+      if (display) {
+        display->setPowerSave(0);
       }
     }
+  };
+
+  // Gdy swiatlo lub filtr sa wlaczone, nie usypiamy calego urzadzenia.
+  // Wylaczamy tylko OLED po 2 minutach bez aktywnosci.
+  if (snap.isLightOn || snap.isFilterOn) {
+    handleOnlyOledTimeout(OLED_IDLE_TIMEOUT_MS);
+    return;
+  }
+
+  if (!isNightTimeNow()) {
+    handleOnlyOledTimeout(OLED_IDLE_TIMEOUT_MS);
     return;
   }
 

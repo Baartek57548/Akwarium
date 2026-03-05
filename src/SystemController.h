@@ -28,8 +28,8 @@ public:
   static void clearManualServo();
   static int getServoPosition();
 
-  // Kalibracja karmnika przy uruchomieniu (wywoływane w setup przed VideoTask)
-  static void runFeederCalibrationOnPowerUp(U8G2 *display);
+  // Reczna kalibracja karmnika uruchamiana z menu
+  static bool runFeederCalibration(U8G2 *display);
 
   // Funkcja zarzadzania energia, wywolywana glownie przez VideoTask lub loop
   static void handlePowerManagement(U8G2 *display, AquariumAnimation *anim);

@@ -51,11 +51,23 @@ unsigned long allButtonsHoldStartMs = 0;
 bool manualFeedComboTriggered = false;
 bool feedingUiActive = false;
 UiState uiStateBeforeFeeding = UiState::HOME;
+unsigned long lastUiInteractionMs = 0;
 
 #define BUTTON_UP_PIN 15
 #define BUTTON_SELECT_PIN 16
 #define BUTTON_DOWN_PIN 14
 #define MANUAL_FEED_HOLD_MS 1000UL
+#define UI_IDLE_RETURN_HOME_MS 30000UL
+
+static bool shouldApplyUiIdleHomeTimeout(UiState state) {
+  if (state == UiState::HOME)
+    return false;
+  if (state == UiState::ACCESS_POINT || state == UiState::BLUETOOTH)
+    return false;
+  if (state == UiState::FEEDING)
+    return false;
+  return true;
+}
 
 struct PendingScheduleUpdate {
   uint8_t dayStartHour;
@@ -234,6 +246,11 @@ void updateUiState() {
   if (!animation)
     return;
 
+  unsigned long nowMs = millis();
+  if (lastUiInteractionMs == 0) {
+    lastUiInteractionMs = nowMs;
+  }
+
   bool isUpPressed = (digitalRead(BUTTON_UP_PIN) == LOW);
   bool isSelectPressed = (digitalRead(BUTTON_SELECT_PIN) == LOW);
   bool isDownPressed = (digitalRead(BUTTON_DOWN_PIN) == LOW);
@@ -249,6 +266,7 @@ void updateUiState() {
                (millis() - allButtonsHoldStartMs >= MANUAL_FEED_HOLD_MS)) {
       SystemController::feedNow();
       PowerManager::registerActivity();
+      lastUiInteractionMs = nowMs;
       manualFeedComboTriggered = true;
     }
   } else {
@@ -286,6 +304,12 @@ void updateUiState() {
 
   if (upJustPressed || selectJustPressed || downJustPressed) {
     PowerManager::registerActivity();
+    lastUiInteractionMs = nowMs;
+  }
+
+  if (shouldApplyUiIdleHomeTimeout(uiState) &&
+      (nowMs - lastUiInteractionMs >= UI_IDLE_RETURN_HOME_MS)) {
+    uiState = UiState::HOME;
   }
 
   switch (uiState) {
@@ -313,9 +337,12 @@ void updateUiState() {
         uiState = UiState::TESTS;
         animation->enterTestMode();
       } else if (sel == 4) {
+        SystemController::runFeederCalibration(&display);
+        uiState = UiState::MENU;
+      } else if (sel == 5) {
         AkwariumWifi::startAP();
         uiState = UiState::ACCESS_POINT;
-      } else if (sel == 5) {
+      } else if (sel == 6) {
         BleManager::start();
         uiState = UiState::BLUETOOTH;
       }
@@ -655,7 +682,6 @@ void setup() {
   setupApiEndpoints();
   AkwariumWifi::begin();
   BleManager::init();
-  SystemController::runFeederCalibrationOnPowerUp(&display);
 
   // Uruchomienie wyswietlania na Core 0 z mechanizmem SharedState Snapshot
   xTaskCreatePinnedToCore(VideoTask, "VideoTask", 10000, NULL, 1, NULL, 0);
