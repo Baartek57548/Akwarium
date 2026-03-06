@@ -1,0 +1,54 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PlatformIO: Build Firmware",
+      "type": "shell",
+      "command": "${env:USERPROFILE}\\.platformio\\penv\\Scripts\\platformio.exe",
+      "args": [
+        "run",
+        "--project-dir",
+        "firmware",
+        "--environment",
+        "esp32-s3-devkitc-1"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "PlatformIO: Upload Firmware",
+      "type": "shell",
+      "command": "${env:USERPROFILE}\\.platformio\\penv\\Scripts\\platformio.exe",
+      "args": [
+        "run",
+        "--project-dir",
+        "firmware",
+        "--environment",
+        "esp32-s3-devkitc-1",
+        "--target",
+        "upload"
+      ],
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "PlatformIO: Monitor Firmware",
+      "type": "shell",
+      "command": "${env:USERPROFILE}\\.platformio\\penv\\Scripts\\platformio.exe",
+      "args": [
+        "device",
+        "monitor",
+        "--project-dir",
+        "firmware",
+        "--environment",
+        "esp32-s3-devkitc-1"
+      ]
+    }
+  ]
+}
