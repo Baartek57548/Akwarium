@@ -30,6 +30,9 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      - name: Remove tracked PlatformIO artifacts
+        run: rm -rf .pio
+
       - name: Build project
         run: pio run
 
