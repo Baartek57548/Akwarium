@@ -31,22 +31,22 @@ jobs:
         run: pip install platformio
 
       - name: Remove tracked PlatformIO artifacts
-        run: rm -rf .pio
+        run: rm -rf firmware/.pio
 
       - name: Build project
-        run: pio run
+        run: pio run -d firmware
 
       - name: Verify firmware exists
-        run: ls -lah .pio/build/esp32-s3-devkitc-1/
+        run: ls -lah firmware/.pio/build/esp32-s3-devkitc-1/
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: .pio/build/esp32-s3-devkitc-1/firmware.bin
+          path: firmware/.pio/build/esp32-s3-devkitc-1/firmware.bin
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: .pio/build/esp32-s3-devkitc-1/firmware.bin
+          files: firmware/.pio/build/esp32-s3-devkitc-1/firmware.bin
