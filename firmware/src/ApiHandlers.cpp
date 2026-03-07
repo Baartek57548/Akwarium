@@ -1,11 +1,16 @@
 #include "ApiHandlers.h"
+
 #include "AkwariumWifi.h"
 #include "ConfigManager.h"
 #include "ConfigValidation.h"
+#include "FirmwareInfo.h"
 #include "LogManager.h"
+#include "OtaManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
 #include "SystemController.h"
+
+#include <ArduinoJson.h>
 #include <WebServer.h>
 #include <cstdlib>
 
@@ -45,6 +50,7 @@ static bool parseTimeArg(const String &value, int &hour, int &minute) {
   if (value.length() < 5 || value[2] != ':') {
     return false;
   }
+
   if (!isDigit(value[0]) || !isDigit(value[1]) || !isDigit(value[3]) ||
       !isDigit(value[4])) {
     return false;
@@ -55,56 +61,150 @@ static bool parseTimeArg(const String &value, int &hour, int &minute) {
   return true;
 }
 
+static void populateValidationJson(JsonObject validation) {
+  const ValidationProfileSnapshot profile = ConfigValidation::getValidationProfile();
+
+  validation["minuteStep"] = profile.minuteStep;
+  validation["scheduleModes"] = "schedule|always_on|always_off";
+  validation["heaterModes"] = "threshold|off";
+  validation["timeFieldsRequireScheduleMode"] = true;
+
+  JsonObject temperature = validation.createNestedObject("temperature");
+  temperature["min"] = profile.minTemperature;
+  temperature["max"] = profile.maxTemperature;
+  temperature["step"] = profile.temperatureStep;
+  temperature["supportsOff"] = true;
+
+  JsonObject hysteresis = validation.createNestedObject("hysteresis");
+  hysteresis["min"] = profile.hysteresisMin;
+  hysteresis["max"] = profile.hysteresisMax;
+  hysteresis["step"] = profile.hysteresisStep;
+
+  JsonObject servoPreOff = validation.createNestedObject("servoPreOffMinutes");
+  servoPreOff["min"] = profile.servoPreOffMin;
+  servoPreOff["max"] = profile.servoPreOffMax;
+  servoPreOff["step"] = 1;
+
+  JsonObject feeding = validation.createNestedObject("feeding");
+  feeding["modeMin"] = profile.feedModeMin;
+  feeding["modeMax"] = profile.feedModeMax;
+}
+
+static String buildStatusJson() {
+  const SharedStateData snap = SharedState::getSnapshot();
+  const Config cfg = ConfigManager::getCopy();
+  const FirmwareRuntimeInfo firmwareInfo = FirmwareInfo::getRuntimeInfo();
+
+  float voltage = PowerManager::getBatteryVoltage();
+  if (isnan(voltage)) {
+    voltage = 0.0f;
+  }
+
+  StaticJsonDocument<2048> doc;
+
+  JsonObject temperature = doc.createNestedObject("temperature");
+  temperature["current"] = isnan(snap.temperature) ? -99.9f : snap.temperature;
+  temperature["target"] = cfg.targetTemp;
+  temperature["threshold"] = cfg.targetTemp;
+  temperature["heaterMode"] = cfg.heaterMode;
+  temperature["hysteresis"] = cfg.tempHysteresis;
+  temperature["min"] = isnan(snap.minTemp) ? -99.9f : snap.minTemp;
+  temperature["minTimeEpoch"] = snap.minTempEpoch;
+
+  JsonObject battery = doc.createNestedObject("battery");
+  battery["voltage"] = voltage;
+  battery["percent"] = PowerManager::getBatteryPercent();
+
+  JsonObject relays = doc.createNestedObject("relays");
+  relays["light"] = snap.isLightOn;
+  relays["pump"] = snap.isFilterOn;
+  relays["heater"] = snap.isHeaterOn;
+
+  JsonObject servo = doc.createNestedObject("servo");
+  servo["angle"] = SystemController::getServoPosition();
+
+  JsonObject schedule = doc.createNestedObject("schedule");
+  schedule["lightMode"] = cfg.lightMode;
+  schedule["dayStartHour"] = cfg.dayStartHour;
+  schedule["dayStartMin"] = cfg.dayStartMinute;
+  schedule["dayEndHour"] = cfg.dayEndHour;
+  schedule["dayEndMin"] = cfg.dayEndMinute;
+  schedule["airMode"] = cfg.aerationMode;
+  schedule["airStartHour"] = cfg.aerationHourOn;
+  schedule["airStartMin"] = cfg.aerationMinuteOn;
+  schedule["airEndHour"] = cfg.aerationHourOff;
+  schedule["airEndMin"] = cfg.aerationMinuteOff;
+  schedule["filterMode"] = cfg.filterMode;
+  schedule["filterStartHour"] = cfg.filterHourOn;
+  schedule["filterStartMin"] = cfg.filterMinuteOn;
+  schedule["filterEndHour"] = cfg.filterHourOff;
+  schedule["filterEndMin"] = cfg.filterMinuteOff;
+  schedule["heaterMode"] = cfg.heaterMode;
+  schedule["servoPreOffMins"] = cfg.servoPreOffMins;
+
+  JsonObject feeding = doc.createNestedObject("feeding");
+  feeding["hour"] = cfg.feedHour;
+  feeding["minute"] = cfg.feedMinute;
+  feeding["freq"] = cfg.feedMode;
+  feeding["lastFeedEpoch"] = cfg.lastFeedEpoch;
+
+  JsonObject network = doc.createNestedObject("network");
+  network["ip"] = AkwariumWifi::getIP();
+  network["apMode"] = AkwariumWifi::getIsAPMode();
+
+  JsonObject system = doc.createNestedObject("system");
+  system["firmwareName"] = firmwareInfo.firmwareName;
+  system["firmwareVersion"] = firmwareInfo.firmwareVersion;
+  system["buildDate"] = firmwareInfo.buildDate;
+  system["buildTime"] = firmwareInfo.buildTime;
+  system["idfVersion"] = firmwareInfo.idfVersion;
+  system["runningPartition"] = firmwareInfo.runningPartitionLabel;
+  system["bootPartition"] = firmwareInfo.bootPartitionLabel;
+  system["nextPartition"] = firmwareInfo.nextPartitionLabel;
+  system["otaPartitionSize"] = firmwareInfo.nextPartitionSizeBytes;
+  system["otaInProgress"] = OtaManager::isOtaInProgress();
+  system["otaTransport"] = OtaManager::getActiveTransport();
+  system["bleOtaSupported"] = FirmwareInfo::supportsBleOta();
+  system["httpOtaSupported"] = FirmwareInfo::supportsHttpOta();
+  populateValidationJson(system.createNestedObject("validation"));
+
+  String json;
+  serializeJson(doc, json);
+  return json;
+}
+
+static bool parseModeArg(WebServer &server, const char *name,
+                         bool &hasValue, int &outValue) {
+  hasValue = false;
+  if (!server.hasArg(name)) {
+    return true;
+  }
+
+  long parsed = 0;
+  if (!parseLongStrict(server.arg(name), parsed)) {
+    return false;
+  }
+
+  hasValue = true;
+  outValue = static_cast<int>(parsed);
+  return true;
+}
+
+static void sendValidationError(WebServer &server, const char *code) {
+  server.send(400, "text/plain",
+              (code != nullptr && code[0] != '\0') ? code : "invalid_values");
+}
+
 } // namespace
 
-extern WebServer server; // from AkwariumWifi
+extern WebServer server;
 
 void setupApiEndpoints() {
   WebServer &server = AkwariumWifi::getServer();
 
   server.on("/api/status", HTTP_GET, [&server]() {
-    const SharedStateData snap = SharedState::getSnapshot();
-    const Config cfg = ConfigManager::getCopy();
-
-    float voltage = PowerManager::getBatteryVoltage();
-    if (isnan(voltage))
-      voltage = 0.0f;
-
-    char json[700];
-    snprintf(
-        json, sizeof(json),
-        "{\"temperature\":{\"current\":%.1f,\"target\":%.1f,\"hysteresis\":%."
-        "1f,"
-        "\"min\":%.1f,\"minTimeEpoch\":%u},"
-        "\"battery\":{\"voltage\":%.2f,\"percent\":%d},"
-        "\"relays\":{\"light\":%s,\"pump\":%s},"
-        "\"servo\":{\"angle\":%d},"
-        "\"schedule\":{\"dayStartHour\":%d,\"dayStartMin\":%d,\"dayEndHour\":%"
-        "d,\"dayEndMin\":%d,"
-        "\"airStartHour\":%d,\"airStartMin\":%d,\"airEndHour\":%d,"
-        "\"airEndMin\":%d,"
-        "\"filterStartHour\":%d,\"filterStartMin\":%d,\"filterEndHour\":%d,"
-        "\"filterEndMin\":%d,"
-        "\"servoPreOffMins\":%d},"
-        "\"feeding\":{\"hour\":%d,\"minute\":%d,\"freq\":%d,\"lastFeedEpoch\":%"
-        "u},"
-        "\"network\":{\"ip\":\"%s\",\"apMode\":%s}}",
-        isnan(snap.temperature) ? -99.9 : snap.temperature, cfg.targetTemp,
-        cfg.tempHysteresis, isnan(snap.minTemp) ? 20.0 : snap.minTemp,
-        (unsigned int)snap.minTempEpoch, voltage,
-        (int)PowerManager::getBatteryPercent(),
-        snap.isLightOn ? "true" : "false", snap.isFilterOn ? "true" : "false",
-        SystemController::getServoPosition(),
-        cfg.dayStartHour, cfg.dayStartMinute, cfg.dayEndHour, cfg.dayEndMinute,
-        cfg.aerationHourOn, cfg.aerationMinuteOn, cfg.aerationHourOff,
-        cfg.aerationMinuteOff, cfg.filterHourOn, cfg.filterMinuteOn,
-        cfg.filterHourOff, cfg.filterMinuteOff, cfg.servoPreOffMins,
-        cfg.feedHour, cfg.feedMinute, cfg.feedMode,
-        (unsigned int)cfg.lastFeedEpoch,
-        AkwariumWifi::getIP().c_str(),
-        AkwariumWifi::getIsAPMode() ? "true" : "false");
     server.sendHeader("Connection", "close");
-    server.send(200, "application/json", json);
+    server.send(200, "application/json", buildStatusJson());
   });
 
   server.on("/api/logs", HTTP_GET, [&server]() {
@@ -114,181 +214,182 @@ void setupApiEndpoints() {
   });
 
   server.on("/api/action", HTTP_POST, [&server]() {
-    if (server.hasArg("action")) {
-      PowerManager::registerActivity();
-      String action = server.arg("action");
-      if (action == "feed_now") {
-        SystemController::feedNow();
-        server.send(200, "text/plain", "OK");
-        return;
-      } else if (action == "set_servo") {
-        if (server.hasArg("angle")) {
-          int ang = constrain(server.arg("angle").toInt(), 0, 90);
-          SystemController::setManualServo(ang);
-          server.send(200, "text/plain", "OK");
-          return;
-        }
-      } else if (action == "clear_servo") {
-        SystemController::clearManualServo();
-        server.send(200, "text/plain", "OK");
-        return;
-      } else if (action == "clear_critical_logs") {
-        LogManager::clearCriticalLogs();
-        server.send(200, "text/plain", "OK");
-        return;
-      } else if (action == "save_schedule") {
-        ConfigPatch patch = {};
-        uint8_t invalidFields = 0;
+    if (!server.hasArg("action")) {
+      server.send(400, "text/plain", "missing_action");
+      return;
+    }
 
-        if (server.hasArg("feedTime")) {
-          String ft = server.arg("feedTime");
-          int h = 0;
-          int m = 0;
-          if (parseTimeArg(ft, h, m)) {
-            patch.hasFeedHour = true;
-            patch.feedHour = h;
-            patch.hasFeedMinute = true;
-            patch.feedMinute = m;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("feedFreq")) {
-          long v = 0;
-          if (parseLongStrict(server.arg("feedFreq"), v)) {
-            patch.hasFeedMode = true;
-            patch.feedMode = static_cast<int>(v);
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("dayStart")) {
-          String ds = server.arg("dayStart");
-          int h = 0;
-          int m = 0;
-          if (parseTimeArg(ds, h, m)) {
-            patch.hasDayStartHour = true;
-            patch.dayStartHour = h;
-            patch.hasDayStartMinute = true;
-            patch.dayStartMinute = m;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("dayEnd")) {
-          String de = server.arg("dayEnd");
-          int h = 0;
-          int m = 0;
-          if (parseTimeArg(de, h, m)) {
-            patch.hasDayEndHour = true;
-            patch.dayEndHour = h;
-            patch.hasDayEndMinute = true;
-            patch.dayEndMinute = m;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("targetTemp")) {
-          float v = 0.0f;
-          if (parseFloatStrict(server.arg("targetTemp"), v)) {
-            patch.hasTargetTemp = true;
-            patch.targetTemp = v;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("tempHyst")) {
-          float v = 0.0f;
-          if (parseFloatStrict(server.arg("tempHyst"), v)) {
-            patch.hasTempHysteresis = true;
-            patch.tempHysteresis = v;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("airOn")) {
-          String ao = server.arg("airOn");
-          int h = 0;
-          int m = 0;
-          if (parseTimeArg(ao, h, m)) {
-            patch.hasAerationHourOn = true;
-            patch.aerationHourOn = h;
-            patch.hasAerationMinuteOn = true;
-            patch.aerationMinuteOn = m;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("airOff")) {
-          String af = server.arg("airOff");
-          int h = 0;
-          int m = 0;
-          if (parseTimeArg(af, h, m)) {
-            patch.hasAerationHourOff = true;
-            patch.aerationHourOff = h;
-            patch.hasAerationMinuteOff = true;
-            patch.aerationMinuteOff = m;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("filterOn")) {
-          String fo = server.arg("filterOn");
-          int h = 0;
-          int m = 0;
-          if (parseTimeArg(fo, h, m)) {
-            patch.hasFilterHourOn = true;
-            patch.filterHourOn = h;
-            patch.hasFilterMinuteOn = true;
-            patch.filterMinuteOn = m;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("filterOff")) {
-          String ff = server.arg("filterOff");
-          int h = 0;
-          int m = 0;
-          if (parseTimeArg(ff, h, m)) {
-            patch.hasFilterHourOff = true;
-            patch.filterHourOff = h;
-            patch.hasFilterMinuteOff = true;
-            patch.filterMinuteOff = m;
-          } else {
-            invalidFields++;
-          }
-        }
-        if (server.hasArg("servoPreOffMins")) {
-          long v = 0;
-          if (parseLongStrict(server.arg("servoPreOffMins"), v)) {
-            patch.hasServoPreOffMins = true;
-            patch.servoPreOffMins = static_cast<int>(v);
-          } else {
-            invalidFields++;
-          }
-        }
+    PowerManager::registerActivity();
+    const String action = server.arg("action");
 
-        Config cfg = ConfigManager::getCopy();
-        ConfigValidationResult validation = {};
-        ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
-        if (!validation.hasAnyApplied()) {
-          server.send(400, "text/plain", "No valid fields");
-          return;
-        }
+    if (action == "feed_now") {
+      SystemController::feedNow();
+      server.send(200, "text/plain", "OK");
+      return;
+    }
 
-        if (!ConfigManager::updateAndSave(cfg)) {
-          server.send(500, "text/plain", "Save failed");
-          return;
-        }
-
-        if (validation.hasInvalidFields() || invalidFields > 0) {
-          server.send(200, "text/plain", "OK_PARTIAL");
-        } else {
-          server.send(200, "text/plain", "OK");
-        }
+    if (action == "set_servo") {
+      if (!server.hasArg("angle")) {
+        server.send(400, "text/plain", "missing_angle");
         return;
       }
+
+      int ang = constrain(server.arg("angle").toInt(), 0, 90);
+      SystemController::setManualServo(ang);
+      server.send(200, "text/plain", "OK");
+      return;
     }
-    server.send(400, "text/plain", "Bad Request");
+
+    if (action == "clear_servo") {
+      SystemController::clearManualServo();
+      server.send(200, "text/plain", "OK");
+      return;
+    }
+
+    if (action == "clear_critical_logs") {
+      LogManager::clearCriticalLogs();
+      server.send(200, "text/plain", "OK");
+      return;
+    }
+
+    if (action != "save_schedule") {
+      server.send(400, "text/plain", "unknown_action");
+      return;
+    }
+
+    ConfigPatch patch = {};
+    uint8_t parseInvalidFields = 0;
+
+    auto assignMode = [&](const char *name, bool ConfigPatch::*hasField,
+                          int ConfigPatch::*field) {
+      bool hasValue = false;
+      int parsed = 0;
+      if (!parseModeArg(server, name, hasValue, parsed)) {
+        parseInvalidFields++;
+        return;
+      }
+
+      if (hasValue) {
+        patch.*hasField = true;
+        patch.*field = parsed;
+      }
+    };
+
+    assignMode("lightMode", &ConfigPatch::hasLightMode, &ConfigPatch::lightMode);
+    assignMode("aerationMode", &ConfigPatch::hasAerationMode,
+               &ConfigPatch::aerationMode);
+    assignMode("filterMode", &ConfigPatch::hasFilterMode,
+               &ConfigPatch::filterMode);
+    assignMode("heaterMode", &ConfigPatch::hasHeaterMode,
+               &ConfigPatch::heaterMode);
+
+    auto parseTimeIntoPatch = [&](const char *argName, bool ConfigPatch::*hasHour,
+                                  int ConfigPatch::*hourField,
+                                  bool ConfigPatch::*hasMinute,
+                                  int ConfigPatch::*minuteField) {
+      if (!server.hasArg(argName)) {
+        return;
+      }
+
+      int hour = 0;
+      int minute = 0;
+      if (!parseTimeArg(server.arg(argName), hour, minute)) {
+        parseInvalidFields++;
+        return;
+      }
+
+      patch.*hasHour = true;
+      patch.*hourField = hour;
+      patch.*hasMinute = true;
+      patch.*minuteField = minute;
+    };
+
+    parseTimeIntoPatch("dayStart", &ConfigPatch::hasDayStartHour,
+                       &ConfigPatch::dayStartHour,
+                       &ConfigPatch::hasDayStartMinute,
+                       &ConfigPatch::dayStartMinute);
+    parseTimeIntoPatch("dayEnd", &ConfigPatch::hasDayEndHour,
+                       &ConfigPatch::dayEndHour, &ConfigPatch::hasDayEndMinute,
+                       &ConfigPatch::dayEndMinute);
+    parseTimeIntoPatch("airOn", &ConfigPatch::hasAerationHourOn,
+                       &ConfigPatch::aerationHourOn,
+                       &ConfigPatch::hasAerationMinuteOn,
+                       &ConfigPatch::aerationMinuteOn);
+    parseTimeIntoPatch("airOff", &ConfigPatch::hasAerationHourOff,
+                       &ConfigPatch::aerationHourOff,
+                       &ConfigPatch::hasAerationMinuteOff,
+                       &ConfigPatch::aerationMinuteOff);
+    parseTimeIntoPatch("filterOn", &ConfigPatch::hasFilterHourOn,
+                       &ConfigPatch::filterHourOn,
+                       &ConfigPatch::hasFilterMinuteOn,
+                       &ConfigPatch::filterMinuteOn);
+    parseTimeIntoPatch("filterOff", &ConfigPatch::hasFilterHourOff,
+                       &ConfigPatch::filterHourOff,
+                       &ConfigPatch::hasFilterMinuteOff,
+                       &ConfigPatch::filterMinuteOff);
+    parseTimeIntoPatch("feedTime", &ConfigPatch::hasFeedHour,
+                       &ConfigPatch::feedHour, &ConfigPatch::hasFeedMinute,
+                       &ConfigPatch::feedMinute);
+
+    if (server.hasArg("feedFreq")) {
+      long value = 0;
+      if (!parseLongStrict(server.arg("feedFreq"), value)) {
+        parseInvalidFields++;
+      } else {
+        patch.hasFeedMode = true;
+        patch.feedMode = static_cast<int>(value);
+      }
+    }
+
+    if (server.hasArg("targetTemp")) {
+      float value = 0.0f;
+      if (!parseFloatStrict(server.arg("targetTemp"), value)) {
+        parseInvalidFields++;
+      } else {
+        patch.hasTargetTemp = true;
+        patch.targetTemp = value;
+      }
+    }
+
+    if (server.hasArg("tempHyst")) {
+      float value = 0.0f;
+      if (!parseFloatStrict(server.arg("tempHyst"), value)) {
+        parseInvalidFields++;
+      } else {
+        patch.hasTempHysteresis = true;
+        patch.tempHysteresis = value;
+      }
+    }
+
+    if (server.hasArg("servoPreOffMins")) {
+      long value = 0;
+      if (!parseLongStrict(server.arg("servoPreOffMins"), value)) {
+        parseInvalidFields++;
+      } else {
+        patch.hasServoPreOffMins = true;
+        patch.servoPreOffMins = static_cast<int>(value);
+      }
+    }
+
+    if (parseInvalidFields > 0) {
+      sendValidationError(server, "invalid_payload");
+      return;
+    }
+
+    Config cfg = ConfigManager::getCopy();
+    ConfigValidationResult validation = {};
+    if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
+      sendValidationError(server,
+                          validation.errorCode[0] != '\0' ? validation.errorCode
+                                                          : "invalid_values");
+      return;
+    }
+
+    if (!ConfigManager::updateAndSave(cfg)) {
+      server.send(500, "text/plain", "save_failed");
+      return;
+    }
+
+    server.send(200, "text/plain", "OK");
   });
 }

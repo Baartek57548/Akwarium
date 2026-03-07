@@ -190,22 +190,19 @@ void SystemController::updateDecisions() {
   const Config cfg = ConfigManager::getCopy();
   uint16_t nowMin = ScheduleManager::toMinutes(now.hour(), now.minute());
 
-  bool isDay = ScheduleManager::isDayTime(nowMin);
+  bool isLightActive = ScheduleManager::isDayTime(nowMin);
   bool runFilter = ScheduleManager::isFilterActive(nowMin);
   bool runAeration = ScheduleManager::isAerationActive(nowMin);
-  if (!isDay) {
-    runFilter = false;
-    runAeration = false;
-  }
 
-  // Sterowanie grzalka (Tylko jesli odczyt temp jest wzglednie swiezy)
+  // Sterowanie grzalka tylko w aktywnych godzinach pracy akwarium.
   SharedStateData snap = SharedState::getSnapshot();
-  if (isDay && !isnan(snap.temperature) && tempInvalidReadCount < 3) {
+  if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Threshold) &&
+      isLightActive && !isnan(snap.temperature) && tempInvalidReadCount < 3) {
     tempController.setTargetTemperature(cfg.targetTemp);
     tempController.setHysteresis(cfg.tempHysteresis);
     tempController.controlHeater(snap.temperature);
   } else {
-    tempController.forceHeaterOff(); // Noc i awarie: grzalka zawsze OFF
+    tempController.forceHeaterOff();
   }
 
   // Decyzje dot. swiatla, filtra (Tymczasowe, tu wchodzi w gre UI zaleznie od
@@ -245,12 +242,9 @@ void SystemController::updateDecisions() {
       map(servoTarget, SERVO_CLOSED_ANGLE, SERVO_OPEN_ANGLE, 0, 100);
   SharedState::updateAeration(aerationPct);
 
-  bool isHeaterOn = isDay && tempController.isHeaterOn();
+  bool isHeaterOn = isLightActive && tempController.isHeaterOn();
 
-  // Aplikacja relejow na zewnatrz (Light i Filter). TBD: Powiazanie z
-  // globalnymi stanowiskami z UI. Dla stabilnosci na czas przejscia UI
-  // zostawimy to do wcisniecia w applyOutputs.
-  SharedState::updateRelays(isHeaterOn, runFilter, isDay, isDay);
+  SharedState::updateRelays(isHeaterOn, runFilter, isLightActive, isLightActive);
 }
 
 void SystemController::applyOutputs() {

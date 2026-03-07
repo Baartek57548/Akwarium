@@ -99,12 +99,16 @@ private:
   uint16_t tempYear;
 
   // Dane harmonogramow (swiatlo, filtr, temperatura)
+  uint8_t lightMode;
   uint8_t scheduleHourOn, scheduleMinOn;
   uint8_t scheduleHourOff, scheduleMinOff;
+  uint8_t aerationMode;
   uint8_t aerationHourOn, aerationMinOn;
   uint8_t aerationHourOff, aerationMinOff;
+  uint8_t filterMode;
   uint8_t filterHourOn, filterMinOn;
   uint8_t filterHourOff, filterMinOff;
+  uint8_t heaterMode;
   uint8_t targetTemp;
 
   // Czas systemowy
@@ -194,15 +198,19 @@ public:
   uint8_t getScheduleSelection();
   void setLightSchedule(uint8_t hourOn, uint8_t minuteOn, uint8_t hourOff,
                         uint8_t minuteOff);
+  void setLightMode(uint8_t mode);
   void setAerationSchedule(uint8_t hourOn, uint8_t minuteOn, uint8_t hourOff,
                            uint8_t minuteOff);
+  void setAerationMode(uint8_t mode);
   void setFilterSchedule(uint8_t hourOn, uint8_t minuteOn, uint8_t hourOff,
                          uint8_t minuteOff);
+  void setFilterMode(uint8_t mode);
   inline void setCO2Schedule(uint8_t hourOn, uint8_t minuteOn, uint8_t hourOff,
                              uint8_t minuteOff) {
     setFilterSchedule(hourOn, minuteOn, hourOff, minuteOff);
   }
   void setTargetTempSetting(uint8_t value);
+  void setHeaterMode(uint8_t mode);
   void logScrollNext();
   void addLog(const char *message, const char *time);
   void clearLogs();
@@ -233,19 +241,23 @@ public:
   uint8_t getScheduleMinOn();
   uint8_t getScheduleHourOff();
   uint8_t getScheduleMinOff();
+  uint8_t getLightMode();
   uint8_t getAerationHourOn();
   uint8_t getAerationMinOn();
   uint8_t getAerationHourOff();
   uint8_t getAerationMinOff();
+  uint8_t getAerationMode();
   uint8_t getFilterHourOn();
   uint8_t getFilterMinOn();
   uint8_t getFilterHourOff();
   uint8_t getFilterMinOff();
+  uint8_t getFilterMode();
   inline uint8_t getCO2HourOn() { return getFilterHourOn(); }
   inline uint8_t getCO2MinOn() { return getFilterMinOn(); }
   inline uint8_t getCO2HourOff() { return getFilterHourOff(); }
   inline uint8_t getCO2MinOff() { return getFilterMinOff(); }
   uint8_t getTargetTemp();
+  uint8_t getHeaterMode();
 
   // Gettery Karmienia (do synchronizacji z main)
   uint8_t getFeedHour();

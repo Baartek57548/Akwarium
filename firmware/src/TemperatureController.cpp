@@ -1,4 +1,5 @@
 #include "TemperatureController.h"
+
 #include <Arduino.h>
 #include <math.h>
 
@@ -83,34 +84,23 @@ void TemperatureController::controlHeater(float currentTemp) {
     return;
   }
 
-  // Absolutny limit bezpieczeństwa: Natychmiastowe odcięcie zasilania grzałki
-  // jeśli temperatura wody dojdzie do 28.0°C!
-  if (currentTemp >= 28.0f) {
-    if (heaterState) {
+  if (heaterState && currentTemp >= targetTemp) {
+    if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {
       digitalWrite(heaterPin, LOW);
       heaterState = false;
       lastSwitchTime = now;
     }
-    return;
-  }
-
-  if (!heaterState && currentTemp <= (targetTemp - hysteresis)) {
+  } else if (!heaterState && currentTemp <= (targetTemp - hysteresis)) {
     if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {
       digitalWrite(heaterPin, HIGH);
       heaterState = true;
-      lastSwitchTime = now;
-    }
-  } else if (heaterState && currentTemp >= (targetTemp + hysteresis)) {
-    if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {
-      digitalWrite(heaterPin, LOW);
-      heaterState = false;
       lastSwitchTime = now;
     }
   }
 }
 
 void TemperatureController::setTargetTemperature(float temp) {
-  targetTemp = temp;
+  targetTemp = constrain(temp, 18.0f, 30.0f);
 }
 
 void TemperatureController::setHysteresis(float value) {

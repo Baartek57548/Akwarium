@@ -2,7 +2,9 @@
 #include "AkwariumWifi.h"
 #include "ConfigManager.h"
 #include "ConfigValidation.h"
+#include "FirmwareInfo.h"
 #include "LogManager.h"
+#include "OtaManager.h"
 #include "PowerManager.h"
 #include "SecretConfig.h"
 #include "SharedState.h"
@@ -16,8 +18,10 @@
 #include <BLESecurity.h>
 #include <BLEUtils.h>
 #include <esp_err.h>
+#include <esp_ota_ops.h>
 
 #include <cstdlib>
+#include <cstring>
 #include <map>
 #include <string>
 
@@ -27,12 +31,18 @@
 #define CHAR_COMMAND_UUID "828917c1-ea55-4d4a-a66e-fd202cea0645"
 #define CHAR_SETTINGS_UUID "d2912856-de63-11ed-b5ea-0242ac120002"
 #define CHAR_RESULT_UUID "8e22cb9c-1728-45f9-8c50-2f7252f07379"
+#define CHAR_DEVICE_INFO_UUID "73d4b922-9d7d-4f5a-9f88-0871b07ec21b"
+#define CHAR_OTA_CONTROL_UUID "b5f6d0d0-0c6a-4cb0-a9b8-6b4e6cb6e550"
+#define CHAR_OTA_DATA_UUID "f2a4f5f5-89d0-4d3c-a4f7-e1db30c6ff0c"
 
 static BLEServer *pServer = nullptr;
 static BLECharacteristic *pCharStatus = nullptr;
 static BLECharacteristic *pCharCommand = nullptr;
 static BLECharacteristic *pCharSettings = nullptr;
 static BLECharacteristic *pCharResult = nullptr;
+static BLECharacteristic *pCharDeviceInfo = nullptr;
+static BLECharacteristic *pCharOtaControl = nullptr;
+static BLECharacteristic *pCharOtaData = nullptr;
 
 static volatile bool deviceConnected = false;
 static bool bleInitialized = false;
@@ -40,11 +50,29 @@ static bool bleAdvertising = false;
 static volatile bool resumeAdvertisingPending = false;
 static volatile unsigned long resumeAdvertisingAtMs = 0;
 static unsigned long lastNotifyTime = 0;
+static bool bleOtaActive = false;
+static esp_ota_handle_t bleOtaHandle = 0;
+static const esp_partition_t *bleOtaPartition = nullptr;
+static size_t bleOtaExpectedSize = 0;
+static size_t bleOtaReceivedSize = 0;
+static unsigned long bleOtaLastChunkAtMs = 0;
+static unsigned long bleOtaLastProgressNotifyAtMs = 0;
+static bool bleOtaRestartPending = false;
+static unsigned long bleOtaRestartAtMs = 0;
+static char bleOtaLastType[12] = "info";
+static char bleOtaLastCode[32] = "ready";
+static char bleOtaDeclaredVersion[32] = "";
+static char bleOtaDeclaredProject[32] = "";
 
 static const unsigned long NOTIFY_INTERVAL_MS = 2000;
 static const unsigned long RESUME_ADVERTISING_DELAY_MS = 150;
+static const unsigned long BLE_OTA_STALL_TIMEOUT_MS = 15000;
+static const unsigned long BLE_OTA_PROGRESS_NOTIFY_INTERVAL_MS = 300;
+static const unsigned long BLE_OTA_RESTART_DELAY_MS = 1200;
 static const uint16_t BLE_PREFERRED_MTU = 185;
 static const char *BLE_DEVICE_NAME = "Akwarium_BLE";
+static const size_t BLE_OTA_CHUNK_HEADER_SIZE = 4;
+static const size_t BLE_OTA_RECOMMENDED_DATA_CHUNK_BYTES = 160;
 
 static void refreshConnectionState() {
   if (pServer) {
@@ -128,6 +156,147 @@ static void publishResult(const char *type, const char *code) {
   pCharResult->notify();
 }
 
+static uint32_t decodeUInt32LE(const uint8_t *data) {
+  return static_cast<uint32_t>(data[0]) |
+         (static_cast<uint32_t>(data[1]) << 8U) |
+         (static_cast<uint32_t>(data[2]) << 16U) |
+         (static_cast<uint32_t>(data[3]) << 24U);
+}
+
+static void setOtaLastState(const char *type, const char *code) {
+  snprintf(bleOtaLastType, sizeof(bleOtaLastType), "%s",
+           (type != nullptr && type[0] != '\0') ? type : "info");
+  snprintf(bleOtaLastCode, sizeof(bleOtaLastCode), "%s",
+           (code != nullptr && code[0] != '\0') ? code : "unknown");
+}
+
+static void populateValidationJson(JsonObject validation) {
+  const ValidationProfileSnapshot profile = ConfigValidation::getValidationProfile();
+
+  validation["ms"] = profile.minuteStep;
+  validation["sch"] = "schedule|always_on|always_off";
+  validation["heat"] = "threshold|off";
+  validation["req"] = true;
+
+  JsonObject temperature = validation.createNestedObject("tmp");
+  temperature["min"] = profile.minTemperature;
+  temperature["max"] = profile.maxTemperature;
+  temperature["step"] = profile.temperatureStep;
+  temperature["off"] = true;
+
+  JsonObject hysteresis = validation.createNestedObject("hys");
+  hysteresis["min"] = profile.hysteresisMin;
+  hysteresis["max"] = profile.hysteresisMax;
+  hysteresis["step"] = profile.hysteresisStep;
+
+  JsonObject feeding = validation.createNestedObject("fd");
+  feeding["min"] = profile.feedModeMin;
+  feeding["max"] = profile.feedModeMax;
+
+  JsonObject preOff = validation.createNestedObject("sp");
+  preOff["min"] = profile.servoPreOffMin;
+  preOff["max"] = profile.servoPreOffMax;
+  preOff["step"] = 1;
+}
+
+static void buildDeviceInfoJson(char *json, size_t jsonSize) {
+  const FirmwareRuntimeInfo firmwareInfo = FirmwareInfo::getRuntimeInfo();
+
+  StaticJsonDocument<896> doc;
+  doc["nm"] = firmwareInfo.firmwareName;
+  doc["ver"] = firmwareInfo.firmwareVersion;
+  doc["dt"] = firmwareInfo.buildDate;
+  doc["tm"] = firmwareInfo.buildTime;
+  doc["idf"] = firmwareInfo.idfVersion;
+  doc["rp"] = firmwareInfo.runningPartitionLabel;
+  doc["bp"] = firmwareInfo.bootPartitionLabel;
+  doc["np"] = firmwareInfo.nextPartitionLabel;
+  doc["slot"] = firmwareInfo.nextPartitionSizeBytes;
+  doc["busy"] = OtaManager::isOtaInProgress();
+  doc["ota"] = OtaManager::getActiveTransport();
+  doc["ble"] = FirmwareInfo::supportsBleOta();
+  doc["http"] = FirmwareInfo::supportsHttpOta();
+  doc["chunk"] = BLE_OTA_RECOMMENDED_DATA_CHUNK_BYTES;
+  populateValidationJson(doc.createNestedObject("val"));
+
+  serializeJson(doc, json, jsonSize);
+}
+
+static void updateDeviceInfoValue() {
+  if (!pCharDeviceInfo) {
+    return;
+  }
+
+  char json[768];
+  buildDeviceInfoJson(json, sizeof(json));
+  pCharDeviceInfo->setValue((uint8_t *)json, strlen(json));
+}
+
+static void buildOtaStateJson(char *json, size_t jsonSize) {
+  unsigned long rebootDelayMs = 0;
+  if (bleOtaRestartPending) {
+    long deltaMs = static_cast<long>(bleOtaRestartAtMs - millis());
+    rebootDelayMs = deltaMs > 0 ? static_cast<unsigned long>(deltaMs) : 0UL;
+  }
+
+  snprintf(json, jsonSize,
+           "{\"t\":\"%s\",\"c\":\"%s\",\"busy\":%s,\"ota\":\"%s\","
+           "\"rx\":%u,\"size\":%u,\"chunk\":%u,\"reboot\":%lu,"
+           "\"ver\":\"%s\",\"prj\":\"%s\"}",
+           bleOtaLastType, bleOtaLastCode,
+           bleOtaActive ? "true" : "false", OtaManager::getActiveTransport(),
+           static_cast<unsigned int>(bleOtaReceivedSize),
+           static_cast<unsigned int>(bleOtaExpectedSize),
+           static_cast<unsigned int>(BLE_OTA_RECOMMENDED_DATA_CHUNK_BYTES),
+           rebootDelayMs,
+           bleOtaDeclaredVersion[0] != '\0' ? bleOtaDeclaredVersion : "",
+           bleOtaDeclaredProject[0] != '\0' ? bleOtaDeclaredProject : "");
+}
+
+static void publishOtaState(const char *type, const char *code) {
+  setOtaLastState(type, code);
+  updateDeviceInfoValue();
+
+  if (!pCharOtaControl) {
+    return;
+  }
+
+  char json[256];
+  buildOtaStateJson(json, sizeof(json));
+  pCharOtaControl->setValue((uint8_t *)json, strlen(json));
+
+  refreshConnectionState();
+  if (deviceConnected) {
+    pCharOtaControl->notify();
+  }
+}
+
+static void clearBleOtaSessionState(bool clearRestartFlag) {
+  bleOtaActive = false;
+  bleOtaHandle = 0;
+  bleOtaPartition = nullptr;
+  bleOtaExpectedSize = 0;
+  bleOtaReceivedSize = 0;
+  bleOtaLastChunkAtMs = 0;
+  bleOtaLastProgressNotifyAtMs = 0;
+  bleOtaDeclaredVersion[0] = '\0';
+  bleOtaDeclaredProject[0] = '\0';
+  if (clearRestartFlag) {
+    bleOtaRestartPending = false;
+    bleOtaRestartAtMs = 0;
+  }
+}
+
+static void abortBleOtaSession(const char *code, const char *reason) {
+  if (bleOtaHandle != 0) {
+    esp_ota_abort(bleOtaHandle);
+  }
+
+  clearBleOtaSessionState(true);
+  OtaManager::cancelOtaUpdate(reason);
+  publishOtaState("err", code);
+}
+
 static void buildStatusJson(char *json, size_t jsonSize) {
   SharedStateData snap = SharedState::getSnapshot();
   const Config cfg = ConfigManager::getCopy();
@@ -143,19 +312,28 @@ static void buildStatusJson(char *json, size_t jsonSize) {
     clients = (count > 255) ? 255 : static_cast<uint8_t>(count);
   }
 
-  snprintf(json, jsonSize,
-           "{\"tmp\":%.1f,\"tar\":%.1f,\"hys\":%.1f,\"mn\":%.1f,\"me\":%u,"
-           "\"bv\":%.2f,\"bp\":%d,\"l\":%s,\"f\":%s,\"h\":%s,\"srv\":%d,"
-           "\"ip\":\"%s\",\"ap\":%s,\"cli\":%u}",
-           isnan(snap.temperature) ? -99.9f : snap.temperature, cfg.targetTemp,
-           cfg.tempHysteresis, isnan(snap.minTemp) ? 20.0f : snap.minTemp,
-           static_cast<unsigned int>(snap.minTempEpoch), vBat,
-           static_cast<int>(PowerManager::getBatteryPercent()),
-           snap.isLightOn ? "true" : "false",
-           snap.isFilterOn ? "true" : "false",
-           snap.isHeaterOn ? "true" : "false",
-           SystemController::getServoPosition(), AkwariumWifi::getIP().c_str(),
-           AkwariumWifi::getIsAPMode() ? "true" : "false", clients);
+  StaticJsonDocument<640> doc;
+  doc["tmp"] = isnan(snap.temperature) ? -99.9f : snap.temperature;
+  doc["tar"] = cfg.targetTemp;
+  doc["thr"] = cfg.targetTemp;
+  doc["hm"] = cfg.heaterMode;
+  doc["hys"] = cfg.tempHysteresis;
+  doc["mn"] = isnan(snap.minTemp) ? -99.9f : snap.minTemp;
+  doc["me"] = snap.minTempEpoch;
+  doc["bv"] = vBat;
+  doc["bp"] = PowerManager::getBatteryPercent();
+  doc["l"] = snap.isLightOn;
+  doc["f"] = snap.isFilterOn;
+  doc["h"] = snap.isHeaterOn;
+  doc["srv"] = SystemController::getServoPosition();
+  doc["ip"] = AkwariumWifi::getIP();
+  doc["ap"] = AkwariumWifi::getIsAPMode();
+  doc["cli"] = clients;
+  doc["lm"] = cfg.lightMode;
+  doc["am"] = cfg.aerationMode;
+  doc["fm"] = cfg.filterMode;
+
+  serializeJson(doc, json, jsonSize);
 }
 
 class MySecurityCallbacks : public BLESecurityCallbacks {
@@ -197,6 +375,8 @@ private:
     Serial.printf("[BLE] Client polaczony. Klienci: %lu\n",
                   static_cast<unsigned long>(count));
     BleManager::notifyStatus();
+    updateDeviceInfoValue();
+    publishOtaState("info", bleOtaActive ? "ota_receiving" : "ready");
     publishResult("ack", "connected");
   }
 
@@ -231,7 +411,7 @@ public:
 
 class StatusCallbacks : public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic *pCharacteristic) override {
-    char json[220];
+    char json[640];
     buildStatusJson(json, sizeof(json));
     pCharacteristic->setValue((uint8_t *)json, strlen(json));
   }
@@ -239,6 +419,11 @@ class StatusCallbacks : public BLECharacteristicCallbacks {
 
 class CommandCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) override {
+    if (OtaManager::isOtaInProgress()) {
+      publishResult("err", "ota_busy");
+      return;
+    }
+
     std::string rawValue = pCharacteristic->getValue();
     if (rawValue.empty()) {
       publishResult("err", "empty_command");
@@ -301,6 +486,11 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
 
 class SettingsCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) override {
+    if (OtaManager::isOtaInProgress()) {
+      publishResult("err", "ota_busy");
+      return;
+    }
+
     std::string rawValue = pCharacteristic->getValue();
     if (rawValue.empty()) {
       publishResult("err", "empty_settings");
@@ -328,6 +518,46 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
     ConfigPatch patch = {};
     float floatVal = 0.0f;
     long intVal = 0;
+
+    if (root.containsKey("lm")) {
+      anyField = true;
+      if (tryGetInt(root, "lm", intVal)) {
+        patch.hasLightMode = true;
+        patch.lightMode = static_cast<int>(intVal);
+      } else {
+        parseInvalidFields++;
+      }
+    }
+
+    if (root.containsKey("am")) {
+      anyField = true;
+      if (tryGetInt(root, "am", intVal)) {
+        patch.hasAerationMode = true;
+        patch.aerationMode = static_cast<int>(intVal);
+      } else {
+        parseInvalidFields++;
+      }
+    }
+
+    if (root.containsKey("fm")) {
+      anyField = true;
+      if (tryGetInt(root, "fm", intVal)) {
+        patch.hasFilterMode = true;
+        patch.filterMode = static_cast<int>(intVal);
+      } else {
+        parseInvalidFields++;
+      }
+    }
+
+    if (root.containsKey("hm")) {
+      anyField = true;
+      if (tryGetInt(root, "hm", intVal)) {
+        patch.hasHeaterMode = true;
+        patch.heaterMode = static_cast<int>(intVal);
+      } else {
+        parseInvalidFields++;
+      }
+    }
 
     if (root.containsKey("tar")) {
       anyField = true;
@@ -514,42 +744,289 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    Config cfg = ConfigManager::getCopy();
-    ConfigValidationResult validation = {};
-    ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
-    uint8_t invalidFields = validation.invalidFields + parseInvalidFields;
-
-    if (validation.hasAnyApplied()) {
-      if (!ConfigManager::updateAndSave(cfg)) {
-        publishResult("err", "save_failed");
-        return;
-      }
-
-      BleManager::notifyStatus();
-      Serial.println("[BLE] Settings updated & saved.");
-      publishResult("ack", invalidFields > 0 ? "settings_partial"
-                                            : "settings_saved");
+    if (parseInvalidFields > 0) {
+      publishResult("err", "invalid_payload");
       return;
     }
 
-    publishResult("err", "invalid_values");
+    Config cfg = ConfigManager::getCopy();
+    ConfigValidationResult validation = {};
+    if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
+      publishResult("err",
+                    validation.errorCode[0] != '\0' ? validation.errorCode
+                                                    : "invalid_values");
+      return;
+    }
+
+    if (!ConfigManager::updateAndSave(cfg)) {
+      publishResult("err", "save_failed");
+      return;
+    }
+
+    BleManager::notifyStatus();
+    Serial.println("[BLE] Settings updated & saved.");
+    publishResult("ack", "settings_saved");
   }
 
   void onRead(BLECharacteristic *pCharacteristic) override {
-    char json[500];
     const Config cfg = ConfigManager::getCopy();
-    snprintf(json, sizeof(json),
-             "{\"tar\":%.1f,\"hys\":%.1f,\"fdH\":%d,\"fdM\":%d,\"fdF\":%d,"
-             "\"lsH\":%d,\"lsM\":%d,\"leH\":%d,\"leM\":%d,"
-             "\"asH\":%d,\"asM\":%d,\"aeH\":%d,\"aeM\":%d,"
-             "\"fsH\":%d,\"fsM\":%d,\"feH\":%d,\"feM\":%d,\"spO\":%d}",
-             cfg.targetTemp, cfg.tempHysteresis, cfg.feedHour, cfg.feedMinute,
-             cfg.feedMode, cfg.dayStartHour, cfg.dayStartMinute, cfg.dayEndHour,
-             cfg.dayEndMinute, cfg.aerationHourOn, cfg.aerationMinuteOn,
-             cfg.aerationHourOff, cfg.aerationMinuteOff, cfg.filterHourOn,
-             cfg.filterMinuteOn, cfg.filterHourOff, cfg.filterMinuteOff,
-             cfg.servoPreOffMins);
+    StaticJsonDocument<640> doc;
+    doc["lm"] = cfg.lightMode;
+    doc["tar"] = cfg.targetTemp;
+    doc["hm"] = cfg.heaterMode;
+    doc["hys"] = cfg.tempHysteresis;
+    doc["fdH"] = cfg.feedHour;
+    doc["fdM"] = cfg.feedMinute;
+    doc["fdF"] = cfg.feedMode;
+    doc["lsH"] = cfg.dayStartHour;
+    doc["lsM"] = cfg.dayStartMinute;
+    doc["leH"] = cfg.dayEndHour;
+    doc["leM"] = cfg.dayEndMinute;
+    doc["am"] = cfg.aerationMode;
+    doc["asH"] = cfg.aerationHourOn;
+    doc["asM"] = cfg.aerationMinuteOn;
+    doc["aeH"] = cfg.aerationHourOff;
+    doc["aeM"] = cfg.aerationMinuteOff;
+    doc["fm"] = cfg.filterMode;
+    doc["fsH"] = cfg.filterHourOn;
+    doc["fsM"] = cfg.filterMinuteOn;
+    doc["feH"] = cfg.filterHourOff;
+    doc["feM"] = cfg.filterMinuteOff;
+    doc["spO"] = cfg.servoPreOffMins;
+
+    char json[640];
+    serializeJson(doc, json, sizeof(json));
     pCharacteristic->setValue((uint8_t *)json, strlen(json));
+  }
+};
+
+class DeviceInfoCallbacks : public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic *pCharacteristic) override {
+    char json[768];
+    buildDeviceInfoJson(json, sizeof(json));
+    pCharacteristic->setValue((uint8_t *)json, strlen(json));
+  }
+};
+
+class OtaControlCallbacks : public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic *pCharacteristic) override {
+    char json[256];
+    buildOtaStateJson(json, sizeof(json));
+    pCharacteristic->setValue((uint8_t *)json, strlen(json));
+  }
+
+  void onWrite(BLECharacteristic *pCharacteristic) override {
+    std::string rawValue = pCharacteristic->getValue();
+    if (rawValue.empty()) {
+      publishOtaState("err", "ota_empty_request");
+      return;
+    }
+
+    StaticJsonDocument<256> doc;
+    DeserializationError err = deserializeJson(doc, rawValue);
+    if (err) {
+      Serial.printf("[BLE OTA] Control JSON parse error: %s\n", err.c_str());
+      publishOtaState("err", "bad_json");
+      return;
+    }
+
+    JsonObjectConst root = doc.as<JsonObjectConst>();
+    const char *action = root["action"] | "";
+    if (action[0] == '\0') {
+      publishOtaState("err", "missing_action");
+      return;
+    }
+
+    PowerManager::registerActivity();
+
+    if (strcmp(action, "status") == 0) {
+      publishOtaState("info", bleOtaActive ? "ota_receiving" : "ready");
+      return;
+    }
+
+    if (strcmp(action, "abort") == 0) {
+      if (!bleOtaActive || bleOtaHandle == 0) {
+        publishOtaState("err", "ota_not_started");
+        return;
+      }
+
+      abortBleOtaSession("ota_aborted",
+                         "Sesja BLE OTA anulowana przez klienta.");
+      return;
+    }
+
+    if (strcmp(action, "begin") == 0) {
+      if (bleOtaActive || OtaManager::isOtaInProgress()) {
+        publishOtaState("err", "ota_busy");
+        return;
+      }
+
+      long imageSizeValue = 0;
+      if (!tryGetInt(root, "size", imageSizeValue) || imageSizeValue <= 0) {
+        publishOtaState("err", "ota_bad_size");
+        return;
+      }
+
+      const esp_partition_t *updatePartition =
+          esp_ota_get_next_update_partition(nullptr);
+      if (updatePartition == nullptr) {
+        publishOtaState("err", "ota_no_partition");
+        return;
+      }
+
+      const size_t imageSize = static_cast<size_t>(imageSizeValue);
+      if (imageSize > static_cast<size_t>(updatePartition->size)) {
+        publishOtaState("err", "ota_too_large");
+        return;
+      }
+
+      if (!OtaManager::tryBeginOtaUpdate("ble")) {
+        publishOtaState("err", "ota_busy");
+        return;
+      }
+
+      esp_ota_handle_t updateHandle = 0;
+      esp_err_t otaErr =
+          esp_ota_begin(updatePartition, imageSize, &updateHandle);
+      if (otaErr != ESP_OK) {
+        Serial.printf("[BLE OTA] esp_ota_begin failed: %s (%d)\n",
+                      esp_err_to_name(otaErr), static_cast<int>(otaErr));
+        OtaManager::cancelOtaUpdate("Nie udalo sie zainicjowac OTA przez BLE.");
+        publishOtaState("err", "ota_begin_failed");
+        return;
+      }
+
+      bleOtaHandle = updateHandle;
+      bleOtaPartition = updatePartition;
+      bleOtaExpectedSize = imageSize;
+      bleOtaReceivedSize = 0;
+      bleOtaActive = true;
+      bleOtaLastChunkAtMs = millis();
+      bleOtaLastProgressNotifyAtMs = 0;
+      bleOtaRestartPending = false;
+      bleOtaRestartAtMs = 0;
+      bleOtaDeclaredVersion[0] = '\0';
+      bleOtaDeclaredProject[0] = '\0';
+
+      const char *declaredVersion = root["version"] | "";
+      const char *declaredProject = root["project"] | "";
+      if (declaredVersion[0] != '\0') {
+        snprintf(bleOtaDeclaredVersion, sizeof(bleOtaDeclaredVersion), "%s",
+                 declaredVersion);
+      }
+      if (declaredProject[0] != '\0') {
+        snprintf(bleOtaDeclaredProject, sizeof(bleOtaDeclaredProject), "%s",
+                 declaredProject);
+      }
+
+      Serial.printf("[BLE OTA] Przyjeto obraz %u B dla partycji %s\n",
+                    static_cast<unsigned int>(bleOtaExpectedSize),
+                    bleOtaPartition->label);
+      publishOtaState("ack", "ota_ready");
+      return;
+    }
+
+    if (strcmp(action, "finish") == 0) {
+      if (!bleOtaActive || bleOtaHandle == 0 || bleOtaPartition == nullptr) {
+        publishOtaState("err", "ota_not_started");
+        return;
+      }
+
+      if (bleOtaReceivedSize != bleOtaExpectedSize) {
+        publishOtaState("err", "ota_size_mismatch");
+        return;
+      }
+
+      esp_err_t endErr = esp_ota_end(bleOtaHandle);
+      bleOtaHandle = 0;
+      if (endErr != ESP_OK) {
+        Serial.printf("[BLE OTA] esp_ota_end failed: %s (%d)\n",
+                      esp_err_to_name(endErr), static_cast<int>(endErr));
+        clearBleOtaSessionState(true);
+        OtaManager::endOtaUpdate(false);
+        publishOtaState("err", "ota_end_failed");
+        return;
+      }
+
+      esp_err_t bootErr = esp_ota_set_boot_partition(bleOtaPartition);
+      if (bootErr != ESP_OK) {
+        Serial.printf("[BLE OTA] set boot partition failed: %s (%d)\n",
+                      esp_err_to_name(bootErr), static_cast<int>(bootErr));
+        clearBleOtaSessionState(true);
+        OtaManager::endOtaUpdate(false);
+        publishOtaState("err", "ota_boot_failed");
+        return;
+      }
+
+      bleOtaActive = false;
+      bleOtaPartition = nullptr;
+      bleOtaExpectedSize = bleOtaReceivedSize;
+      bleOtaLastChunkAtMs = millis();
+      bleOtaRestartPending = true;
+      bleOtaRestartAtMs = millis() + BLE_OTA_RESTART_DELAY_MS;
+      OtaManager::endOtaUpdate(true);
+      publishOtaState("ack", "ota_complete");
+      return;
+    }
+
+    publishOtaState("err", "unknown_action");
+  }
+};
+
+class OtaDataCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) override {
+    if (!bleOtaActive || bleOtaHandle == 0) {
+      publishOtaState("err", "ota_not_started");
+      return;
+    }
+
+    std::string rawValue = pCharacteristic->getValue();
+    if (rawValue.size() <= BLE_OTA_CHUNK_HEADER_SIZE) {
+      publishOtaState("err", "ota_empty_chunk");
+      return;
+    }
+
+    PowerManager::registerActivity();
+
+    const uint8_t *rawData =
+        reinterpret_cast<const uint8_t *>(rawValue.data());
+    const uint32_t chunkOffset = decodeUInt32LE(rawData);
+    const size_t chunkSize = rawValue.size() - BLE_OTA_CHUNK_HEADER_SIZE;
+
+    if (chunkOffset != bleOtaReceivedSize) {
+      abortBleOtaSession(
+          "ota_offset_mismatch",
+          "Pakiety BLE OTA przyszly poza oczekiwana kolejnoscia.");
+      return;
+    }
+
+    if ((bleOtaReceivedSize + chunkSize) > bleOtaExpectedSize) {
+      abortBleOtaSession("ota_overflow",
+                         "Pakiet BLE OTA przekroczyl zadeklarowany rozmiar.");
+      return;
+    }
+
+    esp_err_t otaErr = esp_ota_write(
+        bleOtaHandle, rawData + BLE_OTA_CHUNK_HEADER_SIZE, chunkSize);
+    if (otaErr != ESP_OK) {
+      Serial.printf("[BLE OTA] esp_ota_write failed: %s (%d)\n",
+                    esp_err_to_name(otaErr), static_cast<int>(otaErr));
+      abortBleOtaSession("ota_write_failed",
+                         "Nie udalo sie zapisac danych OTA do flash.");
+      return;
+    }
+
+    bleOtaReceivedSize += chunkSize;
+    bleOtaLastChunkAtMs = millis();
+
+    if (bleOtaReceivedSize == bleOtaExpectedSize ||
+        (millis() - bleOtaLastProgressNotifyAtMs) >=
+            BLE_OTA_PROGRESS_NOTIFY_INTERVAL_MS) {
+      bleOtaLastProgressNotifyAtMs = millis();
+      publishOtaState("info", "ota_receiving");
+    } else {
+      updateDeviceInfoValue();
+    }
   }
 };
 
@@ -618,13 +1095,47 @@ void BleManager::init() {
                                    ESP_GATT_PERM_WRITE_ENCRYPTED);
   pCharResult->addDescriptor(result2902);
 
+  // Characteristic: device info (read/notify)
+  pCharDeviceInfo = pService->createCharacteristic(
+      CHAR_DEVICE_INFO_UUID,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  pCharDeviceInfo->setAccessPermissions(ESP_GATT_PERM_READ_ENCRYPTED);
+  pCharDeviceInfo->setCallbacks(new DeviceInfoCallbacks());
+  BLE2902 *deviceInfo2902 = new BLE2902();
+  deviceInfo2902->setAccessPermissions(ESP_GATT_PERM_READ_ENCRYPTED |
+                                       ESP_GATT_PERM_WRITE_ENCRYPTED);
+  pCharDeviceInfo->addDescriptor(deviceInfo2902);
+
+  // Characteristic: OTA control (read/write/notify)
+  pCharOtaControl = pService->createCharacteristic(
+      CHAR_OTA_CONTROL_UUID,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE |
+          BLECharacteristic::PROPERTY_NOTIFY);
+  pCharOtaControl->setAccessPermissions(ESP_GATT_PERM_READ_ENCRYPTED |
+                                        ESP_GATT_PERM_WRITE_ENCRYPTED);
+  pCharOtaControl->setCallbacks(new OtaControlCallbacks());
+  BLE2902 *otaControl2902 = new BLE2902();
+  otaControl2902->setAccessPermissions(ESP_GATT_PERM_READ_ENCRYPTED |
+                                       ESP_GATT_PERM_WRITE_ENCRYPTED);
+  pCharOtaControl->addDescriptor(otaControl2902);
+
+  // Characteristic: OTA data stream (write)
+  pCharOtaData = pService->createCharacteristic(
+      CHAR_OTA_DATA_UUID,
+      BLECharacteristic::PROPERTY_WRITE |
+          BLECharacteristic::PROPERTY_WRITE_NR);
+  pCharOtaData->setAccessPermissions(ESP_GATT_PERM_WRITE_ENCRYPTED);
+  pCharOtaData->setCallbacks(new OtaDataCallbacks());
+
   pService->start();
 
-  char initialStatus[220];
+  char initialStatus[640];
   buildStatusJson(initialStatus, sizeof(initialStatus));
   pCharStatus->setValue((uint8_t *)initialStatus, strlen(initialStatus));
   const char *resultReady = "{\"t\":\"info\",\"c\":\"ready\"}";
   pCharResult->setValue((uint8_t *)resultReady, strlen(resultReady));
+  updateDeviceInfoValue();
+  publishOtaState("info", "ready");
 
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
@@ -638,6 +1149,8 @@ void BleManager::init() {
   deviceConnected = false;
   resumeAdvertisingPending = false;
   resumeAdvertisingAtMs = 0;
+  clearBleOtaSessionState(true);
+  setOtaLastState("info", "ready");
   Serial.println("[BLE] Serwer gotowy. Advertising uruchamiany z menu Bluetooth.");
 }
 
@@ -668,6 +1181,11 @@ void BleManager::stop() {
     return;
   }
 
+  if (bleOtaActive || bleOtaHandle != 0) {
+    abortBleOtaSession("ota_aborted",
+                       "Sesja BLE OTA zostala przerwana podczas zatrzymywania BLE.");
+  }
+
   if (pServer) {
     std::map<uint16_t, conn_status_t> peers = pServer->getPeerDevices(false);
     for (const auto &entry : peers) {
@@ -693,7 +1211,7 @@ void BleManager::notifyStatus() {
     return;
   }
 
-  char json[220];
+  char json[640];
   buildStatusJson(json, sizeof(json));
   pCharStatus->setValue((uint8_t *)json, strlen(json));
 
@@ -704,6 +1222,20 @@ void BleManager::notifyStatus() {
 }
 
 void BleManager::update() {
+  if (bleOtaRestartPending &&
+      static_cast<long>(millis() - bleOtaRestartAtMs) >= 0) {
+    Serial.println("[BLE OTA] Restart po zakonczonej aktualizacji.");
+    delay(40);
+    ESP.restart();
+    return;
+  }
+
+  if (bleOtaActive && bleOtaHandle != 0 && bleOtaLastChunkAtMs > 0 &&
+      (millis() - bleOtaLastChunkAtMs) >= BLE_OTA_STALL_TIMEOUT_MS) {
+    abortBleOtaSession("ota_timeout",
+                       "Sesja BLE OTA wygasla przez brak kolejnych pakietow.");
+  }
+
   if (!bleAdvertising) {
     return;
   }

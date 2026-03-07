@@ -1,4 +1,4 @@
-#ifndef WEBASSETS_H
+﻿#ifndef WEBASSETS_H
 #define WEBASSETS_H
 
 #include <Arduino.h>
@@ -15,7 +15,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=3">
+    <link rel="stylesheet" href="style.css?v=4">
 </head>
 
 <body>
@@ -25,12 +25,12 @@ const char web_index_html[] PROGMEM = R"rawliteral(
         <header class="app-header">
             <div class="header-main">
                 <div class="title-area">
-                    <h1 style="display: flex; align-items: center; gap: 8px;">Akwarium 🐠</h1>
+                    <h1 class="title-row">Akwarium đź </h1>
                     <span class="badge" id="otaNetworkMode">--</span>
                 </div>
                 <div class="system-status">
                     <span id="systemTime" class="clock">--:--:--</span>
-                    <div id="connectionStatus" class="conn-status ok">Połączono</div>
+                    <div id="connectionStatus" class="conn-status ok">PoĹ‚Ä…czono</div>
                 </div>
             </div>
 
@@ -52,14 +52,14 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                     <div class="panel-header">Czujniki</div>
                     <div class="panel-body flex-col gap-15">
                         <div class="data-box">
-                            <span class="box-icon">🌡️</span>
+                            <span class="box-icon">đźŚˇď¸Ź</span>
                             <div class="box-content">
                                 <div class="box-title">Temperatura</div>
-                                <div class="box-value"><span id="valTemp">--.-</span> <small>°C</small></div>
+                                <div class="box-value"><span id="valTemp">--.-</span> <small>Â°C</small></div>
                             </div>
                         </div>
                         <div class="data-compact">
-                            <div class="row"><span>Min Temp:</span> <strong><span id="valTempMin">--.- °C</span> <span
+                            <div class="row"><span>Min Temp:</span> <strong><span id="valTempMin">--.- Â°C</span> <span
                                         style="font-size: 0.8em; font-weight: normal; color: var(--text-muted);"
                                         id="valTempMinTime">(--:--)</span></strong></div>
                         </div>
@@ -71,7 +71,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                     <div class="panel-header">Zasilanie</div>
                     <div class="panel-body flex-col gap-15">
                         <div class="data-box">
-                            <span class="box-icon">🔋</span>
+                            <span class="box-icon">đź”‹</span>
                             <div class="box-content">
                                 <div class="box-title">Bateria</div>
                                 <div class="box-value"><span id="valBattPct">--</span> <small>%</small></div>
@@ -83,121 +83,137 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                             </div>
                         </div>
                         <div class="data-compact">
-                            <div class="row"><span>Napięcie:</span> <strong id="valBattVolt">-.-- V</strong></div>
+                            <div class="row"><span>NapiÄ™cie:</span> <strong id="valBattVolt">-.-- V</strong></div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Relays/Schedules merged -->
                 <div class="panel span-2">
-                    <div class="panel-header">Urządzenia i Harmonogramy</div>
+                    <div class="panel-header">UrzÄ…dzenia i Harmonogramy</div>
                     <div class="panel-body no-pad">
                         <table class="data-table devices-table">
                             <thead>
                                 <tr>
-                                    <th>Urządzenie</th>
+                                    <th>UrzÄ…dzenie</th>
                                     <th>Status</th>
                                     <th>Harmonogram</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr id="relayLight">
-                                    <td>💡 Oświetlenie</td>
-                                    <td>
+                                    <td data-label="Urzadzenie">đź’ˇ OĹ›wietlenie</td>
+                                    <td data-label="Status">
                                         <div class="status-cell">
                                             <span class="status-dot off" id="indLight"></span>
-                                            <strong id="statusLight">Wyłączone</strong>
+                                            <strong id="statusLight">WyĹ‚Ä…czone</strong>
                                         </div>
                                     </td>
-                                    <td>
-                                        <div class="schedule-edit">
-                                            <span class="text-muted">ON:</span> <input type="time" class="input-time"
-                                                id="schedDayStart">
-                                            <span class="text-muted">OFF:</span> <input type="time" class="input-time"
-                                                id="schedDayEnd">
+                                    <td data-label="Harmonogram">
+                                        <div class="schedule-edit schedule-edit-wrap">
+                                            <select class="input-select" id="schedLightMode">
+                                                <option value="0">Harmonogram</option>
+                                                <option value="1">Zawsze ON</option>
+                                                <option value="2">Zawsze OFF</option>
+                                            </select>
+                                            <span class="text-muted">ON:</span> <input type="time" step="300" class="input-time" id="schedDayStart">
+                                            <span class="text-muted">OFF:</span> <input type="time" step="300" class="input-time" id="schedDayEnd">
                                         </div>
+                                        <div class="field-error" id="errLight"></div>
                                     </td>
                                 </tr>
                                 <tr id="relayPump">
-                                    <td>🫧 Filtr</td>
-                                    <td>
+                                    <td data-label="Urzadzenie">đź«§ Filtr</td>
+                                    <td data-label="Status">
                                         <div class="status-cell">
                                             <span class="status-dot off" id="indPump"></span>
-                                            <strong id="statusPump">Wyłączone</strong>
+                                            <strong id="statusPump">WyĹ‚Ä…czone</strong>
                                         </div>
                                     </td>
-                                    <td>
-                                        <div class="schedule-edit">
-                                            <span class="text-muted">ON:</span> <input type="time" class="input-time"
-                                                id="schedFilterOn">
-                                            <span class="text-muted">OFF:</span> <input type="time" class="input-time"
-                                                id="schedFilterOff">
+                                    <td data-label="Harmonogram">
+                                        <div class="schedule-edit schedule-edit-wrap">
+                                            <select class="input-select" id="schedFilterMode">
+                                                <option value="0">Harmonogram</option>
+                                                <option value="1">Zawsze ON</option>
+                                                <option value="2">Zawsze OFF</option>
+                                            </select>
+                                            <span class="text-muted">ON:</span> <input type="time" step="300" class="input-time" id="schedFilterOn">
+                                            <span class="text-muted">OFF:</span> <input type="time" step="300" class="input-time" id="schedFilterOff">
                                         </div>
+                                        <div class="field-error" id="errFilter"></div>
                                     </td>
                                 </tr>
                                 <tr id="relayTermostat">
-                                    <td>🌡️ Termostat</td>
-                                    <td>
+                                    <td data-label="Urzadzenie">đźŚˇď¸Ź Termostat</td>
+                                    <td data-label="Status">
                                         <div class="status-cell">
                                             <span class="status-dot off" id="indHeater"></span>
-                                            <strong id="statusHeater">Wyłączone</strong>
+                                            <strong id="statusHeater">WyĹ‚Ä…czone</strong>
                                         </div>
                                     </td>
-                                    <td>
-                                        <div class="schedule-edit">
-                                            <span class="text-muted">Docelowa:</span> <input type="number" class="input-time" id="schedTargetTemp" step="0.5" min="20" max="35" style="width:75px; margin-right:8px;">
-                                            <span class="text-muted">Histereza:</span> <input type="number" class="input-time" id="schedTempHyst" step="0.1" min="0.1" max="2.0" style="width:70px;">
+                                    <td data-label="Harmonogram">
+                                        <div class="schedule-edit schedule-edit-wrap">
+                                            <select class="input-select" id="schedHeaterMode">
+                                                <option value="0">Prog</option>
+                                                <option value="1">OFF</option>
+                                            </select>
+                                            <span class="text-muted">Maks:</span> <input type="number" class="input-time input-number-compact" id="schedTargetTemp" step="1" min="18" max="30">
+                                            <span class="text-muted">Histereza:</span> <input type="number" class="input-time input-number-compact" id="schedTempHyst" step="0.1" min="0.1" max="5.0">
                                         </div>
+                                        <div class="field-error" id="errHeater"></div>
                                     </td>
                                 </tr>
                                 <tr id="relayAeration">
-                                    <td>💨 Napowietrzanie</td>
-                                    <td>
+                                    <td data-label="Urzadzenie">đź’¨ Napowietrzanie</td>
+                                    <td data-label="Status">
                                         <div class="status-cell">
-                                            <strong id="valServoAngle"
-                                                style="width:50px; display:inline-block;">--%</strong>
+                                            <strong id="valServoAngle" style="width:50px; display:inline-block;">--%</strong>
                                             <small>(<span id="statusServoMode">Zbrojny</span>)</small>
                                         </div>
                                     </td>
-                                    <td>
-                                        <div class="schedule-edit">
-                                            <span class="text-muted">ON:</span> <input type="time" class="input-time"
-                                                id="schedAirOn">
-                                            <span class="text-muted">OFF:</span> <input type="time" class="input-time"
-                                                id="schedAirOff">
-                                            <input type="range" min="0" max="100" value="0" class="input-range"
-                                                id="valServoSlider" style="width: 100%; margin-top: 15px;">
+                                    <td data-label="Harmonogram">
+                                        <div class="schedule-edit schedule-edit-wrap">
+                                            <select class="input-select" id="schedAirMode">
+                                                <option value="0">Harmonogram</option>
+                                                <option value="1">Zawsze ON</option>
+                                                <option value="2">Zawsze OFF</option>
+                                            </select>
+                                            <span class="text-muted">ON:</span> <input type="time" step="300" class="input-time" id="schedAirOn">
+                                            <span class="text-muted">OFF:</span> <input type="time" step="300" class="input-time" id="schedAirOff">
+                                            <input type="range" min="0" max="100" value="0" class="input-range servo-slider" id="valServoSlider">
                                             <input type="hidden" id="valPreOffSlider" value="30">
                                             <span id="valPreOffLabel" style="display:none;"></span>
                                         </div>
+                                        <div class="field-error" id="errAeration"></div>
                                     </td>
                                 </tr>
                                 <tr id="relayServo">
-                                    <td>⚙️ Karmnik</td>
-                                    <td>
+                                    <td data-label="Urzadzenie">âš™ď¸Ź Karmnik</td>
+                                    <td data-label="Status">
                                         <div class="status-cell">
-                                            <button class="btn btn-small btn-primary" id="btnFeedNow"
-                                                onclick="alert('Karmienie wymuszone (Mock)')">Karm teraz</button>
+                                            <button class="btn btn-small btn-primary" id="btnFeedNow">Karm teraz</button>
                                         </div>
                                     </td>
-                                    <td>
-                                        <div class="schedule-edit">
-                                            <input type="time" class="input-time" id="schedFeedTime">
+                                    <td data-label="Harmonogram">
+                                        <div class="schedule-edit schedule-edit-wrap">
+                                            <input type="time" step="300" class="input-time" id="schedFeedTime">
                                             <select class="input-select" id="valFeedMode">
                                                 <option value="1">Codziennie</option>
                                                 <option value="2">Co 2 dni</option>
                                                 <option value="3">Co 3 dni</option>
-                                                <option value="0">Wyłączony</option>
+                                                <option value="0">WyĹ‚Ä…czony</option>
                                             </select>
                                         </div>
+                                        <div class="field-error" id="errFeed"></div>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
-                        <div style="padding: 15px; text-align: right; border-top: 1px solid var(--border);">
-                            <button class="btn btn-small btn-secondary" id="btnSaveSchedules"
-                                onclick="alert('Harmonogram zapisany (Zaimplementuj w C++)')">Zapisz
-                                harmonogramy</button>
+                        <div class="schedule-footer">
+                            <div class="field-error" id="scheduleValidationSummary"></div>
+                            <div class="schedule-actions">
+                                <button class="btn btn-small btn-secondary" id="btnSaveSchedules" disabled>Zapisz harmonogramy</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -210,21 +226,21 @@ const char web_index_html[] PROGMEM = R"rawliteral(
             <div class="panel">
                 <div class="panel-header flex-between">
                     <span>Logi Systemowe</span>
-                    <div class="actions" style="display: flex; align-items: center; gap: 15px;">
-                        <span class="text-muted" style="margin-right: 15px;">Ostatnie karmienie: <strong
-                                id="valLastFeed" style="color: var(--text-main);">Nigdy</strong></span>
+                    <div class="actions panel-actions">
+                        <span class="text-muted last-feed">Ostatnie karmienie: <strong
+                                id="valLastFeed" class="text-main-strong">Nigdy</strong></span>
                         <div class="log-toggles">
-                            <label style="cursor: pointer; margin-right: 8px;"><input type="radio" name="logTypeToggle" value="critical" id="toggleCritical" style="accent-color: var(--danger);"> Krytyczne</label>
-                            <label style="cursor: pointer; margin-right: 8px;"><input type="radio" name="logTypeToggle" value="normal" id="toggleNormal" checked style="accent-color: var(--accent);"> Systemowe</label>
+                            <label class="log-toggle-option"><input type="radio" name="logTypeToggle" value="critical" id="toggleCritical" style="accent-color: var(--danger);"> Krytyczne</label>
+                            <label class="log-toggle-option"><input type="radio" name="logTypeToggle" value="normal" id="toggleNormal" checked style="accent-color: var(--accent);"> Systemowe</label>
                         </div>
-                        <button class="btn btn-small" id="btnClearLogs" style="margin-left:auto;">Wyczyść widok</button>
-                        <button class="btn btn-small" id="btnDeleteCritical" style="background:var(--danger); color:white; display:none;">Usuń krytyczne</button>
+                        <button class="btn btn-small btn-secondary log-clear-btn" id="btnClearLogs">WyczyĹ›Ä‡ widok</button>
+                        <button class="btn btn-small" id="btnDeleteCritical" style="background:var(--danger); color:white; display:none;">UsuĹ„ krytyczne</button>
                         <button class="btn btn-small btn-secondary" id="btnDownloadLogs">Pobierz TXT</button>
                     </div>
                 </div>
                 <div class="panel-body no-pad">
                     <div class="terminal" id="logContainer">
-                        <div class="log-line">[SYSTEM] Terminal gotowy. Brak nowych logów.</div>
+                        <div class="log-line">[SYSTEM] Terminal gotowy. Brak nowych logĂłw.</div>
                     </div>
                 </div>
             </div>
@@ -239,13 +255,34 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                     <div class="info-strip">
                         <div class="strip-item"><span>Adres IP:</span> <strong id="otaIpAddress">--.--.--.--</strong>
                         </div>
+                        <div class="strip-item"><span>Wersja:</span> <strong id="otaCurrentVersion">--</strong></div>
+                    </div>
+
+                    <div class="grid-2 gap-15">
+                        <div class="data-compact">
+                            <div class="row"><span>Firmware:</span> <strong id="otaFirmwareName">Aquarium Controller</strong></div>
+                            <div class="row"><span>Build:</span> <strong id="otaBuildStamp">--</strong></div>
+                            <div class="row"><span>Partycje:</span> <strong id="otaPartitions">--</strong></div>
+                            <div class="row"><span>ESP-IDF:</span> <strong id="otaIdfVersion">--</strong></div>
+                        </div>
+                        <div class="data-compact">
+                            <div class="row"><span>Stan OTA:</span> <strong id="otaTransportState">IDLE</strong></div>
+                            <div class="row"><span>BLE OTA:</span> <strong id="otaBleSupport">--</strong></div>
+                            <div class="row"><span>HTTP OTA:</span> <strong id="otaHttpSupport">--</strong></div>
+                            <div class="row"><span>Slot OTA:</span> <strong id="otaSlotSize">--</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="data-compact">
+                        <div class="row"><span>Tryb web:</span> <strong>HTTP OTA przez /update</strong></div>
+                        <div class="row"><span>Tryb natywny:</span> <strong>BLE OTA w aplikacji Windows / Android</strong></div>
                     </div>
 
                     <form id="uploadForm" class="upload-form" method="POST" action="/update"
                         enctype="multipart/form-data">
                         <div class="file-dropzone" id="dropzone">
-                            <div class="dz-icon">📁</div>
-                            <div class="dz-text">Wybierz lub upuść plik <strong>.bin</strong></div>
+                            <div class="dz-icon">đź“</div>
+                            <div class="dz-text">Wybierz lub upuĹ›Ä‡ plik <strong>.bin</strong></div>
                             <input type="file" name="update" accept=".bin" required id="fileInput">
                         </div>
 
@@ -253,7 +290,9 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                             Plik: <strong id="fileNameDisplay">brak</strong>
                         </div>
 
-                        <button type="submit" class="btn btn-primary" id="submitBtn">Wgraj aktualizację i
+                        <div class="status-msg" style="margin-top: 8px;">BLE OTA wymaga bezpiecznego kontekstu przeglÄ…darki, dlatego panel WWW pozostaje kanaĹ‚em HTTP OTA.</div>
+
+                        <button type="submit" class="btn btn-primary" id="submitBtn">Wgraj aktualizacjÄ™ i
                             zrestartuj</button>
                         <div id="uploadStatus" class="status-msg"></div>
                     </form>
@@ -262,14 +301,13 @@ const char web_index_html[] PROGMEM = R"rawliteral(
             </div>
         </main>
 
-        <footer class="app-footer"
-            style="text-align: center; margin-top: 10px; color: var(--text-muted); font-size: 0.85rem;">
+        <footer class="app-footer">
             Made by Bartosz Wolny 2026
         </footer>
 
     </div>
 
-    <script src="script.js?v=4"></script>
+    <script src="script.js?v=5"></script>
 </body>
 
 </html>
@@ -308,16 +346,18 @@ body {
     color: var(--text-main);
     line-height: 1.5;
     font-size: 15px;
+    min-height: 100vh;
+    -webkit-text-size-adjust: 100%;
 }
 
 /* Layout Container */
 .container {
     max-width: 1024px;
     margin: 0 auto;
-    padding: 20px;
+    padding: clamp(12px, 3vw, 20px);
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: clamp(14px, 3vw, 20px);
 }
 
 /* Header */
@@ -334,6 +374,21 @@ body {
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid var(--border);
+    gap: 16px;
+}
+
+.title-area {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .title-area h1 {
@@ -402,10 +457,16 @@ body {
 .tabs {
     display: flex;
     background: rgba(0, 0, 0, 0.1);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+    display: none;
 }
 
 .tab-btn {
-    flex: 1;
+    flex: 1 0 140px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
@@ -458,7 +519,7 @@ body {
     grid-column: span 2;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 920px) {
     .grid-layout {
         grid-template-columns: 1fr;
     }
@@ -475,6 +536,7 @@ body {
     border-radius: 8px;
     display: flex;
     flex-direction: column;
+    min-width: 0;
 }
 
 .panel-header {
@@ -529,6 +591,7 @@ body {
     display: flex;
     align-items: center;
     gap: 15px;
+    min-width: 0;
 }
 
 .box-icon {
@@ -568,6 +631,7 @@ body {
     display: flex;
     justify-content: space-between;
     margin-bottom: 4px;
+    gap: 12px;
 }
 
 .data-compact .row:last-child {
@@ -707,6 +771,8 @@ body {
     font-size: 0.95rem;
     outline: none;
     transition: 0.2s;
+    min-height: 42px;
+    min-width: 0;
 }
 
 .input-time:focus,
@@ -731,6 +797,52 @@ body {
     gap: 8px;
 }
 
+.schedule-edit-wrap {
+    flex-wrap: wrap;
+    row-gap: 10px;
+}
+
+.schedule-edit-wrap .input-select {
+    flex: 1 1 180px;
+}
+
+.schedule-edit-wrap .input-time {
+    flex: 1 1 120px;
+}
+
+.input-number-compact {
+    max-width: 120px;
+}
+
+.servo-slider {
+    width: 100%;
+    margin-top: 15px;
+}
+
+.schedule-footer {
+    padding: 15px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.schedule-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.schedule-actions .btn {
+    min-width: 190px;
+}
+
+.field-error {
+    margin-top: 6px;
+    min-height: 16px;
+    color: var(--danger);
+    font-size: 0.8rem;
+}
+
 .btn {
     padding: 10px 16px;
     border: none;
@@ -739,6 +851,8 @@ body {
     font-weight: 500;
     cursor: pointer;
     transition: 0.2s;
+    min-height: 42px;
+    touch-action: manipulation;
 }
 
 .btn-primary {
@@ -768,6 +882,19 @@ body {
     background: var(--bg-panel-hover);
 }
 
+.btn:disabled,
+.btn:disabled:hover {
+    cursor: not-allowed;
+    opacity: 0.5;
+    background: var(--bg-card);
+}
+
+.input-time:disabled,
+.input-select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 /* OTA Tab */
 .info-strip {
     display: flex;
@@ -775,6 +902,7 @@ body {
     background: var(--bg-card);
     padding: 12px 20px;
     border-radius: 6px;
+    flex-wrap: wrap;
 }
 
 .info-strip .strip-item {
@@ -895,6 +1023,8 @@ body {
     padding: 15px 0;
     font-size: 0.85rem;
     color: var(--text-muted);
+    text-align: center;
+    margin-top: 4px;
 }
 
 .footer-wrap {
@@ -911,7 +1041,73 @@ body {
     text-decoration: underline;
 }
 
+.panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.last-feed {
+    margin-right: auto;
+}
+
+.text-main-strong {
+    color: var(--text-main);
+}
+
+.log-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.log-toggle-option {
+    cursor: pointer;
+}
+
+.log-clear-btn {
+    margin-left: auto;
+}
+
+.devices-table td:first-child {
+    white-space: nowrap;
+}
+
+@media (max-width: 780px) {
+    .flex-between {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .panel-header,
+    .panel-body {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .panel-body.no-pad {
+        padding: 0;
+    }
+
+    .data-compact .row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+    }
+
+    .info-strip {
+        flex-direction: column;
+    }
+}
+
 @media (max-width: 600px) {
+    .container {
+        padding: 12px;
+    }
+
     .header-main {
         flex-direction: column;
         gap: 10px;
@@ -920,6 +1116,116 @@ body {
 
     .system-status {
         text-align: left;
+    }
+
+    .clock,
+    .conn-status {
+        justify-content: flex-start;
+    }
+
+    .tab-btn {
+        flex: 0 0 auto;
+        min-width: 132px;
+        padding: 13px 16px;
+    }
+
+    .box-value {
+        font-size: 1.85rem;
+    }
+
+    .devices-table,
+    .devices-table thead,
+    .devices-table tbody,
+    .devices-table tr,
+    .devices-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .devices-table thead {
+        display: none;
+    }
+
+    .devices-table tbody {
+        padding: 12px;
+        display: grid;
+        gap: 12px;
+    }
+
+    .devices-table tr {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: rgba(15, 23, 42, 0.55);
+    }
+
+    .devices-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .devices-table td:last-child {
+        border-bottom: none;
+    }
+
+    .devices-table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 6px;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    .devices-table td:first-child {
+        background: rgba(0, 0, 0, 0.14);
+        white-space: normal;
+    }
+
+    .status-cell {
+        flex-wrap: wrap;
+    }
+
+    .schedule-edit-wrap {
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .schedule-edit-wrap .text-muted,
+    .schedule-edit-wrap .input-select,
+    .schedule-edit-wrap .input-time,
+    .schedule-edit-wrap .input-range,
+    .schedule-edit-wrap .btn {
+        width: 100%;
+        flex-basis: 100%;
+    }
+
+    .input-number-compact {
+        max-width: none;
+    }
+
+    .schedule-actions .btn,
+    .panel-actions .btn,
+    .panel-actions .btn-small {
+        width: 100%;
+    }
+
+    .panel-actions,
+    .log-toggles {
+        align-items: stretch;
+    }
+
+    .last-feed,
+    .log-clear-btn {
+        margin-right: 0;
+        margin-left: 0;
+    }
+
+    .terminal {
+        height: 280px;
+        font-size: 0.84rem;
     }
 
     .footer-wrap {
@@ -978,14 +1284,18 @@ const elValServoAngle = document.getElementById('valServoAngle');
 const elStatusServoMode = document.getElementById('statusServoMode');
 const elValServoSlider = document.getElementById('valServoSlider');
 
+const elSchedLightMode = document.getElementById('schedLightMode');
 const elSchedDayStart = document.getElementById('schedDayStart');
 const elSchedDayEnd = document.getElementById('schedDayEnd');
+const elSchedAirMode = document.getElementById('schedAirMode');
 const elSchedAirOn = document.getElementById('schedAirOn');
 const elSchedAirOff = document.getElementById('schedAirOff');
+const elSchedFilterMode = document.getElementById('schedFilterMode');
 const elSchedFilterOn = document.getElementById('schedFilterOn');
 const elSchedFilterOff = document.getElementById('schedFilterOff');
 const elValPreOffSlider = document.getElementById('valPreOffSlider');
 const elValPreOffLabel = document.getElementById('valPreOffLabel');
+const elSchedHeaterMode = document.getElementById('schedHeaterMode');
 const elSchedTargetTemp = document.getElementById('schedTargetTemp');
 const elSchedTempHyst = document.getElementById('schedTempHyst');
 const indHeater = document.getElementById('indHeater');
@@ -994,6 +1304,13 @@ const statusHeater = document.getElementById('statusHeater');
 const elSchedFeedTime = document.getElementById('schedFeedTime');
 const elValFeedMode = document.getElementById('valFeedMode');
 const elValLastFeed = document.getElementById('valLastFeed');
+const btnSaveSchedules = document.getElementById('btnSaveSchedules');
+const scheduleValidationSummary = document.getElementById('scheduleValidationSummary');
+const errLight = document.getElementById('errLight');
+const errFilter = document.getElementById('errFilter');
+const errHeater = document.getElementById('errHeater');
+const errAeration = document.getElementById('errAeration');
+const errFeed = document.getElementById('errFeed');
 
 // DOM Elements - OTA
 const fileInput = document.getElementById('fileInput');
@@ -1002,6 +1319,15 @@ const selectedFileDiv = document.getElementById('selectedFile');
 const fileNameDisplay = document.getElementById('fileNameDisplay');
 const otaIpAddress = document.getElementById('otaIpAddress');
 const otaNetworkMode = document.getElementById('otaNetworkMode');
+const otaCurrentVersion = document.getElementById('otaCurrentVersion');
+const otaFirmwareName = document.getElementById('otaFirmwareName');
+const otaBuildStamp = document.getElementById('otaBuildStamp');
+const otaPartitions = document.getElementById('otaPartitions');
+const otaIdfVersion = document.getElementById('otaIdfVersion');
+const otaTransportState = document.getElementById('otaTransportState');
+const otaBleSupport = document.getElementById('otaBleSupport');
+const otaHttpSupport = document.getElementById('otaHttpSupport');
+const otaSlotSize = document.getElementById('otaSlotSize');
 
 const otaForm = document.getElementById('uploadForm');
 const btnSubmitOTA = document.getElementById('submitBtn');
@@ -1052,6 +1378,134 @@ function addLogLine(msg, type = "normal") {
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
+const fallbackValidationProfile = {
+    minuteStep: 5,
+    temperature: { min: 18, max: 30, step: 1, supportsOff: true },
+    hysteresis: { min: 0.1, max: 5.0, step: 0.1 },
+    feeding: { modeMin: 0, modeMax: 3 }
+};
+
+let currentValidationProfile = fallbackValidationProfile;
+
+function resolveValidationProfile(systemSection) {
+    const validation = systemSection?.validation;
+    if (!validation) {
+        return fallbackValidationProfile;
+    }
+
+    return {
+        minuteStep: validation.minuteStep ?? fallbackValidationProfile.minuteStep,
+        temperature: validation.temperature ?? fallbackValidationProfile.temperature,
+        hysteresis: validation.hysteresis ?? fallbackValidationProfile.hysteresis,
+        feeding: validation.feeding ?? fallbackValidationProfile.feeding
+    };
+}
+
+function setFieldError(element, message) {
+    if (element) {
+        element.textContent = message || '';
+    }
+}
+
+function modeRequiresSchedule(mode) {
+    return String(mode) === '0';
+}
+
+function syncScheduleFieldAvailability() {
+    const lightActive = modeRequiresSchedule(elSchedLightMode.value);
+    elSchedDayStart.disabled = !lightActive;
+    elSchedDayEnd.disabled = !lightActive;
+
+    const filterActive = modeRequiresSchedule(elSchedFilterMode.value);
+    elSchedFilterOn.disabled = !filterActive;
+    elSchedFilterOff.disabled = !filterActive;
+
+    const aerationActive = modeRequiresSchedule(elSchedAirMode.value);
+    elSchedAirOn.disabled = !aerationActive;
+    elSchedAirOff.disabled = !aerationActive;
+
+    const heaterEnabled = String(elSchedHeaterMode.value) === '0';
+    elSchedTargetTemp.disabled = !heaterEnabled;
+}
+
+function isMinuteStepValue(timeValue, minuteStep) {
+    if (!timeValue || timeValue.length !== 5) {
+        return false;
+    }
+
+    const [hourText, minuteText] = timeValue.split(':');
+    const hour = parseInt(hourText, 10);
+    const minute = parseInt(minuteText, 10);
+
+    return Number.isInteger(hour) && Number.isInteger(minute) && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 && minute % minuteStep === 0;
+}
+
+function validateScheduleForm() {
+    const profile = currentValidationProfile || fallbackValidationProfile;
+    const minuteStep = profile.minuteStep || 5;
+    const errors = [];
+
+    setFieldError(errLight, '');
+    setFieldError(errFilter, '');
+    setFieldError(errHeater, '');
+    setFieldError(errAeration, '');
+    setFieldError(errFeed, '');
+
+    const validateScheduleMode = (modeValue, startInput, endInput, errorElement, label) => {
+        if (!modeRequiresSchedule(modeValue)) {
+            return;
+        }
+
+        if (!isMinuteStepValue(startInput.value, minuteStep) || !isMinuteStepValue(endInput.value, minuteStep)) {
+            const message = `${label}: czas musi byc w kroku ${minuteStep} min.`;
+            setFieldError(errorElement, message);
+            errors.push(message);
+        }
+    };
+
+    validateScheduleMode(elSchedLightMode.value, elSchedDayStart, elSchedDayEnd, errLight, 'Oswietlenie');
+    validateScheduleMode(elSchedFilterMode.value, elSchedFilterOn, elSchedFilterOff, errFilter, 'Filtr');
+    validateScheduleMode(elSchedAirMode.value, elSchedAirOn, elSchedAirOff, errAeration, 'Napowietrzanie');
+
+    if (!isMinuteStepValue(elSchedFeedTime.value, minuteStep)) {
+        const message = `Karmnik: godzina musi byc w kroku ${minuteStep} min.`;
+        setFieldError(errFeed, message);
+        errors.push(message);
+    }
+
+    const threshold = Number.parseFloat(elSchedTargetTemp.value);
+    if (String(elSchedHeaterMode.value) === '0') {
+        const tempRule = profile.temperature || fallbackValidationProfile.temperature;
+        if (!Number.isFinite(threshold) || threshold < tempRule.min || threshold > tempRule.max || Math.round(threshold) !== threshold) {
+            const message = `Termostat: prog musi byc calkowity w zakresie ${tempRule.min}-${tempRule.max}.`;
+            setFieldError(errHeater, message);
+            errors.push(message);
+        }
+    }
+
+    const hysteresis = Number.parseFloat(elSchedTempHyst.value);
+    const hysteresisRule = profile.hysteresis || fallbackValidationProfile.hysteresis;
+    const hysteresisUnits = Math.round(hysteresis / hysteresisRule.step);
+    if (!Number.isFinite(hysteresis) || hysteresis < hysteresisRule.min || hysteresis > hysteresisRule.max || Math.abs(hysteresis - (hysteresisUnits * hysteresisRule.step)) > 0.001) {
+        const message = `Termostat: histereza musi byc w zakresie ${hysteresisRule.min}-${hysteresisRule.max} ze skokiem ${hysteresisRule.step}.`;
+        setFieldError(errHeater, message);
+        errors.push(message);
+    }
+
+    const feedMode = Number.parseInt(elValFeedMode.value, 10);
+    const feedingRule = profile.feeding || fallbackValidationProfile.feeding;
+    if (!Number.isInteger(feedMode) || feedMode < feedingRule.modeMin || feedMode > feedingRule.modeMax) {
+        const message = `Karmnik: tryb musi byc w zakresie ${feedingRule.modeMin}-${feedingRule.modeMax}.`;
+        setFieldError(errFeed, message);
+        errors.push(message);
+    }
+
+    scheduleValidationSummary.textContent = errors.length > 0 ? errors[0] : '';
+    btnSaveSchedules.disabled = errors.length > 0;
+    syncScheduleFieldAvailability();
+    return errors.length === 0;
+}
+
 // Data Fetching
 async function fetchStatus() {
     try {
@@ -1060,20 +1514,20 @@ async function fetchStatus() {
         const data = await response.json();
 
         // Update Connection UI
-        if (elConnStatus.className !== 'connection-status connected') {
-            elConnStatus.className = 'connection-status connected';
-            elConnStatus.innerHTML = '<span class="pulse-dot"></span> Połączono';
-            addLogLine("Nawiązano połączenie z API /status", "success");
+        if (elConnStatus.className !== 'conn-status ok') {
+            elConnStatus.className = 'conn-status ok';
+            elConnStatus.textContent = 'PoĹ‚Ä…czono';
+            addLogLine("NawiÄ…zano poĹ‚Ä…czenie z API /status", "success");
         }
 
         updateUI(data);
     } catch (error) {
-        if (elConnStatus.className !== 'connection-status disconnected') {
-            addLogLine("Brak połączenia z /api/status. Przełączanie w tryb Mock Data.", "warning");
+        if (elConnStatus.className !== 'conn-status err') {
+            addLogLine("Brak poĹ‚Ä…czenia z /api/status. PrzeĹ‚Ä…czanie w tryb Mock Data.", "warning");
         }
 
-        elConnStatus.className = 'connection-status disconnected';
-        elConnStatus.innerHTML = '<span class="pulse-dot" style="animation:none; opacity:1"></span> Tryb Offline';
+        elConnStatus.className = 'conn-status err';
+        elConnStatus.textContent = 'Tryb Offline';
 
         // Mock data injection if offline
         updateUI(getMockData());
@@ -1084,7 +1538,7 @@ async function fetchStatus() {
 function updateUI(data) {
     // 1. Temperature
     elValTemp.innerText = data.temperature.current.toFixed(1);
-    elValTempMin.innerText = `${(data.temperature.min || 22.0).toFixed(1)} °C`;
+    elValTempMin.innerText = `${(data.temperature.min || 22.0).toFixed(1)} Â°C`;
     if (data.temperature.minTimeEpoch) {
         const dMin = new Date(data.temperature.minTimeEpoch * 1000);
         elValTempMinTime.innerText = `(${dMin.toLocaleDateString('pl-PL')} ${dMin.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })})`;
@@ -1113,30 +1567,30 @@ function updateUI(data) {
     // 4. Servo
     const percent = Math.round((1 - (data.servo.angle / 90)) * 100);
     elValServoAngle.innerText = `${percent}%`;
-    elStatusServoMode.innerText = data.servo.angle === 0 ? "Otwarty" : data.servo.angle >= 90 ? "Zamknięty" : "Półotwarty";
+    elStatusServoMode.innerText = data.servo.angle === 0 ? "Otwarty" : data.servo.angle >= 90 ? "ZamkniÄ™ty" : "PĂłĹ‚otwarty";
     // Tylko uaktualniaj suwak jesli uzytkownik go nie przesuwa (zabezpieczenie przed resetem)
     if (!servoSliderLocked) {
         elValServoSlider.value = percent;
     }
 
-    // 5. Schedules
-    // Heater / Temp config
-    if (data.temperature) {
-        elSchedTargetTemp.value = data.temperature.target || 25.0;
-        elSchedTempHyst.value = data.temperature.hysteresis || 0.5;
-    }
-    
-    // Relay heater status
+    currentValidationProfile = resolveValidationProfile(data.system);
+
     if (data.relays && typeof data.relays.heater !== 'undefined') {
         indHeater.className = 'status-dot ' + (data.relays.heater ? 'on' : 'off');
-        statusHeater.innerText = data.relays.heater ? 'Grzeje' : 'Wyłączone';
+        statusHeater.innerText = data.relays.heater ? 'Grzeje' : 'WyĹ‚Ä…czone';
     } else {
-        // Fallback for mock environment
         indHeater.className = 'status-dot off';
-        statusHeater.innerText = 'Wyłączone';
+        statusHeater.innerText = 'WyĹ‚Ä…czone';
     }
 
-    elSchedDayStart.value = String(data.schedule.dayStartHour).padStart(2, '0') + ":" + String(data.schedule.dayStartMin).padStart(2, '0');
+    if (document.activeElement !== elSchedLightMode) elSchedLightMode.value = String(data.schedule.lightMode ?? 0);
+    if (document.activeElement !== elSchedFilterMode) elSchedFilterMode.value = String(data.schedule.filterMode ?? 0);
+    if (document.activeElement !== elSchedAirMode) elSchedAirMode.value = String(data.schedule.airMode ?? 0);
+    if (document.activeElement !== elSchedHeaterMode) elSchedHeaterMode.value = String(data.schedule.heaterMode ?? data.temperature.heaterMode ?? 0);
+    if (document.activeElement !== elSchedTargetTemp) elSchedTargetTemp.value = data.temperature.threshold ?? data.temperature.target ?? 25.0;
+    if (document.activeElement !== elSchedTempHyst) elSchedTempHyst.value = data.temperature.hysteresis || 0.5;
+
+    if (document.activeElement !== elSchedDayStart) elSchedDayStart.value = padTime(data.schedule.dayStartHour, data.schedule.dayStartMin);
     if (document.activeElement !== elSchedDayEnd) elSchedDayEnd.value = padTime(data.schedule.dayEndHour, data.schedule.dayEndMin);
     if (document.activeElement !== elSchedAirOn) elSchedAirOn.value = padTime(data.schedule.airStartHour, data.schedule.airStartMin);
     if (document.activeElement !== elSchedAirOff) elSchedAirOff.value = padTime(data.schedule.airEndHour, data.schedule.airEndMin);
@@ -1148,9 +1602,9 @@ function updateUI(data) {
         elValPreOffLabel.innerText = data.schedule.servoPreOffMins;
     }
 
-    // 6. Feeding
     if (document.activeElement !== elSchedFeedTime) elSchedFeedTime.value = padTime(data.feeding.hour, data.feeding.minute);
     if (document.activeElement !== elValFeedMode) elValFeedMode.value = data.feeding.freq || "1";
+    validateScheduleForm();
 
     if (data.feeding.lastFeedEpoch > 0) {
         const dDate = new Date(data.feeding.lastFeedEpoch * 1000);
@@ -1165,21 +1619,38 @@ function updateUI(data) {
         otaNetworkMode.innerText = data.network.apMode ? "Access Point" : "Station (WIFI DOM)";
         otaNetworkMode.style.color = data.network.apMode ? "var(--warning)" : "var(--success)";
     }
+
+    if (data.system) {
+        otaCurrentVersion.innerText = data.system.firmwareVersion || "--";
+        otaFirmwareName.innerText = data.system.firmwareName || "Aquarium Controller";
+        otaBuildStamp.innerText = `${data.system.buildDate || "--"} ${data.system.buildTime || ""}`.trim();
+        otaPartitions.innerText = `${data.system.runningPartition || "--"} -> ${data.system.nextPartition || "--"}`;
+        otaIdfVersion.innerText = data.system.idfVersion || "--";
+        otaTransportState.innerText = data.system.otaInProgress
+            ? `${(data.system.otaTransport || "busy").toUpperCase()} ACTIVE`
+            : (data.system.otaTransport || "idle").toUpperCase();
+        otaBleSupport.innerText = data.system.bleOtaSupported ? "Tak" : "Nie";
+        otaHttpSupport.innerText = data.system.httpOtaSupported ? "Tak" : "Nie";
+        otaSlotSize.innerText = data.system.otaPartitionSize
+            ? `${(data.system.otaPartitionSize / 1024 / 1024).toFixed(2)} MB`
+            : "--";
+        otaTransportState.style.color = data.system.otaInProgress ? "var(--warning)" : "var(--success)";
+    }
 }
 
 function updateRelayUI(isOn, badgeEl, indicatorEl) {
     if (isOn) {
         // Log state change if it was off previously (simplified checking for mock)
-        if (badgeEl.textContent === 'Wyłączone') addLogLine(`${badgeEl.id.replace('status', '')} zostało WŁĄCZONE`, "system");
+        if (badgeEl.textContent === 'WyĹ‚Ä…czone') addLogLine(`${badgeEl.id.replace('status', '')} zostaĹ‚o WĹÄ„CZONE`, "system");
 
-        badgeEl.textContent = 'Włączone';
+        badgeEl.textContent = 'WĹ‚Ä…czone';
         badgeEl.className = 'status-badge on';
         indicatorEl.style.backgroundColor = 'var(--success)';
         indicatorEl.style.boxShadow = '0 0 15px var(--success)';
     } else {
-        if (badgeEl.textContent === 'Włączone') addLogLine(`${badgeEl.id.replace('status', '')} zostało WYŁĄCZONE`, "system");
+        if (badgeEl.textContent === 'WĹ‚Ä…czone') addLogLine(`${badgeEl.id.replace('status', '')} zostaĹ‚o WYĹÄ„CZONE`, "system");
 
-        badgeEl.textContent = 'Wyłączone';
+        badgeEl.textContent = 'WyĹ‚Ä…czone';
         badgeEl.className = 'status-badge off';
         indicatorEl.style.backgroundColor = 'var(--off-state)';
         indicatorEl.style.boxShadow = 'none';
@@ -1197,12 +1668,12 @@ function syncDeviceTime() {
     const now = new Date();
     const epoch = Math.floor(now.getTime() / 1000);
 
-    addLogLine(`Żądanie synchronizacji czasu (Epoch: ${epoch})...`, "system");
+    addLogLine(`Ĺ»Ä…danie synchronizacji czasu (Epoch: ${epoch})...`, "system");
 
     fetch(`${API_TIME}?epoch=${epoch}`, { method: 'POST' })
         .then(response => {
             if (response.ok) {
-                addLogLine("Czas zsynchronizowany z układem ESP32 pomyślnie.", "success");
+                addLogLine("Czas zsynchronizowany z ukĹ‚adem ESP32 pomyĹ›lnie.", "success");
             }
         })
         .catch(err => {
@@ -1213,22 +1684,24 @@ function syncDeviceTime() {
 // API Action function
 function sendAction(actionName, payload = {}) {
     const params = new URLSearchParams({ action: actionName, ...payload });
-    addLogLine(`Wysyłanie akcji: ${actionName}...`, "system");
+    addLogLine(`WysyĹ‚anie akcji: ${actionName}...`, "system");
 
     fetch(`/api/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: params.toString()
     })
-        .then(response => {
+        .then(async response => {
+            const responseText = await response.text();
             if (response.ok) {
-                addLogLine(`Akcja '${actionName}' zakończona sukcesem.`, "success");
+                addLogLine(`Akcja '${actionName}' zakoĹ„czona sukcesem.`, "success");
                 fetchStatus(); // Refresh immediately
             } else {
-                addLogLine(`Błąd akcji '${actionName}' (HTTP ${response.status})`, "danger");
+                const detail = responseText ? `: ${responseText}` : '';
+                addLogLine(`BĹ‚Ä…d akcji '${actionName}' (HTTP ${response.status})${detail}`, "danger");
             }
         })
-        .catch(err => addLogLine(`Błąd sieci (action: ${actionName})`, "danger"));
+        .catch(err => addLogLine(`BĹ‚Ä…d sieci (action: ${actionName})`, "danger"));
 }
 
 // Button Events
@@ -1237,23 +1710,70 @@ document.getElementById('btnFeedNow').onclick = (e) => {
     sendAction('feed_now');
 };
 
-document.getElementById('btnSaveSchedules').onclick = (e) => {
+btnSaveSchedules.onclick = (e) => {
     e.preventDefault();
+    if (!validateScheduleForm()) {
+        addLogLine('Formularz harmonogramu zawiera bledy walidacji.', 'warning');
+        return;
+    }
+
+    const lightMode = String(elSchedLightMode.value ?? '0');
+    const aerationMode = String(elSchedAirMode.value ?? '0');
+    const filterMode = String(elSchedFilterMode.value ?? '0');
+    const heaterMode = String(elSchedHeaterMode.value ?? '0');
+
     const payload = {
-        dayStart: elSchedDayStart.value,
-        dayEnd: elSchedDayEnd.value,
-        targetTemp: elSchedTargetTemp.value,
+        lightMode,
+        aerationMode,
+        filterMode,
+        heaterMode,
         tempHyst: elSchedTempHyst.value,
-        airOn: elSchedAirOn.value,
-        airOff: elSchedAirOff.value,
-        filterOn: elSchedFilterOn.value,
-        filterOff: elSchedFilterOff.value,
         servoPreOffMins: elValPreOffSlider.value,
         feedTime: elSchedFeedTime.value,
         feedFreq: elValFeedMode.value
     };
+
+    if (lightMode === '0') {
+        payload.dayStart = elSchedDayStart.value;
+        payload.dayEnd = elSchedDayEnd.value;
+    }
+
+    if (aerationMode === '0') {
+        payload.airOn = elSchedAirOn.value;
+        payload.airOff = elSchedAirOff.value;
+    }
+
+    if (filterMode === '0') {
+        payload.filterOn = elSchedFilterOn.value;
+        payload.filterOff = elSchedFilterOff.value;
+    }
+
+    if (heaterMode === '0') {
+        payload.targetTemp = elSchedTargetTemp.value;
+    }
+
     sendAction('save_schedule', payload);
 };
+
+[
+    elSchedLightMode,
+    elSchedDayStart,
+    elSchedDayEnd,
+    elSchedFilterMode,
+    elSchedFilterOn,
+    elSchedFilterOff,
+    elSchedAirMode,
+    elSchedAirOn,
+    elSchedAirOff,
+    elSchedHeaterMode,
+    elSchedTargetTemp,
+    elSchedTempHyst,
+    elSchedFeedTime,
+    elValFeedMode
+].forEach(element => {
+    element.addEventListener('change', validateScheduleForm);
+    element.addEventListener('input', validateScheduleForm);
+});
 
 // Blokada auto-aktualizacji suwaka servo podczas interakcji uzytkownika
 let servoSliderLocked = false;
@@ -1284,7 +1804,7 @@ elValPreOffSlider.addEventListener('input', (e) => {
 // Logs Tab Functionality
 btnClearLogs.addEventListener('click', () => {
     logContainer.innerHTML = '';
-    addLogLine("Logi zostały wyczyszczone.", "system");
+    addLogLine("Logi zostaĹ‚y wyczyszczone.", "system");
 });
 
 btnDownloadLogs.addEventListener('click', () => {
@@ -1329,14 +1849,14 @@ function handleFiles(files) {
     if (files.length > 0) {
         const file = files[0];
         if (!file.name.endsWith('.bin')) {
-            alert('Proszę wybrać plik z rozszerzeniem .bin');
+            alert('ProszÄ™ wybraÄ‡ plik z rozszerzeniem .bin');
             fileInput.value = '';
             selectedFileDiv.style.display = 'none';
             return;
         }
         fileNameDisplay.innerText = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
         selectedFileDiv.style.display = 'block';
-        addLogLine(`Załadowano plik firmware: ${file.name}`, "ota");
+        addLogLine(`ZaĹ‚adowano plik firmware: ${file.name}`, "ota");
     }
 }
 
@@ -1350,9 +1870,9 @@ otaForm.addEventListener('submit', function (e) {
 
     // UI Feedback
     btnSubmitOTA.disabled = true;
-    btnSubmitOTA.innerText = '⏳ Wgrywanie... Nie wyłączaj zasialania!';
-    uploadStatus.innerText = 'Trwa przesyłanie i zapisywanie do pamięci Flash... (Odśwież stronę po minucie)';
-    addLogLine(`Rozpoczeto wgrywanie pliku OTA (${fileInput.files[0].name}). Proszę czekać...`, "ota");
+    btnSubmitOTA.innerText = 'âŹł Wgrywanie... Nie wyĹ‚Ä…czaj zasialania!';
+    uploadStatus.innerText = 'Trwa przesyĹ‚anie i zapisywanie do pamiÄ™ci Flash... (OdĹ›wieĹĽ stronÄ™ po minucie)';
+    addLogLine(`Rozpoczeto wgrywanie pliku OTA (${fileInput.files[0].name}). ProszÄ™ czekaÄ‡...`, "ota");
 
     // Let the form submit naturally as it points to /update handler inside C++.
 });
@@ -1371,7 +1891,7 @@ const offlineData = {
 };
 
 function getMockData() {
-    // Zapamiętaj rzeczywistość jeśli to możliwe, lub użyj łagodnego dryfu by nie skakać jak szalone
+    // ZapamiÄ™taj rzeczywistoĹ›Ä‡ jeĹ›li to moĹĽliwe, lub uĹĽyj Ĺ‚agodnego dryfu by nie skakaÄ‡ jak szalone
     if (elValTemp.innerText && elValTemp.innerText !== "--.-") {
         if (offlineData.firstInit) {
             offlineData.temp = parseFloat(elValTemp.innerText) || 24.5;
@@ -1393,6 +1913,8 @@ function getMockData() {
         temperature: {
             current: mockTemp,
             target: 25.0,
+            threshold: 25.0,
+            heaterMode: parseInt(elSchedHeaterMode.value, 10) || 0,
             hysteresis: 0.5,
             min: offlineData.minTemp,
             minTimeEpoch: offlineData.minTempEpoch
@@ -1403,25 +1925,30 @@ function getMockData() {
         },
         relays: {
             light: lastLightToggle,
-            pump: Math.random() > 0.5
+            pump: Math.random() > 0.5,
+            heater: false
         },
         servo: {
             angle: parseInt(elValServoSlider.value) || 0,
             mode: parseInt(elValServoSlider.value) || 0
         },
         schedule: {
+            lightMode: parseInt(elSchedLightMode.value, 10) || 0,
             dayStartHour: parseInt(elSchedDayStart.value.split(':')[0]) || 8,
             dayStartMin: parseInt(elSchedDayStart.value.split(':')[1]) || 0,
             dayEndHour: parseInt(elSchedDayEnd.value.split(':')[0]) || 22,
             dayEndMin: parseInt(elSchedDayEnd.value.split(':')[1]) || 0,
+            airMode: parseInt(elSchedAirMode.value, 10) || 0,
             airStartHour: parseInt(elSchedAirOn.value.split(':')[0]) || 22,
             airStartMin: parseInt(elSchedAirOn.value.split(':')[1]) || 30,
             airEndHour: parseInt(elSchedAirOff.value.split(':')[0]) || 7,
             airEndMin: parseInt(elSchedAirOff.value.split(':')[1]) || 30,
+            filterMode: parseInt(elSchedFilterMode.value, 10) || 0,
             filterStartHour: parseInt(elSchedFilterOn?.value?.split(':')[0]) || 0,
             filterStartMin: parseInt(elSchedFilterOn?.value?.split(':')[1]) || 0,
             filterEndHour: parseInt(elSchedFilterOff?.value?.split(':')[0]) || 23,
             filterEndMin: parseInt(elSchedFilterOff?.value?.split(':')[1]) || 59,
+            heaterMode: parseInt(elSchedHeaterMode.value, 10) || 0,
             servoPreOffMins: parseInt(elValPreOffSlider?.value) || 30
         },
         feeding: {
@@ -1434,6 +1961,21 @@ function getMockData() {
         network: {
             ip: "Tryb Offline",
             apMode: true
+        },
+        system: {
+            firmwareName: "Aquarium Controller",
+            firmwareVersion: "2.0.0",
+            buildDate: "Mar 07 2026",
+            buildTime: "00:00:00",
+            idfVersion: "v4.4.7-dirty",
+            runningPartition: "app0",
+            nextPartition: "app1",
+            otaPartitionSize: 1966080,
+            otaInProgress: false,
+            otaTransport: "idle",
+            bleOtaSupported: true,
+            httpOtaSupported: true,
+            validation: fallbackValidationProfile
         }
     };
 }
@@ -1447,7 +1989,7 @@ function renderStoredLogs() {
     const activeData = currentLogView === 'critical' ? lastKnownCriticalLogs : lastKnownNormalLogs;
     
     if (activeData.length === 0) {
-        logContainer.innerHTML = `<div class="log-line system">[SYSTEM] Terminal gotowy. Brak logów.</div>`;
+        logContainer.innerHTML = `<div class="log-line system">[SYSTEM] Terminal gotowy. Brak logĂłw.</div>`;
         return;
     }
     
@@ -1455,7 +1997,7 @@ function renderStoredLogs() {
         const row = document.createElement('div');
         row.className = currentLogView === 'critical' ? 'log-line danger' : 'log-line system';
         if (currentLogView === 'critical') {
-            row.style.color = '#f87171'; // Czerwony kolor dla logów krytycznych
+            row.style.color = '#f87171'; // Czerwony kolor dla logĂłw krytycznych
         }
         row.innerText = lg;
         logContainer.appendChild(row);
@@ -1491,7 +2033,7 @@ async function fetchLogs() {
 }
 
 btnDeleteCritical.addEventListener('click', () => {
-    if (confirm("Czy na pewno chcesz usunąć trwale zapisane logi krytyczne z pamięci urządzenia?")) {
+    if (confirm("Czy na pewno chcesz usunÄ…Ä‡ trwale zapisane logi krytyczne z pamiÄ™ci urzÄ…dzenia?")) {
         sendAction('clear_critical_logs');
         lastKnownCriticalLogs = [];
         renderStoredLogs();
@@ -1499,6 +2041,8 @@ btnDeleteCritical.addEventListener('click', () => {
 });
 
 // Initial fetch and layout
+syncScheduleFieldAvailability();
+validateScheduleForm();
 fetchStatus();
 fetchLogs();
 
@@ -1507,7 +2051,7 @@ setInterval(() => {
     fetchStatus();
     fetchLogs();
     // Simulate some system actions in Mock mode to make log active
-    if (elConnStatus.className.includes('disconnected') && Math.random() > 0.9) {
+    if (elConnStatus.className.includes('err') && Math.random() > 0.9) {
         addLogLine("Odebrano weryfikacyjny ping...", "normal");
     }
 }, 5000);
@@ -1520,3 +2064,4 @@ window.onload = () => {
 )rawliteral";
 
 #endif // WEBASSETS_H
+

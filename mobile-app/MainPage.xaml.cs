@@ -1,23 +1,28 @@
-﻿namespace AquariumController.Mobile;
+using AquariumController.Mobile.ViewModels;
+
+namespace AquariumController.Mobile;
 
 public partial class MainPage : ContentPage
 {
-	int count = 0;
+	private readonly MainViewModel _viewModel;
+	private bool _initialized;
 
-	public MainPage()
+	public MainPage(MainViewModel viewModel)
 	{
 		InitializeComponent();
+		BindingContext = _viewModel = viewModel;
 	}
 
-	private void OnCounterClicked(object? sender, EventArgs e)
+	protected override async void OnAppearing()
 	{
-		count++;
+		base.OnAppearing();
 
-		if (count == 1)
-			CounterBtn.Text = $"Clicked {count} time";
-		else
-			CounterBtn.Text = $"Clicked {count} times";
+		if (_initialized)
+		{
+			return;
+		}
 
-		SemanticScreenReader.Announce(CounterBtn.Text);
+		_initialized = true;
+		await _viewModel.InitializeAsync();
 	}
 }

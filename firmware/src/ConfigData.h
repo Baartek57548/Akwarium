@@ -4,25 +4,40 @@
 #include <Arduino.h>
 
 constexpr uint32_t CONFIG_MAGIC = 0xCAFEBAC4;
-constexpr uint16_t CONFIG_VERSION = 5; // Bumped version due to CRC addition
+constexpr uint16_t CONFIG_VERSION = 6;
 constexpr int SERVO_OPEN_ANGLE = 0;
 constexpr int SERVO_PREOFF_ANGLE = 45;
 constexpr int SERVO_CLOSED_ANGLE = 90;
 
+enum class ScheduleMode : uint8_t {
+  Schedule = 0,
+  AlwaysOn = 1,
+  AlwaysOff = 2
+};
+
+enum class HeaterMode : uint8_t {
+  Threshold = 0,
+  Off = 1
+};
+
 struct Config {
+  uint8_t lightMode;
   uint8_t dayStartHour;
   uint8_t dayStartMinute;
   uint8_t dayEndHour;
   uint8_t dayEndMinute;
+  uint8_t aerationMode;
   uint8_t aerationHourOn;
   uint8_t aerationMinuteOn;
   uint8_t aerationHourOff;
   uint8_t aerationMinuteOff;
+  uint8_t filterMode;
   uint8_t filterHourOn;
   uint8_t filterMinuteOn;
   uint8_t filterHourOff;
   uint8_t filterMinuteOff;
   uint8_t servoPreOffMins;
+  uint8_t heaterMode;
   float targetTemp;
   float tempHysteresis;
   int servoDayAngle;

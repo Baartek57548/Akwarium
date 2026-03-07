@@ -27,6 +27,8 @@ static DNSServer dnsServer;
 static const byte DNS_PORT = 53;
 static bool isAPMode = false;
 static bool otaUploadActive = false;
+static bool otaUploadRejected = false;
+static String otaUploadRejectReason;
 static volatile bool apStartRequested = false;
 static volatile bool apStopRequested = false;
 static volatile bool staOffRequested = false;
@@ -111,7 +113,33 @@ static void setupWebServer() {
   server.on(
       "/update", HTTP_POST,
       []() {
-        const bool otaSuccess = !Update.hasError();
+        if (otaUploadRejected) {
+          server.sendHeader("Connection", "close");
+          String html =
+              "<!DOCTYPE html><html lang='pl'><head><meta charset='UTF-8'>"
+              "<meta name='viewport' content='width=device-width, initial-"
+              "scale=1.0'><title>OTA Status</title>";
+          html += "<style>body{background-color:#0f172a;color:#f8fafc;font-"
+                  "family:'Segoe UI',sans-serif;display:flex;justify-content:"
+                  "center;align-items:center;height:100vh;margin:0;}";
+          html += ".card{background:#1e293b;padding:40px;border-radius:16px;"
+                  "box-shadow:0 10px 25px rgba(0,0,0,0.5);text-align:center;"
+                  "border:1px solid #334155;max-width:520px;}";
+          html +=
+              "h2{margin:0 0 10px 0;font-size:24px;color:#ef4444;}"
+              "p{color:#94a3b8;margin:0;line-height:1.5;}</style></head>"
+              "<body><div class='card'><h2>OTA niedostepne</h2><p>";
+          html += otaUploadRejectReason.length() > 0
+                      ? otaUploadRejectReason
+                      : "Inna sesja OTA jest juz aktywna.";
+          html += "</p></div></body></html>";
+          server.send(409, "text/html", html);
+          otaUploadRejected = false;
+          otaUploadRejectReason = "";
+          return;
+        }
+
+        const bool otaSuccess = otaUploadActive && !Update.hasError();
         if (otaUploadActive) {
           OtaManager::endOtaUpdate(otaSuccess);
           otaUploadActive = false;
@@ -149,8 +177,17 @@ static void setupWebServer() {
       []() {
         HTTPUpload &upload = server.upload();
         if (upload.status == UPLOAD_FILE_START) {
+          otaUploadRejected = false;
+          otaUploadRejectReason = "";
+
           if (!otaUploadActive) {
-            OtaManager::beginOtaUpdate();
+            if (!OtaManager::tryBeginOtaUpdate("http")) {
+              otaUploadRejected = true;
+              otaUploadRejectReason =
+                  "Sterownik wykonuje juz aktualizacje OTA przez inny kanal.";
+              Serial.println("[OTA] Odrzucono HTTP OTA: inna sesja OTA aktywna.");
+              return;
+            }
             otaUploadActive = true;
           }
           Serial.printf("[OTA] Pobieranie: %s\n", upload.filename.c_str());
@@ -159,6 +196,8 @@ static void setupWebServer() {
             OtaManager::endOtaUpdate(false);
             otaUploadActive = false;
           }
+        } else if (otaUploadRejected) {
+          return;
         } else if (upload.status == UPLOAD_FILE_WRITE) {
           if (Update.write(upload.buf, upload.currentSize) !=
               upload.currentSize) {
@@ -301,4 +340,3 @@ String AkwariumWifi::getIP() {
 uint8_t AkwariumWifi::getConnectedClients() {
   return isAPMode ? WiFi.softAPgetStationNum() : 0;
 }
-

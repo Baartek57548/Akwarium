@@ -1,4 +1,5 @@
 #include "ConfigManager.h"
+#include "ConfigValidation.h"
 #include <Arduino.h>
 #include <Preferences.h>
 #include <freertos/FreeRTOS.h>
@@ -71,19 +72,23 @@ uint32_t ConfigManager::calculateCrc32(const Config &cfg) {
 }
 
 void ConfigManager::loadDefaultConfig() {
+  sysConfig.lightMode = static_cast<uint8_t>(ScheduleMode::Schedule);
   sysConfig.dayStartHour = 10;
   sysConfig.dayStartMinute = 0;
   sysConfig.dayEndHour = 21;
   sysConfig.dayEndMinute = 30;
+  sysConfig.aerationMode = static_cast<uint8_t>(ScheduleMode::Schedule);
   sysConfig.aerationHourOn = 10;
   sysConfig.aerationMinuteOn = 0;
   sysConfig.aerationHourOff = 21;
   sysConfig.aerationMinuteOff = 0;
+  sysConfig.filterMode = static_cast<uint8_t>(ScheduleMode::Schedule);
   sysConfig.filterHourOn = 10;
   sysConfig.filterMinuteOn = 30;
   sysConfig.filterHourOff = 20;
   sysConfig.filterMinuteOff = 30;
   sysConfig.servoPreOffMins = 30;
+  sysConfig.heaterMode = static_cast<uint8_t>(HeaterMode::Threshold);
   sysConfig.targetTemp = 25.0f;
   sysConfig.tempHysteresis = 0.5f;
   sysConfig.servoDayAngle = SERVO_OPEN_ANGLE;
@@ -94,6 +99,7 @@ void ConfigManager::loadDefaultConfig() {
   sysConfig.feedMinute = 0;
   sysConfig.lastFeedEpoch = 0;
   sysConfig.alwaysScreenOn = false;
+  ConfigValidation::sanitizeConfig(sysConfig);
   sysConfig.version = CONFIG_VERSION;
   sysConfig.magic = CONFIG_MAGIC;
   sysConfig.crc32 = calculateCrc32(sysConfig);
@@ -126,9 +132,18 @@ void ConfigManager::init() {
       sysConfig.version == CONFIG_VERSION) {
     uint32_t calculatedCrc = calculateCrc32(sysConfig);
     if (calculatedCrc == sysConfig.crc32) {
+      Config sanitized = sysConfig;
+      ConfigValidation::sanitizeConfig(sanitized);
+      if (memcmp(&sanitized, &sysConfig, sizeof(Config)) != 0) {
+        sysConfig = sanitized;
+        shouldSave = true;
+      }
       Serial.println(
           "[CONFIG] Konfiguracja zaladowana pomyslnie, CRC poprawne.");
       unlockConfig();
+      if (shouldSave) {
+        save();
+      }
       return;
     } else {
       Serial.println("[CONFIG] BLAD CRC! Konfiguracja uszkodzona. Ladowanie "
@@ -146,32 +161,43 @@ void ConfigManager::init() {
       Serial.println(
           "[CONFIG] Migracja ze starej wersji (bez CRC) do nowej struktury");
       loadDefaultConfig(); // Inicjacja nowych pol
-      sysConfig.dayStartHour = constrain(legacy.dayStartHour, 0, 24);
-      sysConfig.dayStartMinute = constrain(legacy.dayStartMinute, 0, 59);
-      sysConfig.dayEndHour = constrain(legacy.dayEndHour, 0, 24);
-      sysConfig.dayEndMinute = constrain(legacy.dayEndMinute, 0, 59);
+      sysConfig.dayStartHour = legacy.dayStartHour;
+      sysConfig.dayStartMinute = legacy.dayStartMinute;
+      sysConfig.dayEndHour = legacy.dayEndHour;
+      sysConfig.dayEndMinute = legacy.dayEndMinute;
+      sysConfig.lightMode = (legacy.dayStartHour == 24)
+                                ? static_cast<uint8_t>(ScheduleMode::AlwaysOn)
+                                : (legacy.dayEndHour == 24)
+                                      ? static_cast<uint8_t>(ScheduleMode::AlwaysOff)
+                                      : static_cast<uint8_t>(ScheduleMode::Schedule);
 
-      sysConfig.aerationHourOn = constrain(legacy.aerationHourOn, 0, 23);
-      sysConfig.aerationMinuteOn = constrain(legacy.aerationMinuteOn, 0, 59);
-      sysConfig.aerationHourOff = constrain(legacy.aerationHourOff, 0, 23);
-      sysConfig.aerationMinuteOff = constrain(legacy.aerationMinuteOff, 0, 59);
+      sysConfig.aerationHourOn = legacy.aerationHourOn;
+      sysConfig.aerationMinuteOn = legacy.aerationMinuteOn;
+      sysConfig.aerationHourOff = legacy.aerationHourOff;
+      sysConfig.aerationMinuteOff = legacy.aerationMinuteOff;
+      sysConfig.aerationMode = static_cast<uint8_t>(ScheduleMode::Schedule);
 
-      sysConfig.filterHourOn = constrain(legacy.filterHourOn, 0, 23);
-      sysConfig.filterMinuteOn = constrain(legacy.filterMinuteOn, 0, 59);
-      sysConfig.filterHourOff = constrain(legacy.filterHourOff, 0, 23);
-      sysConfig.filterMinuteOff = constrain(legacy.filterMinuteOff, 0, 59);
+      sysConfig.filterHourOn = legacy.filterHourOn;
+      sysConfig.filterMinuteOn = legacy.filterMinuteOn;
+      sysConfig.filterHourOff = legacy.filterHourOff;
+      sysConfig.filterMinuteOff = legacy.filterMinuteOff;
+      sysConfig.filterMode = static_cast<uint8_t>(ScheduleMode::Schedule);
 
       sysConfig.servoPreOffMins = legacy.servoPreOffMins;
-      sysConfig.targetTemp = constrain(legacy.targetTemp, 15.0f, 35.0f);
-      sysConfig.tempHysteresis = constrain(legacy.tempHysteresis, 0.1f, 5.0f);
+      sysConfig.heaterMode = legacy.targetTemp <= 0.0f
+                                 ? static_cast<uint8_t>(HeaterMode::Off)
+                                 : static_cast<uint8_t>(HeaterMode::Threshold);
+      sysConfig.targetTemp = legacy.targetTemp;
+      sysConfig.tempHysteresis = legacy.tempHysteresis;
       sysConfig.servoDayAngle = constrain(legacy.servoDayAngle, 0, 90);
       sysConfig.servoNightAngle = constrain(legacy.servoNightAngle, 0, 90);
       sysConfig.servoAlarmAngle = constrain(legacy.servoAlarmAngle, 0, 90);
-      sysConfig.feedMode = constrain(legacy.feedMode, 0, 3);
-      sysConfig.feedHour = constrain(legacy.feedHour, 0, 23);
-      sysConfig.feedMinute = constrain(legacy.feedMinute, 0, 59);
+      sysConfig.feedMode = legacy.feedMode;
+      sysConfig.feedHour = legacy.feedHour;
+      sysConfig.feedMinute = legacy.feedMinute;
       sysConfig.lastFeedEpoch = legacy.lastFeedEpoch;
       sysConfig.alwaysScreenOn = legacy.alwaysScreenOn;
+      ConfigValidation::sanitizeConfig(sysConfig);
       shouldSave = true;
     } else {
       Serial.println("[CONFIG] Brak lub niepoprawna sygnatura MAGIC. Ladowanie "
@@ -209,6 +235,7 @@ bool ConfigManager::updateAndSave(const Config &cfg) {
   }
 
   sysConfig = cfg;
+  ConfigValidation::sanitizeConfig(sysConfig);
   sysConfig.version = CONFIG_VERSION;
   sysConfig.magic = CONFIG_MAGIC;
   sysConfig.crc32 = calculateCrc32(sysConfig);

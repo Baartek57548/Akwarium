@@ -70,18 +70,22 @@ static bool shouldApplyUiIdleHomeTimeout(UiState state) {
 }
 
 struct PendingScheduleUpdate {
+  uint8_t lightMode;
   uint8_t dayStartHour;
   uint8_t dayStartMinute;
   uint8_t dayEndHour;
   uint8_t dayEndMinute;
+  uint8_t aerationMode;
   uint8_t aerationHourOn;
   uint8_t aerationMinuteOn;
   uint8_t aerationHourOff;
   uint8_t aerationMinuteOff;
+  uint8_t filterMode;
   uint8_t filterHourOn;
   uint8_t filterMinuteOn;
   uint8_t filterHourOff;
   uint8_t filterMinuteOff;
+  uint8_t heaterMode;
   uint8_t feedHour;
   uint8_t feedMinute;
   uint8_t feedMode;
@@ -108,21 +112,25 @@ static void queueScheduleUpdateFromAnimation() {
     return;
 
   PendingScheduleUpdate update = {};
+  update.lightMode = animation->getLightMode();
   update.dayStartHour = animation->getScheduleHourOn();
   update.dayStartMinute = animation->getScheduleMinOn();
   update.dayEndHour = animation->getScheduleHourOff();
   update.dayEndMinute = animation->getScheduleMinOff();
 
+  update.aerationMode = animation->getAerationMode();
   update.aerationHourOn = animation->getAerationHourOn();
   update.aerationMinuteOn = animation->getAerationMinOn();
   update.aerationHourOff = animation->getAerationHourOff();
   update.aerationMinuteOff = animation->getAerationMinOff();
 
+  update.filterMode = animation->getFilterMode();
   update.filterHourOn = animation->getFilterHourOn();
   update.filterMinuteOn = animation->getFilterMinOn();
   update.filterHourOff = animation->getFilterHourOff();
   update.filterMinuteOff = animation->getFilterMinOff();
 
+  update.heaterMode = animation->getHeaterMode();
   update.targetTemp = animation->getTargetTemp();
   update.feedHour = animation->getFeedHour();
   update.feedMinute = animation->getFeedMinute();
@@ -186,6 +194,8 @@ static void applyPendingUiChanges() {
 
   if (applySchedule) {
     ConfigPatch patch = {};
+    patch.hasLightMode = true;
+    patch.lightMode = localSchedule.lightMode;
     patch.hasDayStartHour = true;
     patch.dayStartHour = localSchedule.dayStartHour;
     patch.hasDayStartMinute = true;
@@ -195,6 +205,8 @@ static void applyPendingUiChanges() {
     patch.hasDayEndMinute = true;
     patch.dayEndMinute = localSchedule.dayEndMinute;
 
+    patch.hasAerationMode = true;
+    patch.aerationMode = localSchedule.aerationMode;
     patch.hasAerationHourOn = true;
     patch.aerationHourOn = localSchedule.aerationHourOn;
     patch.hasAerationMinuteOn = true;
@@ -204,6 +216,8 @@ static void applyPendingUiChanges() {
     patch.hasAerationMinuteOff = true;
     patch.aerationMinuteOff = localSchedule.aerationMinuteOff;
 
+    patch.hasFilterMode = true;
+    patch.filterMode = localSchedule.filterMode;
     patch.hasFilterHourOn = true;
     patch.filterHourOn = localSchedule.filterHourOn;
     patch.hasFilterMinuteOn = true;
@@ -213,6 +227,8 @@ static void applyPendingUiChanges() {
     patch.hasFilterMinuteOff = true;
     patch.filterMinuteOff = localSchedule.filterMinuteOff;
 
+    patch.hasHeaterMode = true;
+    patch.heaterMode = localSchedule.heaterMode;
     patch.hasTargetTemp = true;
     patch.targetTemp = localSchedule.targetTemp;
     patch.hasFeedHour = true;
@@ -224,8 +240,7 @@ static void applyPendingUiChanges() {
 
     Config cfg = ConfigManager::getCopy();
     ConfigValidationResult validation = {};
-    ConfigValidation::applyPatchAndClamp(cfg, patch, validation);
-    if (validation.hasAnyApplied()) {
+    if (ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
       ConfigManager::updateAndSave(cfg);
     }
   }
@@ -444,7 +459,7 @@ void updateUiState() {
     }
     if (downJustPressed) {
       if (!animation->isEditingActive()) {
-        if (animation->getScheduleSelection() == 1) {
+        if (animation->getScheduleSelection() == 2) {
           uiState = UiState::SCHEDULE_AERATION;
           animation->setActiveScheduleId(1);
         } else
@@ -467,7 +482,7 @@ void updateUiState() {
     }
     if (downJustPressed) {
       if (!animation->isEditingActive()) {
-        if (animation->getScheduleSelection() == 1) {
+        if (animation->getScheduleSelection() == 2) {
           uiState = UiState::SCHEDULE_FILTER;
           animation->setActiveScheduleId(2);
         } else
@@ -490,7 +505,7 @@ void updateUiState() {
     }
     if (downJustPressed) {
       if (!animation->isEditingActive()) {
-        if (animation->getScheduleSelection() == 1) {
+        if (animation->getScheduleSelection() == 2) {
           uiState = UiState::SCHEDULE_TEMP;
           animation->setActiveScheduleId(3);
         } else
@@ -583,14 +598,18 @@ void VideoTask(void *pvParameters) {
       animation->setBattery(PowerManager::getBatteryPercent());
 
       Config cfg = ConfigManager::getCopy();
-      animation->setLightSchedule(cfg.dayStartHour, cfg.dayStartMinute,
+        animation->setLightSchedule(cfg.dayStartHour, cfg.dayStartMinute,
                                   cfg.dayEndHour, cfg.dayEndMinute);
+      animation->setLightMode(cfg.lightMode);
       animation->setAerationSchedule(cfg.aerationHourOn, cfg.aerationMinuteOn,
                                      cfg.aerationHourOff,
                                      cfg.aerationMinuteOff);
+      animation->setAerationMode(cfg.aerationMode);
       animation->setFilterSchedule(cfg.filterHourOn, cfg.filterMinuteOn,
                                    cfg.filterHourOff, cfg.filterMinuteOff);
+      animation->setFilterMode(cfg.filterMode);
       animation->setTargetTempSetting(static_cast<uint8_t>(cfg.targetTemp));
+      animation->setHeaterMode(cfg.heaterMode);
       char feedTime[6];
       snprintf(feedTime, sizeof(feedTime), "%02u:%02u", cfg.feedHour,
                cfg.feedMinute);

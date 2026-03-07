@@ -1,4 +1,5 @@
 #include "AquariumAnimation.h"
+#include "ConfigData.h"
 #include "UIRenderers.h"
 #include <Arduino.h>
 
@@ -402,18 +403,22 @@ AquariumAnimation::AquariumAnimation(U8G2 *u8g2_instance) {
   menuScrollOffset = 0;
   scheduleSelection = 0;
 
+  lightMode = static_cast<uint8_t>(ScheduleMode::Schedule);
   scheduleHourOn = 9;
   scheduleMinOn = 30;
   scheduleHourOff = 23;
   scheduleMinOff = 0;
+  aerationMode = static_cast<uint8_t>(ScheduleMode::Schedule);
   aerationHourOn = 8;
   aerationMinOn = 0;
   aerationHourOff = 20;
   aerationMinOff = 0;
+  filterMode = static_cast<uint8_t>(ScheduleMode::Schedule);
   filterHourOn = 8;
   filterMinOn = 0;
   filterHourOff = 18;
   filterMinOff = 0;
+  heaterMode = static_cast<uint8_t>(HeaterMode::Threshold);
   targetTemp = 24;
 
   feedHour = 15;
@@ -664,10 +669,14 @@ uint8_t AquariumAnimation::getScheduleSelection() { return scheduleSelection; }
 
 void AquariumAnimation::setLightSchedule(uint8_t hourOn, uint8_t minuteOn,
                                          uint8_t hourOff, uint8_t minuteOff) {
-  scheduleHourOn = constrain(hourOn, 0, 24);
+  scheduleHourOn = constrain(hourOn, 0, 23);
   scheduleMinOn = constrain(minuteOn, 0, 59);
-  scheduleHourOff = constrain(hourOff, 0, 24);
+  scheduleHourOff = constrain(hourOff, 0, 23);
   scheduleMinOff = constrain(minuteOff, 0, 59);
+}
+
+void AquariumAnimation::setLightMode(uint8_t mode) {
+  lightMode = constrain(mode, 0, 2);
 }
 
 void AquariumAnimation::setAerationSchedule(uint8_t hourOn, uint8_t minuteOn,
@@ -679,6 +688,10 @@ void AquariumAnimation::setAerationSchedule(uint8_t hourOn, uint8_t minuteOn,
   aerationMinOff = constrain(minuteOff, 0, 59);
 }
 
+void AquariumAnimation::setAerationMode(uint8_t mode) {
+  aerationMode = constrain(mode, 0, 2);
+}
+
 void AquariumAnimation::setFilterSchedule(uint8_t hourOn, uint8_t minuteOn,
                                        uint8_t hourOff, uint8_t minuteOff) {
   filterHourOn = constrain(hourOn, 0, 23);
@@ -687,25 +700,50 @@ void AquariumAnimation::setFilterSchedule(uint8_t hourOn, uint8_t minuteOn,
   filterMinOff = constrain(minuteOff, 0, 59);
 }
 
+void AquariumAnimation::setFilterMode(uint8_t mode) {
+  filterMode = constrain(mode, 0, 2);
+}
+
 void AquariumAnimation::setTargetTempSetting(uint8_t value) {
-  targetTemp = constrain(value, 0, 99);
+  targetTemp = constrain(value, 18, 30);
+}
+
+void AquariumAnimation::setHeaterMode(uint8_t mode) {
+  heaterMode = constrain(mode, 0, 1);
 }
 
 void AquariumAnimation::scheduleNext() {
   if (!isEditing) {
     scheduleSelection++;
-    if (scheduleSelection > 1)
+    uint8_t maxSelection = 1;
+    if (activeScheduleId <= 2) {
+      maxSelection = 2;
+    }
+    if (scheduleSelection > maxSelection)
       scheduleSelection = 0;
   }
 }
 
 // --- LOGIKA EDYCJI ---
 void AquariumAnimation::startEditing() {
+  if (activeScheduleId <= 2 && scheduleSelection > 0) {
+    const uint8_t currentMode = activeScheduleId == 0
+                                    ? lightMode
+                                    : (activeScheduleId == 1 ? aerationMode
+                                                             : filterMode);
+    if (currentMode != static_cast<uint8_t>(ScheduleMode::Schedule)) {
+      return;
+    }
+  }
+
   isEditing = true;
   editState = 1;
 
   if (activeScheduleId == 0) { // Light
     if (scheduleSelection == 0) {
+      tempHour = lightMode;
+      tempMinute = 0;
+    } else if (scheduleSelection == 1) {
       tempHour = scheduleHourOn;
       tempMinute = scheduleMinOn;
     } else {
@@ -714,6 +752,9 @@ void AquariumAnimation::startEditing() {
     }
   } else if (activeScheduleId == 1) { // Aeration
     if (scheduleSelection == 0) {
+      tempHour = aerationMode;
+      tempMinute = 0;
+    } else if (scheduleSelection == 1) {
       tempHour = aerationHourOn;
       tempMinute = aerationMinOn;
     } else {
@@ -722,6 +763,9 @@ void AquariumAnimation::startEditing() {
     }
   } else if (activeScheduleId == 2) { // Filter
     if (scheduleSelection == 0) {
+      tempHour = filterMode;
+      tempMinute = 0;
+    } else if (scheduleSelection == 1) {
       tempHour = filterHourOn;
       tempMinute = filterMinOn;
     } else {
@@ -729,7 +773,7 @@ void AquariumAnimation::startEditing() {
       tempMinute = filterMinOff;
     }
   } else if (activeScheduleId == 3) { // Temp
-    tempHour = targetTemp;
+    tempHour = heaterMode == static_cast<uint8_t>(HeaterMode::Off) ? 0 : targetTemp;
   } else if (activeScheduleId == 4) { // Feeding
     if (scheduleSelection == 0) {
       tempHour = feedHour;
@@ -751,21 +795,25 @@ void AquariumAnimation::startEditing() {
 }
 void AquariumAnimation::scheduleEditIncrement() {
   if (activeScheduleId == 0) {
-    if (editState == 1) {
+    if (scheduleSelection == 0) {
       tempHour++;
-      if (tempHour > 24)
+      if (tempHour > 2)
         tempHour = 0;
-      if (tempHour == 24)
-        tempMinute = 0;
+    } else if (editState == 1) {
+      tempHour++;
+      if (tempHour > 23)
+        tempHour = 0;
     } else if (editState == 2) {
-      if (tempHour != 24) {
-        tempMinute += 5;
-        if (tempMinute > 59)
-          tempMinute = 0;
-      }
+      tempMinute += 5;
+      if (tempMinute > 59)
+        tempMinute = 0;
     }
   } else if (activeScheduleId == 1 || activeScheduleId == 2) {
-    if (editState == 1) {
+    if (scheduleSelection == 0) {
+      tempHour++;
+      if (tempHour > 2)
+        tempHour = 0;
+    } else if (editState == 1) {
       tempHour++;
       if (tempHour > 23)
         tempHour = 0;
@@ -779,7 +827,7 @@ void AquariumAnimation::scheduleEditIncrement() {
       tempHour = 18;
     else {
       tempHour++;
-      if (tempHour > 28)
+      if (tempHour > 30)
         tempHour = 0;
     }
   } else if (activeScheduleId == 4) {
@@ -832,12 +880,23 @@ void AquariumAnimation::scheduleEditIncrement() {
 }
 void AquariumAnimation::nextEditStep() {
   // One-step edits: target temperature or feeding frequency.
-  if (activeScheduleId == 3 ||
+  if ((activeScheduleId <= 2 && scheduleSelection == 0) || activeScheduleId == 3 ||
       (activeScheduleId == 4 && scheduleSelection == 1)) {
-    if (activeScheduleId == 3)
-      targetTemp = tempHour;
-    else
+    if (activeScheduleId == 0) {
+      lightMode = constrain(tempHour, 0, 2);
+    } else if (activeScheduleId == 1) {
+      aerationMode = constrain(tempHour, 0, 2);
+    } else if (activeScheduleId == 2) {
+      filterMode = constrain(tempHour, 0, 2);
+    } else if (activeScheduleId == 3) {
+      heaterMode = tempHour == 0 ? static_cast<uint8_t>(HeaterMode::Off)
+                                 : static_cast<uint8_t>(HeaterMode::Threshold);
+      if (tempHour != 0) {
+        targetTemp = tempHour;
+      }
+    } else {
       feedFreq = tempHour;
+    }
 
     scheduleChangePending = true;
     isEditing = false;
@@ -867,7 +926,7 @@ void AquariumAnimation::nextEditStep() {
 
   if (editState == 2) {
     if (activeScheduleId == 0) {
-      if (scheduleSelection == 0) {
+      if (scheduleSelection == 1) {
         scheduleHourOn = tempHour;
         scheduleMinOn = tempMinute;
       } else {
@@ -875,7 +934,7 @@ void AquariumAnimation::nextEditStep() {
         scheduleMinOff = tempMinute;
       }
     } else if (activeScheduleId == 1) {
-      if (scheduleSelection == 0) {
+      if (scheduleSelection == 1) {
         aerationHourOn = tempHour;
         aerationMinOn = tempMinute;
       } else {
@@ -883,7 +942,7 @@ void AquariumAnimation::nextEditStep() {
         aerationMinOff = tempMinute;
       }
     } else if (activeScheduleId == 2) {
-      if (scheduleSelection == 0) {
+      if (scheduleSelection == 1) {
         filterHourOn = tempHour;
         filterMinOn = tempMinute;
       } else {
@@ -922,15 +981,19 @@ uint8_t AquariumAnimation::getScheduleHourOn() { return scheduleHourOn; }
 uint8_t AquariumAnimation::getScheduleMinOn() { return scheduleMinOn; }
 uint8_t AquariumAnimation::getScheduleHourOff() { return scheduleHourOff; }
 uint8_t AquariumAnimation::getScheduleMinOff() { return scheduleMinOff; }
+uint8_t AquariumAnimation::getLightMode() { return lightMode; }
 uint8_t AquariumAnimation::getAerationHourOn() { return aerationHourOn; }
 uint8_t AquariumAnimation::getAerationMinOn() { return aerationMinOn; }
 uint8_t AquariumAnimation::getAerationHourOff() { return aerationHourOff; }
 uint8_t AquariumAnimation::getAerationMinOff() { return aerationMinOff; }
+uint8_t AquariumAnimation::getAerationMode() { return aerationMode; }
 uint8_t AquariumAnimation::getFilterHourOn() { return filterHourOn; }
 uint8_t AquariumAnimation::getFilterMinOn() { return filterMinOn; }
 uint8_t AquariumAnimation::getFilterHourOff() { return filterHourOff; }
 uint8_t AquariumAnimation::getFilterMinOff() { return filterMinOff; }
+uint8_t AquariumAnimation::getFilterMode() { return filterMode; }
 uint8_t AquariumAnimation::getTargetTemp() { return targetTemp; }
+uint8_t AquariumAnimation::getHeaterMode() { return heaterMode; }
 uint8_t AquariumAnimation::getFeedHour() { return feedHour; }
 uint8_t AquariumAnimation::getFeedMinute() { return feedMinute; }
 uint8_t AquariumAnimation::getFeedFreq() { return feedFreq; }
@@ -1090,68 +1153,55 @@ void AquariumAnimation::drawSchedule(bool btnBackState, bool btnSelectState,
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(0, 15, 113, 15);
+  display->drawLine(0, 10, 113, 10);
+  display->drawLine(0, 21, 113, 21);
   display->drawXBMP(2, 0, 10, 14, image_Layer_4_1_bits);
-  display->drawXBMP(3, 17, 10, 14, image_Layer_4_copy_bits);
   display->drawLine(15, 1, 15, 32);
   display->setFont(u8g2_font_6x13_tr);
-  char bufOn[14], bufOff[14];
-  if (isEditing && scheduleSelection == 0 && activeScheduleId == 0) {
-    if (tempHour == 24) {
-      if (editState == 1 && (millis() / 500) % 2 == 0)
-        sprintf(bufOn, "");
-      else
-        sprintf(bufOn, "ON");
-    } else {
-      if (editState == 1) {
-        if ((millis() / 500) % 2 == 0)
-          sprintf(bufOn, "  :%02d", tempMinute);
-        else
-          sprintf(bufOn, "%02d:%02d", tempHour, tempMinute);
-      } else {
-        if ((millis() / 500) % 2 == 0)
-          sprintf(bufOn, "%02d:  ", tempHour);
-        else
-          sprintf(bufOn, "%02d:%02d", tempHour, tempMinute);
-      }
-    }
-  } else {
-    if (scheduleHourOn == 24)
-      sprintf(bufOn, "ON");
-    else
-      sprintf(bufOn, "%02d:%02d", scheduleHourOn, scheduleMinOn);
-  }
+  char modeBuf[12];
+  char onBuf[8];
+  char offBuf[8];
+  const uint8_t shownMode =
+      (isEditing && scheduleSelection == 0 && activeScheduleId == 0) ? tempHour
+                                                                      : lightMode;
+  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s",
+           shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOn)
+               ? "ON"
+               : (shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOff)
+                      ? "OFF"
+                      : "SCH"));
+
   if (isEditing && scheduleSelection == 1 && activeScheduleId == 0) {
-    if (tempHour == 24) {
-      if (editState == 1 && (millis() / 500) % 2 == 0)
-        sprintf(bufOff, "");
-      else
-        sprintf(bufOff, "OFF");
-    } else {
-      if (editState == 1) {
-        if ((millis() / 500) % 2 == 0)
-          sprintf(bufOff, "  :%02d", tempMinute);
-        else
-          sprintf(bufOff, "%02d:%02d", tempHour, tempMinute);
-      } else {
-        if ((millis() / 500) % 2 == 0)
-          sprintf(bufOff, "%02d:  ", tempHour);
-        else
-          sprintf(bufOff, "%02d:%02d", tempHour, tempMinute);
-      }
-    }
-  } else {
-    if (scheduleHourOff == 24)
-      sprintf(bufOff, "OFF");
+    if (editState == 1 && (millis() / 500) % 2 == 0)
+      sprintf(onBuf, "  :%02d", tempMinute);
+    else if (editState == 2 && (millis() / 500) % 2 == 0)
+      sprintf(onBuf, "%02d:  ", tempHour);
     else
-      sprintf(bufOff, "%02d:%02d", scheduleHourOff, scheduleMinOff);
+      sprintf(onBuf, "%02d:%02d", tempHour, tempMinute);
+  } else {
+    sprintf(onBuf, "%02d:%02d", scheduleHourOn, scheduleMinOn);
   }
-  display->drawStr(23, 13, bufOn);
-  display->drawStr(23, 30, bufOff);
+
+  if (isEditing && scheduleSelection == 2 && activeScheduleId == 0) {
+    if (editState == 1 && (millis() / 500) % 2 == 0)
+      sprintf(offBuf, "  :%02d", tempMinute);
+    else if (editState == 2 && (millis() / 500) % 2 == 0)
+      sprintf(offBuf, "%02d:  ", tempHour);
+    else
+      sprintf(offBuf, "%02d:%02d", tempHour, tempMinute);
+  } else {
+    sprintf(offBuf, "%02d:%02d", scheduleHourOff, scheduleMinOff);
+  }
+
+  display->drawStr(19, 9, modeBuf);
+  display->drawStr(23, 20, onBuf);
+  display->drawStr(23, 31, offBuf);
   if (scheduleSelection == 0)
-    display->drawXBMP(108, 4, 4, 7, image_ButtonLeft_bits);
+    display->drawXBMP(108, 1, 4, 7, image_ButtonLeft_bits);
+  else if (scheduleSelection == 1)
+    display->drawXBMP(108, 12, 4, 7, image_ButtonLeft_copy_bits);
   else
-    display->drawXBMP(108, 21, 4, 7, image_ButtonLeft_copy_bits);
+    display->drawXBMP(108, 23, 4, 7, image_ButtonLeft_copy_bits);
   display->drawLine(114, 0, 114, 31);
   display->drawLine(127, 0, 127, 31);
   display->drawLine(0, 0, 0, 31);
@@ -1172,16 +1222,26 @@ void AquariumAnimation::drawScheduleAeration(bool btnBackState,
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(0, 15, 113, 15);
+  display->drawLine(0, 10, 113, 10);
+  display->drawLine(0, 21, 113, 21);
   display->drawXBMP(1, 0, 15, 16, image_schedule_aeration_wind_bits);
-  display->drawXBMP(1, 19, 15, 10, image_schedule_aeration_off_bits);
   display->drawLine(15, 1, 15, 32);
 
   display->setFont(u8g2_font_6x13_tr);
+  char modeBuf[12];
   char bufOn[8];
   char bufOff[8];
+  const uint8_t shownMode =
+      (isEditing && scheduleSelection == 0 && activeScheduleId == 1) ? tempHour
+                                                                      : aerationMode;
+  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s",
+           shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOn)
+               ? "ON"
+               : (shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOff)
+                      ? "OFF"
+                      : "SCH"));
 
-  if (isEditing && scheduleSelection == 0 && activeScheduleId == 1) {
+  if (isEditing && scheduleSelection == 1 && activeScheduleId == 1) {
     if (editState == 1 && (millis() / 500) % 2 == 0)
       sprintf(bufOn, "  :%02d", tempMinute);
     else if (editState == 2 && (millis() / 500) % 2 == 0)
@@ -1192,7 +1252,7 @@ void AquariumAnimation::drawScheduleAeration(bool btnBackState,
     sprintf(bufOn, "%02d:%02d", aerationHourOn, aerationMinOn);
   }
 
-  if (isEditing && scheduleSelection == 1 && activeScheduleId == 1) {
+  if (isEditing && scheduleSelection == 2 && activeScheduleId == 1) {
     if (editState == 1 && (millis() / 500) % 2 == 0)
       sprintf(bufOff, "  :%02d", tempMinute);
     else if (editState == 2 && (millis() / 500) % 2 == 0)
@@ -1203,13 +1263,16 @@ void AquariumAnimation::drawScheduleAeration(bool btnBackState,
     sprintf(bufOff, "%02d:%02d", aerationHourOff, aerationMinOff);
   }
 
-  display->drawStr(22, 14, bufOn);
-  display->drawStr(22, 30, bufOff);
+  display->drawStr(19, 9, modeBuf);
+  display->drawStr(22, 20, bufOn);
+  display->drawStr(22, 31, bufOff);
 
   if (scheduleSelection == 0)
-    display->drawXBMP(108, 4, 4, 7, image_ButtonLeft_bits);
+    display->drawXBMP(108, 1, 4, 7, image_ButtonLeft_bits);
+  else if (scheduleSelection == 1)
+    display->drawXBMP(108, 12, 4, 7, image_ButtonLeft_copy_bits);
   else
-    display->drawXBMP(108, 21, 4, 7, image_ButtonLeft_copy_bits);
+    display->drawXBMP(108, 23, 4, 7, image_ButtonLeft_copy_bits);
   display->drawLine(114, 0, 114, 31);
   display->drawLine(127, 0, 127, 31);
   display->drawLine(0, 0, 0, 31);
@@ -1230,68 +1293,60 @@ void AquariumAnimation::drawScheduleFilter(bool btnBackState, bool btnSelectStat
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(0, 15, 113, 15);
+  display->drawLine(0, 10, 113, 10);
+  display->drawLine(0, 21, 113, 21);
   display->drawXBMP(2, 0, 11, 14, image_weather_humidity_1_bits);
-  display->drawXBMP(2, 17, 11, 14, image_weather_humidity_white_bits);
   display->drawLine(15, 1, 15, 32);
   display->setFont(u8g2_font_6x13_tr);
-  char bufOn[10], bufOff[10];
-  if (isEditing && scheduleSelection == 0 && activeScheduleId == 2) {
-    if (tempHour == 0 && tempMinute == 0) {
-      if ((millis() / 500) % 2 == 0)
-        sprintf(bufOn, "");
-      else
-        sprintf(bufOn, "OFF");
-    } else {
-      if (editState == 1) {
-        if ((millis() / 500) % 2 == 0)
-          sprintf(bufOn, "  :%02d", tempMinute);
-        else
-          sprintf(bufOn, "%02d:%02d", tempHour, tempMinute);
-      } else {
-        if ((millis() / 500) % 2 == 0)
-          sprintf(bufOn, "%02d:  ", tempHour);
-        else
-          sprintf(bufOn, "%02d:%02d", tempHour, tempMinute);
-      }
-    }
-  } else {
-    if (filterHourOn == 0 && filterMinOn == 0)
-      sprintf(bufOn, "OFF");
-    else
-      sprintf(bufOn, "%02d:%02d", filterHourOn, filterMinOn);
-  }
+  char modeBuf[12], bufOn[10], bufOff[10];
+  const uint8_t shownMode =
+      (isEditing && scheduleSelection == 0 && activeScheduleId == 2) ? tempHour
+                                                                      : filterMode;
+  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s",
+           shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOn)
+               ? "ON"
+               : (shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOff)
+                      ? "OFF"
+                      : "SCH"));
   if (isEditing && scheduleSelection == 1 && activeScheduleId == 2) {
-    if (tempHour == 0 && tempMinute == 0) {
+    if (editState == 1) {
       if ((millis() / 500) % 2 == 0)
-        sprintf(bufOff, "");
+        sprintf(bufOn, "  :%02d", tempMinute);
       else
-        sprintf(bufOff, "OFF");
+        sprintf(bufOn, "%02d:%02d", tempHour, tempMinute);
     } else {
-      if (editState == 1) {
-        if ((millis() / 500) % 2 == 0)
-          sprintf(bufOff, "  :%02d", tempMinute);
-        else
-          sprintf(bufOff, "%02d:%02d", tempHour, tempMinute);
-      } else {
-        if ((millis() / 500) % 2 == 0)
-          sprintf(bufOff, "%02d:  ", tempHour);
-        else
-          sprintf(bufOff, "%02d:%02d", tempHour, tempMinute);
-      }
+      if ((millis() / 500) % 2 == 0)
+        sprintf(bufOn, "%02d:  ", tempHour);
+      else
+        sprintf(bufOn, "%02d:%02d", tempHour, tempMinute);
     }
   } else {
-    if (filterHourOff == 0 && filterMinOff == 0)
-      sprintf(bufOff, "OFF");
-    else
-      sprintf(bufOff, "%02d:%02d", filterHourOff, filterMinOff);
+    sprintf(bufOn, "%02d:%02d", filterHourOn, filterMinOn);
   }
-  display->drawStr(23, 13, bufOn);
-  display->drawStr(23, 29, bufOff);
+  if (isEditing && scheduleSelection == 2 && activeScheduleId == 2) {
+    if (editState == 1) {
+      if ((millis() / 500) % 2 == 0)
+        sprintf(bufOff, "  :%02d", tempMinute);
+      else
+        sprintf(bufOff, "%02d:%02d", tempHour, tempMinute);
+    } else {
+      if ((millis() / 500) % 2 == 0)
+        sprintf(bufOff, "%02d:  ", tempHour);
+      else
+        sprintf(bufOff, "%02d:%02d", tempHour, tempMinute);
+    }
+  } else {
+    sprintf(bufOff, "%02d:%02d", filterHourOff, filterMinOff);
+  }
+  display->drawStr(19, 9, modeBuf);
+  display->drawStr(23, 20, bufOn);
+  display->drawStr(23, 31, bufOff);
   if (scheduleSelection == 0)
-    display->drawXBMP(108, 4, 4, 7, image_ButtonLeft_bits);
+    display->drawXBMP(108, 1, 4, 7, image_ButtonLeft_bits);
+  else if (scheduleSelection == 1)
+    display->drawXBMP(108, 12, 4, 7, image_ButtonLeft_copy_bits);
   else
-    display->drawXBMP(108, 21, 4, 7, image_ButtonLeft_copy_bits);
+    display->drawXBMP(108, 23, 4, 7, image_ButtonLeft_copy_bits);
   display->drawLine(114, 0, 114, 31);
   display->drawLine(127, 0, 127, 31);
   display->drawLine(0, 0, 0, 31);
@@ -1320,6 +1375,8 @@ void AquariumAnimation::drawScheduleTemp(bool btnBackState, bool btnSelectState,
   uint8_t valToShow;
   if (isEditing)
     valToShow = tempHour;
+  else if (heaterMode == static_cast<uint8_t>(HeaterMode::Off))
+    valToShow = 0;
   else
     valToShow = targetTemp;
   if (valToShow == 0)

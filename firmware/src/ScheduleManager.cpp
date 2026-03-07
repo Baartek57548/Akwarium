@@ -5,6 +5,28 @@
 
 FeederController *ScheduleManager::feederCtrl = nullptr;
 
+namespace {
+
+static bool isModeActive(uint8_t rawMode, uint16_t nowMin, uint8_t hourOn,
+                         uint8_t minuteOn, uint8_t hourOff,
+                         uint8_t minuteOff) {
+  const ScheduleMode mode = static_cast<ScheduleMode>(rawMode);
+  switch (mode) {
+  case ScheduleMode::AlwaysOn:
+    return true;
+  case ScheduleMode::AlwaysOff:
+    return false;
+  case ScheduleMode::Schedule:
+  default: {
+    const uint16_t startMin = ScheduleManager::toMinutes(hourOn, minuteOn);
+    const uint16_t endMin = ScheduleManager::toMinutes(hourOff, minuteOff);
+    return ScheduleManager::isWithinWindow(nowMin, startMin, endMin);
+  }
+  }
+}
+
+} // namespace
+
 void ScheduleManager::init(FeederController *feeder) { feederCtrl = feeder; }
 
 uint16_t ScheduleManager::toMinutes(uint8_t hour, uint8_t minute) {
@@ -22,36 +44,31 @@ bool ScheduleManager::isWithinWindow(uint16_t nowMin, uint16_t startMin,
 
 bool ScheduleManager::isDayTime(uint16_t nowMin) {
   const Config sysConfig = ConfigManager::getCopy();
-  if (sysConfig.dayStartHour == 24)
-    return true;
-  if (sysConfig.dayEndHour == 24)
-    return false;
-
-  uint16_t dayOn = toMinutes(sysConfig.dayStartHour, sysConfig.dayStartMinute);
-  uint16_t dayOff = toMinutes(sysConfig.dayEndHour, sysConfig.dayEndMinute);
-  return isWithinWindow(nowMin, dayOn, dayOff);
+  return isModeActive(sysConfig.lightMode, nowMin, sysConfig.dayStartHour,
+                      sysConfig.dayStartMinute, sysConfig.dayEndHour,
+                      sysConfig.dayEndMinute);
 }
 
 bool ScheduleManager::isAerationActive(uint16_t nowMin) {
   const Config sysConfig = ConfigManager::getCopy();
-  uint16_t aerationOn =
-      toMinutes(sysConfig.aerationHourOn, sysConfig.aerationMinuteOn);
-  uint16_t aerationOff =
-      toMinutes(sysConfig.aerationHourOff, sysConfig.aerationMinuteOff);
-  return isWithinWindow(nowMin, aerationOn, aerationOff);
+  return isModeActive(sysConfig.aerationMode, nowMin, sysConfig.aerationHourOn,
+                      sysConfig.aerationMinuteOn, sysConfig.aerationHourOff,
+                      sysConfig.aerationMinuteOff);
 }
 
 bool ScheduleManager::isFilterActive(uint16_t nowMin) {
   const Config sysConfig = ConfigManager::getCopy();
-  uint16_t filterOn =
-      toMinutes(sysConfig.filterHourOn, sysConfig.filterMinuteOn);
-  uint16_t filterOff =
-      toMinutes(sysConfig.filterHourOff, sysConfig.filterMinuteOff);
-  return isWithinWindow(nowMin, filterOn, filterOff);
+  return isModeActive(sysConfig.filterMode, nowMin, sysConfig.filterHourOn,
+                      sysConfig.filterMinuteOn, sysConfig.filterHourOff,
+                      sysConfig.filterMinuteOff);
 }
 
 int ScheduleManager::getMinutesUntilFilterOff(uint16_t nowMin) {
   const Config sysConfig = ConfigManager::getCopy();
+  if (sysConfig.filterMode != static_cast<uint8_t>(ScheduleMode::Schedule)) {
+    return -1;
+  }
+
   uint16_t startMin =
       toMinutes(sysConfig.filterHourOn, sysConfig.filterMinuteOn);
   uint16_t endMin =
