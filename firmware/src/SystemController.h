@@ -33,8 +33,8 @@ public:
 
   // Funkcja zarzadzania energia, wywolywana glownie przez VideoTask lub loop
   static void handlePowerManagement(U8G2 *display, AquariumAnimation *anim);
-  static bool canEnterDeepSleep(unsigned long nowMs, unsigned long lastActionMs);
-  static void enterNightDeepSleep();
+  static bool canEnterLightSleep(unsigned long nowMs, unsigned long lastActionMs);
+  static void enterNightLightSleep();
 
   // Publiczna instancja RTC do globalnych funkcji czasowych
   static RTC_DS3231 rtc;

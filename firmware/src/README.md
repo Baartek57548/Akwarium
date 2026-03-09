@@ -19,7 +19,7 @@ Sterownik pracuje na ESP32-S3 (FreeRTOS, dual core) i obsluguje:
 - lokalny panel WWW + OTA przez upload pliku `.bin`
 - lokalny interfejs OLED 128x32 + przyciski fizyczne
 - logi systemowe (RAM + trwale logi krytyczne w Preferences)
-- usypianie ekranu i Deep Sleep
+- usypianie ekranu i Light Sleep
 
 ## 2. Architektura (aktualna)
 
@@ -48,21 +48,22 @@ BUTTON_SELECT_PIN  GPIO16
 BUTTON_DOWN_PIN    GPIO14
 
 ONE_WIRE_BUS       GPIO1   (DS18B20)
-HEATER_PIN         GPIO3
+HEATER_PIN         GPIO2
 PUMP_PIN           GPIO4
-FEEDER_PIN         GPIO5
+FEEDER_PIN         GPIO3
 SERVO_PIN          GPIO6
 
 BAT_ADC_PIN        GPIO7
 BAT_EN_PIN         GPIO10
 FEEDER_SENSOR_PIN  GPIO12
-LIGHT_PIN          GPIO17
+LIGHT_PIN          GPIO5
 ```
 
 Uwagi:
 
-- `LIGHT_PIN` jest aktywny w logice odwrotnej (`LOW = ON`, `HIGH = OFF`).
-- `PUMP_PIN` i `HEATER_PIN` dzialaja klasycznie (`HIGH = ON`).
+- `LIGHT_PIN` i `PUMP_PIN` dzialaja klasycznie (`HIGH = ON`, `LOW = OFF`).
+- `HEATER_PIN` ma logike odwrotna na wyjsciu sterujacym (`LOW = grzanie`, `HIGH = odciecie grzalki`), bo przelacza styk rozlaczajacy grzalke.
+- `FEEDER_PIN` steruje przekaznikiem aktywnym stanem niskim (`LOW = karmienie`, `HIGH = stop`).
 
 ## 4. Build i upload (PlatformIO)
 
@@ -156,11 +157,11 @@ Skrot zachowania:
 
 ## 8. Zasilanie i sleep
 
-- po 4 min bez aktywnosci ekran przechodzi w power-save (jesli `alwaysScreenOn == false`)
-- po 5 min bez aktywnosci i przy spelnieniu warunkow system wchodzi w Deep Sleep na 30 min
-- wybudzanie: przyciski (`ESP_EXT1_WAKEUP_ANY_LOW`) lub timer RTC
+- po 2 min bez aktywnosci ekran przechodzi w power-save (jesli `alwaysScreenOn == false`)
+- po 5 min bez aktywnosci i przy spelnieniu warunkow system wchodzi w Light Sleep do kolejnego startu dnia
+- wybudzanie: dowolny przycisk (`GPIO wakeup, poziom LOW`) lub timer RTC
 
-Warunki Deep Sleep (w skrocie):
+Warunki Light Sleep (w skrocie):
 
 - grzalka wylaczona
 - OTA nie jest w trakcie

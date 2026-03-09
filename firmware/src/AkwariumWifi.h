@@ -13,7 +13,8 @@ public:
   static bool getIsAPMode();
   static void startAP();
   static void stopAP();
-  static void requestStaOffForDeepSleep();
+  static void requestStaOffForSleep();
+  static void requestStaOn();
   static bool isStaOff();
   static String getAPName();
   static String getAPPassword();

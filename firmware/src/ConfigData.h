@@ -54,7 +54,7 @@ struct Config {
                   // flash
 };
 
-enum PowerMode { MODE_ACTIVE, MODE_LOW_POWER, MODE_DEEP_SLEEP };
+enum PowerMode { MODE_ACTIVE, MODE_LOW_POWER, MODE_LIGHT_SLEEP };
 
 enum SystemState {
   STATE_NORMAL,

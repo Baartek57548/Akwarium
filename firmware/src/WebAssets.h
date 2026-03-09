@@ -10,7 +10,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akwarium Dashboard</title>
+    <title>Akwarium</title>
     <!-- Basic, clean font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,12 +25,12 @@ const char web_index_html[] PROGMEM = R"rawliteral(
         <header class="app-header">
             <div class="header-main">
                 <div class="title-area">
-                    <h1 class="title-row">Akwarium đź </h1>
+                    <h1 class="title-row">Akwarium</h1>
                     <span class="badge" id="otaNetworkMode">--</span>
                 </div>
                 <div class="system-status">
                     <span id="systemTime" class="clock">--:--:--</span>
-                    <div id="connectionStatus" class="conn-status ok">PoĹ‚Ä…czono</div>
+                    <div id="connectionStatus" class="conn-status ok">Polaczono</div>
                 </div>
             </div>
 
@@ -52,14 +52,14 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                     <div class="panel-header">Czujniki</div>
                     <div class="panel-body flex-col gap-15">
                         <div class="data-box">
-                            <span class="box-icon">đźŚˇď¸Ź</span>
+                            <span class="box-icon">T</span>
                             <div class="box-content">
                                 <div class="box-title">Temperatura</div>
-                                <div class="box-value"><span id="valTemp">--.-</span> <small>Â°C</small></div>
+                                <div class="box-value"><span id="valTemp">--.-</span> <small>C</small></div>
                             </div>
                         </div>
                         <div class="data-compact">
-                            <div class="row"><span>Min Temp:</span> <strong><span id="valTempMin">--.- Â°C</span> <span
+                            <div class="row"><span>Min Temp:</span> <strong><span id="valTempMin">--.- C</span> <span
                                         style="font-size: 0.8em; font-weight: normal; color: var(--text-muted);"
                                         id="valTempMinTime">(--:--)</span></strong></div>
                         </div>
@@ -71,7 +71,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                     <div class="panel-header">Zasilanie</div>
                     <div class="panel-body flex-col gap-15">
                         <div class="data-box">
-                            <span class="box-icon">đź”‹</span>
+                            <span class="box-icon">B</span>
                             <div class="box-content">
                                 <div class="box-title">Bateria</div>
                                 <div class="box-value"><span id="valBattPct">--</span> <small>%</small></div>
@@ -83,30 +83,30 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                             </div>
                         </div>
                         <div class="data-compact">
-                            <div class="row"><span>NapiÄ™cie:</span> <strong id="valBattVolt">-.-- V</strong></div>
+                            <div class="row"><span>Napiecie:</span> <strong id="valBattVolt">-.-- V</strong></div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Relays/Schedules merged -->
                 <div class="panel span-2">
-                    <div class="panel-header">UrzÄ…dzenia i Harmonogramy</div>
+                    <div class="panel-header">Urzadzenia i harmonogramy</div>
                     <div class="panel-body no-pad">
                         <table class="data-table devices-table">
                             <thead>
                                 <tr>
-                                    <th>UrzÄ…dzenie</th>
+                                    <th>Urzadzenie</th>
                                     <th>Status</th>
                                     <th>Harmonogram</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr id="relayLight">
-                                    <td data-label="Urzadzenie">đź’ˇ OĹ›wietlenie</td>
+                                    <td data-label="Urzadzenie">Oswietlenie</td>
                                     <td data-label="Status">
                                         <div class="status-cell">
                                             <span class="status-dot off" id="indLight"></span>
-                                            <strong id="statusLight">WyĹ‚Ä…czone</strong>
+                                            <strong id="statusLight">Wylaczone</strong>
                                         </div>
                                     </td>
                                     <td data-label="Harmonogram">
@@ -123,11 +123,11 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                                     </td>
                                 </tr>
                                 <tr id="relayPump">
-                                    <td data-label="Urzadzenie">đź«§ Filtr</td>
+                                    <td data-label="Urzadzenie">Filtr</td>
                                     <td data-label="Status">
                                         <div class="status-cell">
                                             <span class="status-dot off" id="indPump"></span>
-                                            <strong id="statusPump">WyĹ‚Ä…czone</strong>
+                                            <strong id="statusPump">Wylaczone</strong>
                                         </div>
                                     </td>
                                     <td data-label="Harmonogram">
@@ -144,11 +144,11 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                                     </td>
                                 </tr>
                                 <tr id="relayTermostat">
-                                    <td data-label="Urzadzenie">đźŚˇď¸Ź Termostat</td>
+                                    <td data-label="Urzadzenie">Termostat</td>
                                     <td data-label="Status">
                                         <div class="status-cell">
                                             <span class="status-dot off" id="indHeater"></span>
-                                            <strong id="statusHeater">WyĹ‚Ä…czone</strong>
+                                            <strong id="statusHeater">Wylaczone</strong>
                                         </div>
                                     </td>
                                     <td data-label="Harmonogram">
@@ -164,11 +164,11 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                                     </td>
                                 </tr>
                                 <tr id="relayAeration">
-                                    <td data-label="Urzadzenie">đź’¨ Napowietrzanie</td>
+                                    <td data-label="Urzadzenie">Napowietrzanie</td>
                                     <td data-label="Status">
                                         <div class="status-cell">
                                             <strong id="valServoAngle" style="width:50px; display:inline-block;">--%</strong>
-                                            <small>(<span id="statusServoMode">Zbrojny</span>)</small>
+                                            <small>(<span id="statusServoMode">Gotowy</span>)</small>
                                         </div>
                                     </td>
                                     <td data-label="Harmonogram">
@@ -188,7 +188,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                                     </td>
                                 </tr>
                                 <tr id="relayServo">
-                                    <td data-label="Urzadzenie">âš™ď¸Ź Karmnik</td>
+                                    <td data-label="Urzadzenie">Karmnik</td>
                                     <td data-label="Status">
                                         <div class="status-cell">
                                             <button class="btn btn-small btn-primary" id="btnFeedNow">Karm teraz</button>
@@ -201,7 +201,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                                                 <option value="1">Codziennie</option>
                                                 <option value="2">Co 2 dni</option>
                                                 <option value="3">Co 3 dni</option>
-                                                <option value="0">WyĹ‚Ä…czony</option>
+                                                <option value="0">Wylaczony</option>
                                             </select>
                                         </div>
                                         <div class="field-error" id="errFeed"></div>
@@ -233,14 +233,14 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                             <label class="log-toggle-option"><input type="radio" name="logTypeToggle" value="critical" id="toggleCritical" style="accent-color: var(--danger);"> Krytyczne</label>
                             <label class="log-toggle-option"><input type="radio" name="logTypeToggle" value="normal" id="toggleNormal" checked style="accent-color: var(--accent);"> Systemowe</label>
                         </div>
-                        <button class="btn btn-small btn-secondary log-clear-btn" id="btnClearLogs">WyczyĹ›Ä‡ widok</button>
-                        <button class="btn btn-small" id="btnDeleteCritical" style="background:var(--danger); color:white; display:none;">UsuĹ„ krytyczne</button>
+                        <button class="btn btn-small btn-secondary log-clear-btn" id="btnClearLogs">Wyczysc widok</button>
+                        <button class="btn btn-small" id="btnDeleteCritical" style="background:var(--danger); color:white; display:none;">Usun krytyczne</button>
                         <button class="btn btn-small btn-secondary" id="btnDownloadLogs">Pobierz TXT</button>
                     </div>
                 </div>
                 <div class="panel-body no-pad">
                     <div class="terminal" id="logContainer">
-                        <div class="log-line">[SYSTEM] Terminal gotowy. Brak nowych logĂłw.</div>
+                        <div class="log-line">[SYSTEM] Terminal gotowy. Brak nowych logow.</div>
                     </div>
                 </div>
             </div>
@@ -249,19 +249,20 @@ const char web_index_html[] PROGMEM = R"rawliteral(
         <!-- SYSTEM / OTA TAB -->
         <main class="tab-content" id="tabOTA">
             <div class="panel">
-                <div class="panel-header">Aktualizacja Firmware (OTA)</div>
+                <div class="panel-header">Aktualizacja oprogramowania (OTA)</div>
                 <div class="panel-body flex-col gap-20">
 
                     <div class="info-strip">
                         <div class="strip-item"><span>Adres IP:</span> <strong id="otaIpAddress">--.--.--.--</strong>
                         </div>
-                        <div class="strip-item"><span>Wersja:</span> <strong id="otaCurrentVersion">--</strong></div>
+                        <div class="strip-item"><span>Wgrana wersja:</span> <strong id="otaCurrentVersion">--</strong></div>
                     </div>
 
                     <div class="grid-2 gap-15">
                         <div class="data-compact">
                             <div class="row"><span>Firmware:</span> <strong id="otaFirmwareName">Aquarium Controller</strong></div>
                             <div class="row"><span>Build:</span> <strong id="otaBuildStamp">--</strong></div>
+                            <div class="row"><span>Build ID:</span> <strong id="otaBuildRef">--</strong></div>
                             <div class="row"><span>Partycje:</span> <strong id="otaPartitions">--</strong></div>
                             <div class="row"><span>ESP-IDF:</span> <strong id="otaIdfVersion">--</strong></div>
                         </div>
@@ -281,8 +282,8 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                     <form id="uploadForm" class="upload-form" method="POST" action="/update"
                         enctype="multipart/form-data">
                         <div class="file-dropzone" id="dropzone">
-                            <div class="dz-icon">đź“</div>
-                            <div class="dz-text">Wybierz lub upuĹ›Ä‡ plik <strong>.bin</strong></div>
+                            <div class="dz-icon">BIN</div>
+                            <div class="dz-text">Wybierz lub upusc plik <strong>.bin</strong></div>
                             <input type="file" name="update" accept=".bin" required id="fileInput">
                         </div>
 
@@ -290,9 +291,9 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                             Plik: <strong id="fileNameDisplay">brak</strong>
                         </div>
 
-                        <div class="status-msg" style="margin-top: 8px;">BLE OTA wymaga bezpiecznego kontekstu przeglÄ…darki, dlatego panel WWW pozostaje kanaĹ‚em HTTP OTA.</div>
+                        <div class="status-msg" style="margin-top: 8px;">BLE OTA wymaga bezpiecznego kontekstu przegladarki, dlatego panel WWW pozostaje kanalem HTTP OTA.</div>
 
-                        <button type="submit" class="btn btn-primary" id="submitBtn">Wgraj aktualizacjÄ™ i
+                        <button type="submit" class="btn btn-primary" id="submitBtn">Wgraj aktualizacje i
                             zrestartuj</button>
                         <div id="uploadStatus" class="status-msg"></div>
                     </form>
@@ -307,7 +308,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
 
     </div>
 
-    <script src="script.js?v=5"></script>
+    <script src="script.js?v=6"></script>
 </body>
 
 </html>
@@ -1322,6 +1323,7 @@ const otaNetworkMode = document.getElementById('otaNetworkMode');
 const otaCurrentVersion = document.getElementById('otaCurrentVersion');
 const otaFirmwareName = document.getElementById('otaFirmwareName');
 const otaBuildStamp = document.getElementById('otaBuildStamp');
+const otaBuildRef = document.getElementById('otaBuildRef');
 const otaPartitions = document.getElementById('otaPartitions');
 const otaIdfVersion = document.getElementById('otaIdfVersion');
 const otaTransportState = document.getElementById('otaTransportState');
@@ -1516,14 +1518,14 @@ async function fetchStatus() {
         // Update Connection UI
         if (elConnStatus.className !== 'conn-status ok') {
             elConnStatus.className = 'conn-status ok';
-            elConnStatus.textContent = 'PoĹ‚Ä…czono';
-            addLogLine("NawiÄ…zano poĹ‚Ä…czenie z API /status", "success");
+            elConnStatus.textContent = 'Polaczono';
+            addLogLine("Nawiazano polaczenie z API /status", "success");
         }
 
         updateUI(data);
     } catch (error) {
         if (elConnStatus.className !== 'conn-status err') {
-            addLogLine("Brak poĹ‚Ä…czenia z /api/status. PrzeĹ‚Ä…czanie w tryb Mock Data.", "warning");
+            addLogLine("Brak polaczenia z /api/status. Przelaczanie w tryb mock.", "warning");
         }
 
         elConnStatus.className = 'conn-status err';
@@ -1538,7 +1540,7 @@ async function fetchStatus() {
 function updateUI(data) {
     // 1. Temperature
     elValTemp.innerText = data.temperature.current.toFixed(1);
-    elValTempMin.innerText = `${(data.temperature.min || 22.0).toFixed(1)} Â°C`;
+    elValTempMin.innerText = `${(data.temperature.min || 22.0).toFixed(1)} C`;
     if (data.temperature.minTimeEpoch) {
         const dMin = new Date(data.temperature.minTimeEpoch * 1000);
         elValTempMinTime.innerText = `(${dMin.toLocaleDateString('pl-PL')} ${dMin.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })})`;
@@ -1567,7 +1569,7 @@ function updateUI(data) {
     // 4. Servo
     const percent = Math.round((1 - (data.servo.angle / 90)) * 100);
     elValServoAngle.innerText = `${percent}%`;
-    elStatusServoMode.innerText = data.servo.angle === 0 ? "Otwarty" : data.servo.angle >= 90 ? "ZamkniÄ™ty" : "PĂłĹ‚otwarty";
+    elStatusServoMode.innerText = data.servo.angle === 0 ? "Otwarty" : data.servo.angle >= 90 ? "Zamkniety" : "Polotwarty";
     // Tylko uaktualniaj suwak jesli uzytkownik go nie przesuwa (zabezpieczenie przed resetem)
     if (!servoSliderLocked) {
         elValServoSlider.value = percent;
@@ -1577,10 +1579,10 @@ function updateUI(data) {
 
     if (data.relays && typeof data.relays.heater !== 'undefined') {
         indHeater.className = 'status-dot ' + (data.relays.heater ? 'on' : 'off');
-        statusHeater.innerText = data.relays.heater ? 'Grzeje' : 'WyĹ‚Ä…czone';
+        statusHeater.innerText = data.relays.heater ? 'Grzeje' : 'Wylaczone';
     } else {
         indHeater.className = 'status-dot off';
-        statusHeater.innerText = 'WyĹ‚Ä…czone';
+        statusHeater.innerText = 'Wylaczone';
     }
 
     if (document.activeElement !== elSchedLightMode) elSchedLightMode.value = String(data.schedule.lightMode ?? 0);
@@ -1616,7 +1618,7 @@ function updateUI(data) {
     // Update OTA tab dynamic info
     if (data.network) {
         otaIpAddress.innerText = data.network.ip || "192.168.x.x";
-        otaNetworkMode.innerText = data.network.apMode ? "Access Point" : "Station (WIFI DOM)";
+        otaNetworkMode.innerText = data.network.apMode ? "Access Point" : "Station";
         otaNetworkMode.style.color = data.network.apMode ? "var(--warning)" : "var(--success)";
     }
 
@@ -1624,10 +1626,11 @@ function updateUI(data) {
         otaCurrentVersion.innerText = data.system.firmwareVersion || "--";
         otaFirmwareName.innerText = data.system.firmwareName || "Aquarium Controller";
         otaBuildStamp.innerText = `${data.system.buildDate || "--"} ${data.system.buildTime || ""}`.trim();
+        otaBuildRef.innerText = data.system.buildRef || "--";
         otaPartitions.innerText = `${data.system.runningPartition || "--"} -> ${data.system.nextPartition || "--"}`;
         otaIdfVersion.innerText = data.system.idfVersion || "--";
         otaTransportState.innerText = data.system.otaInProgress
-            ? `${(data.system.otaTransport || "busy").toUpperCase()} ACTIVE`
+            ? `${(data.system.otaTransport || "busy").toUpperCase()} AKTYWNE`
             : (data.system.otaTransport || "idle").toUpperCase();
         otaBleSupport.innerText = data.system.bleOtaSupported ? "Tak" : "Nie";
         otaHttpSupport.innerText = data.system.httpOtaSupported ? "Tak" : "Nie";
@@ -1638,21 +1641,32 @@ function updateUI(data) {
     }
 }
 
+function getRelayLabel(badgeEl) {
+    switch (badgeEl?.id) {
+        case 'statusLight':
+            return 'Oswietlenie';
+        case 'statusPump':
+            return 'Filtr';
+        case 'statusHeater':
+            return 'Termostat';
+        default:
+            return 'Urzadzenie';
+    }
+}
+
 function updateRelayUI(isOn, badgeEl, indicatorEl) {
     if (isOn) {
         // Log state change if it was off previously (simplified checking for mock)
-        if (badgeEl.textContent === 'WyĹ‚Ä…czone') addLogLine(`${badgeEl.id.replace('status', '')} zostaĹ‚o WĹÄ„CZONE`, "system");
+        if (badgeEl.textContent === 'Wylaczone') addLogLine(`${getRelayLabel(badgeEl)} zostalo WLACZONE`, "system");
 
-        badgeEl.textContent = 'WĹ‚Ä…czone';
-        badgeEl.className = 'status-badge on';
+        badgeEl.textContent = 'Wlaczone';
         indicatorEl.style.backgroundColor = 'var(--success)';
         indicatorEl.style.boxShadow = '0 0 15px var(--success)';
     } else {
-        if (badgeEl.textContent === 'WĹ‚Ä…czone') addLogLine(`${badgeEl.id.replace('status', '')} zostaĹ‚o WYĹÄ„CZONE`, "system");
+        if (badgeEl.textContent === 'Wlaczone') addLogLine(`${getRelayLabel(badgeEl)} zostalo WYLACZONE`, "system");
 
-        badgeEl.textContent = 'WyĹ‚Ä…czone';
-        badgeEl.className = 'status-badge off';
-        indicatorEl.style.backgroundColor = 'var(--off-state)';
+        badgeEl.textContent = 'Wylaczone';
+        indicatorEl.style.backgroundColor = 'var(--off)';
         indicatorEl.style.boxShadow = 'none';
     }
 }
@@ -1668,23 +1682,23 @@ function syncDeviceTime() {
     const now = new Date();
     const epoch = Math.floor(now.getTime() / 1000);
 
-    addLogLine(`Ĺ»Ä…danie synchronizacji czasu (Epoch: ${epoch})...`, "system");
+    addLogLine(`Zadanie synchronizacji czasu (epoch: ${epoch})...`, "system");
 
     fetch(`${API_TIME}?epoch=${epoch}`, { method: 'POST' })
         .then(response => {
             if (response.ok) {
-                addLogLine("Czas zsynchronizowany z ukĹ‚adem ESP32 pomyĹ›lnie.", "success");
+                addLogLine("Czas zsynchronizowany z ukladem ESP32.", "success");
             }
         })
         .catch(err => {
-            addLogLine("Synchronizacja wymuszona. (Mock Offline)", "warning");
+            addLogLine("Synchronizacja wymuszona. Tryb mock.", "warning");
         });
 }
 
 // API Action function
 function sendAction(actionName, payload = {}) {
     const params = new URLSearchParams({ action: actionName, ...payload });
-    addLogLine(`WysyĹ‚anie akcji: ${actionName}...`, "system");
+    addLogLine(`Wysylanie akcji: ${actionName}...`, "system");
 
     fetch(`/api/action`, {
         method: 'POST',
@@ -1694,14 +1708,14 @@ function sendAction(actionName, payload = {}) {
         .then(async response => {
             const responseText = await response.text();
             if (response.ok) {
-                addLogLine(`Akcja '${actionName}' zakoĹ„czona sukcesem.`, "success");
+                addLogLine(`Akcja '${actionName}' zakonczona sukcesem.`, "success");
                 fetchStatus(); // Refresh immediately
             } else {
                 const detail = responseText ? `: ${responseText}` : '';
-                addLogLine(`BĹ‚Ä…d akcji '${actionName}' (HTTP ${response.status})${detail}`, "danger");
+                addLogLine(`Blad akcji '${actionName}' (HTTP ${response.status})${detail}`, "danger");
             }
         })
-        .catch(err => addLogLine(`BĹ‚Ä…d sieci (action: ${actionName})`, "danger"));
+        .catch(err => addLogLine(`Blad sieci (action: ${actionName})`, "danger"));
 }
 
 // Button Events
@@ -1804,7 +1818,7 @@ elValPreOffSlider.addEventListener('input', (e) => {
 // Logs Tab Functionality
 btnClearLogs.addEventListener('click', () => {
     logContainer.innerHTML = '';
-    addLogLine("Logi zostaĹ‚y wyczyszczone.", "system");
+    addLogLine("Logi zostaly wyczyszczone.", "system");
 });
 
 btnDownloadLogs.addEventListener('click', () => {
@@ -1849,14 +1863,14 @@ function handleFiles(files) {
     if (files.length > 0) {
         const file = files[0];
         if (!file.name.endsWith('.bin')) {
-            alert('ProszÄ™ wybraÄ‡ plik z rozszerzeniem .bin');
+            alert('Prosze wybrac plik z rozszerzeniem .bin');
             fileInput.value = '';
             selectedFileDiv.style.display = 'none';
             return;
         }
         fileNameDisplay.innerText = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
         selectedFileDiv.style.display = 'block';
-        addLogLine(`ZaĹ‚adowano plik firmware: ${file.name}`, "ota");
+        addLogLine(`Zaladowano plik firmware: ${file.name}`, "ota");
     }
 }
 
@@ -1870,9 +1884,9 @@ otaForm.addEventListener('submit', function (e) {
 
     // UI Feedback
     btnSubmitOTA.disabled = true;
-    btnSubmitOTA.innerText = 'âŹł Wgrywanie... Nie wyĹ‚Ä…czaj zasialania!';
-    uploadStatus.innerText = 'Trwa przesyĹ‚anie i zapisywanie do pamiÄ™ci Flash... (OdĹ›wieĹĽ stronÄ™ po minucie)';
-    addLogLine(`Rozpoczeto wgrywanie pliku OTA (${fileInput.files[0].name}). ProszÄ™ czekaÄ‡...`, "ota");
+    btnSubmitOTA.innerText = 'Wgrywanie... Nie wylaczaj zasilania!';
+    uploadStatus.innerText = 'Trwa przesylanie i zapisywanie do pamieci Flash. Odswiez strone po minucie.';
+    addLogLine(`Rozpoczeto wgrywanie pliku OTA (${fileInput.files[0].name}). Prosze czekac...`, "ota");
 
     // Let the form submit naturally as it points to /update handler inside C++.
 });
@@ -1891,7 +1905,7 @@ const offlineData = {
 };
 
 function getMockData() {
-    // ZapamiÄ™taj rzeczywistoĹ›Ä‡ jeĹ›li to moĹĽliwe, lub uĹĽyj Ĺ‚agodnego dryfu by nie skakaÄ‡ jak szalone
+    // Zachowaj ostatnie dane, jesli sa dostepne, zamiast skakac losowo.
     if (elValTemp.innerText && elValTemp.innerText !== "--.-") {
         if (offlineData.firstInit) {
             offlineData.temp = parseFloat(elValTemp.innerText) || 24.5;
@@ -1964,7 +1978,8 @@ function getMockData() {
         },
         system: {
             firmwareName: "Aquarium Controller",
-            firmwareVersion: "2.0.0",
+            firmwareVersion: "offline-mock",
+            buildRef: "mock",
             buildDate: "Mar 07 2026",
             buildTime: "00:00:00",
             idfVersion: "v4.4.7-dirty",
@@ -1989,7 +2004,7 @@ function renderStoredLogs() {
     const activeData = currentLogView === 'critical' ? lastKnownCriticalLogs : lastKnownNormalLogs;
     
     if (activeData.length === 0) {
-        logContainer.innerHTML = `<div class="log-line system">[SYSTEM] Terminal gotowy. Brak logĂłw.</div>`;
+        logContainer.innerHTML = `<div class="log-line system">[SYSTEM] Terminal gotowy. Brak logow.</div>`;
         return;
     }
     
@@ -1997,7 +2012,7 @@ function renderStoredLogs() {
         const row = document.createElement('div');
         row.className = currentLogView === 'critical' ? 'log-line danger' : 'log-line system';
         if (currentLogView === 'critical') {
-            row.style.color = '#f87171'; // Czerwony kolor dla logĂłw krytycznych
+            row.style.color = '#f87171';
         }
         row.innerText = lg;
         logContainer.appendChild(row);
@@ -2033,7 +2048,7 @@ async function fetchLogs() {
 }
 
 btnDeleteCritical.addEventListener('click', () => {
-    if (confirm("Czy na pewno chcesz usunÄ…Ä‡ trwale zapisane logi krytyczne z pamiÄ™ci urzÄ…dzenia?")) {
+    if (confirm("Czy na pewno chcesz usunac trwale zapisane logi krytyczne z pamieci urzadzenia?")) {
         sendAction('clear_critical_logs');
         lastKnownCriticalLogs = [];
         renderStoredLogs();

@@ -9,40 +9,51 @@
 #include "ScheduleManager.h"
 #include "SharedState.h"
 #include <driver/gpio.h>
-#include <driver/rtc_io.h>
 #include <esp_err.h>
 #include <esp_sleep.h>
 #include <esp_task_wdt.h>
 
-#define HEATER_PIN 3
+#define HEATER_PIN 2
 #define PUMP_PIN 4
-#define FEEDER_PIN 5
+#define FEEDER_PIN 3
 #define SERVO_PIN 6
 #define BUTTON_UP_PIN GPIO_NUM_15
 #define BUTTON_SELECT_PIN GPIO_NUM_16
 #define BUTTON_DOWN_PIN GPIO_NUM_14
 #define ONE_WIRE_BUS 1
-#define LIGHT_PIN 17
+#define LIGHT_PIN 5
 #define FEEDER_SENSOR_PIN 12
 #define BAT_ADC_PIN 7
 #define BAT_EN_PIN 10
 
+static constexpr bool LIGHT_OUTPUT_ACTIVE_HIGH = true;
+static constexpr bool PUMP_OUTPUT_ACTIVE_HIGH = true;
+// Grzalka jest wpieta przez styk NC, wiec relay ON oznacza fizyczne odlaczenie.
+static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = false;
+
+static uint8_t outputLevelForState(bool enabled, bool activeHigh) {
+  return enabled ? (activeHigh ? HIGH : LOW) : (activeHigh ? LOW : HIGH);
+}
+
+static void writeManagedOutput(uint8_t pin, bool enabled, bool activeHigh) {
+  digitalWrite(pin, outputLevelForState(enabled, activeHigh));
+}
+
 static void logWakeupCauseOnBoot();
-static void releaseDeepSleepHolds();
 static bool isNightTimeNow();
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
-static bool configureButtonWakeup();
-static bool holdOutputsInOffState();
+static bool configureLightSleepWakeup();
 
-static const unsigned long DEEP_SLEEP_IDLE_MS = 300000UL;
+static const unsigned long LIGHT_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
 static const unsigned long OLED_IDLE_TIMEOUT_MS = 120000UL;
 static bool wokeFromButtonThisBoot = false;
 
-TemperatureController SystemController::tempController(ONE_WIRE_BUS,
-                                                       HEATER_PIN);
+TemperatureController SystemController::tempController(
+    ONE_WIRE_BUS, HEATER_PIN, 24.0f, 0.5f, HEATER_OUTPUT_ACTIVE_HIGH);
 FeederController SystemController::feederController(FEEDER_PIN,
-                                                    FEEDER_SENSOR_PIN);
+                                                    FEEDER_SENSOR_PIN, false,
+                                                    false);
 ServoController SystemController::servoController(SERVO_PIN, 90);
 BatteryReader SystemController::batteryReader(BAT_ADC_PIN);
 RTC_DS3231 SystemController::rtc;
@@ -77,19 +88,16 @@ unsigned long SystemController::lastBatCheckMs =
 bool SystemController::isRtcReady() { return rtcReady; }
 
 void SystemController::hardwareSetup() {
-  releaseDeepSleepHolds();
   pinMode(LIGHT_PIN, OUTPUT);
-  digitalWrite(LIGHT_PIN, HIGH); // OFF (aktywny stan LOW)
+  writeManagedOutput(LIGHT_PIN, false, LIGHT_OUTPUT_ACTIVE_HIGH);
   pinMode(PUMP_PIN, OUTPUT);
-  digitalWrite(PUMP_PIN, LOW); // OFF
+  writeManagedOutput(PUMP_PIN, false, PUMP_OUTPUT_ACTIVE_HIGH);
   pinMode(HEATER_PIN, OUTPUT);
-  digitalWrite(HEATER_PIN, LOW); // OFF
+  writeManagedOutput(HEATER_PIN, false, HEATER_OUTPUT_ACTIVE_HIGH);
 
   pinMode(BAT_EN_PIN, OUTPUT);
   digitalWrite(BAT_EN_PIN, HIGH); // Załączenie dzielnika pomiarowego
 
-  // Po wybudzeniu pin wake moze pozostac w trybie RTC GPIO.
-  rtc_gpio_deinit(BUTTON_DOWN_PIN);
   pinMode(static_cast<uint8_t>(BUTTON_UP_PIN), INPUT_PULLUP);
   pinMode(static_cast<uint8_t>(BUTTON_SELECT_PIN), INPUT_PULLUP);
   pinMode(static_cast<uint8_t>(BUTTON_DOWN_PIN), INPUT_PULLUP);
@@ -252,12 +260,9 @@ void SystemController::applyOutputs() {
     return;
 
   SharedStateData snap = SharedState::getSnapshot();
-  digitalWrite(LIGHT_PIN,
-               snap.isLightOn
-                   ? LOW
-                   : HIGH); // Zakladajac LIGHT_ACTIVE_HIGH = false w legacy
-  digitalWrite(PUMP_PIN, snap.isFilterOn ? HIGH : LOW);
-  digitalWrite(HEATER_PIN, snap.isHeaterOn ? HIGH : LOW);
+  writeManagedOutput(LIGHT_PIN, snap.isLightOn, LIGHT_OUTPUT_ACTIVE_HIGH);
+  writeManagedOutput(PUMP_PIN, snap.isFilterOn, PUMP_OUTPUT_ACTIVE_HIGH);
+  writeManagedOutput(HEATER_PIN, snap.isHeaterOn, HEATER_OUTPUT_ACTIVE_HIGH);
 
   servoController.update();
   feederController.update();
@@ -334,13 +339,6 @@ static void logWakeupCauseOnBoot() {
   }
 }
 
-static void releaseDeepSleepHolds() {
-  gpio_deep_sleep_hold_dis();
-  gpio_hold_dis(static_cast<gpio_num_t>(LIGHT_PIN));
-  gpio_hold_dis(static_cast<gpio_num_t>(PUMP_PIN));
-  gpio_hold_dis(static_cast<gpio_num_t>(HEATER_PIN));
-}
-
 static bool isNightTimeNow() {
   if (!SystemController::isRtcReady()) {
     return false;
@@ -350,9 +348,9 @@ static bool isNightTimeNow() {
   return !ScheduleManager::isDayTime(nowMin);
 }
 
-bool SystemController::canEnterDeepSleep(unsigned long nowMs,
-                                         unsigned long lastActionMs) {
-  if ((nowMs - lastActionMs) < DEEP_SLEEP_IDLE_MS) {
+bool SystemController::canEnterLightSleep(unsigned long nowMs,
+                                          unsigned long lastActionMs) {
+  if ((nowMs - lastActionMs) < LIGHT_SLEEP_IDLE_MS) {
     return false;
   }
   const SharedStateData snap = SharedState::getSnapshot();
@@ -405,80 +403,26 @@ static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
   return static_cast<uint64_t>(diffSec) * 1000000ULL;
 }
 
-static bool configureButtonWakeup() {
-  if (!esp_sleep_is_valid_wakeup_gpio(BUTTON_DOWN_PIN) ||
-      !rtc_gpio_is_valid_gpio(BUTTON_DOWN_PIN)) {
-    LogManager::logError("GPIO14 nie jest poprawnym RTC wake pin.");
-    return false;
+static bool configureLightSleepWakeup() {
+  const gpio_num_t wakePins[] = {BUTTON_UP_PIN, BUTTON_SELECT_PIN,
+                                 BUTTON_DOWN_PIN};
+
+  for (gpio_num_t wakePin : wakePins) {
+    esp_err_t err = gpio_wakeup_enable(wakePin, GPIO_INTR_LOW_LEVEL);
+    if (err != ESP_OK) {
+      char label[48];
+      snprintf(label, sizeof(label), "gpio_wakeup_enable(GPIO%d)",
+               static_cast<int>(wakePin));
+      logEspErr(label, err);
+      return false;
+    }
   }
 
-  esp_err_t err = rtc_gpio_deinit(BUTTON_DOWN_PIN);
-  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-    logEspErr("rtc_gpio_deinit(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
-
-  err = rtc_gpio_init(BUTTON_DOWN_PIN);
+  const esp_err_t err = esp_sleep_enable_gpio_wakeup();
   if (err != ESP_OK) {
-    logEspErr("rtc_gpio_init(BUTTON_DOWN_PIN)", err);
+    logEspErr("esp_sleep_enable_gpio_wakeup", err);
     return false;
   }
-
-  err = rtc_gpio_set_direction(BUTTON_DOWN_PIN, RTC_GPIO_MODE_INPUT_ONLY);
-  if (err != ESP_OK) {
-    logEspErr("rtc_gpio_set_direction(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
-
-  err = rtc_gpio_pullup_en(BUTTON_DOWN_PIN);
-  if (err != ESP_OK) {
-    logEspErr("rtc_gpio_pullup_en(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
-
-  err = rtc_gpio_pulldown_dis(BUTTON_DOWN_PIN);
-  if (err != ESP_OK) {
-    logEspErr("rtc_gpio_pulldown_dis(BUTTON_DOWN_PIN)", err);
-    return false;
-  }
-
-  uint64_t wakeMask = (1ULL << static_cast<uint64_t>(BUTTON_DOWN_PIN));
-  err = esp_sleep_enable_ext1_wakeup(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
-  if (err != ESP_OK) {
-    logEspErr("esp_sleep_enable_ext1_wakeup", err);
-    return false;
-  }
-
-  return true;
-}
-
-static bool holdOutputsInOffState() {
-  pinMode(LIGHT_PIN, OUTPUT);
-  digitalWrite(LIGHT_PIN, HIGH); // OFF
-  pinMode(PUMP_PIN, OUTPUT);
-  digitalWrite(PUMP_PIN, LOW); // OFF
-  pinMode(HEATER_PIN, OUTPUT);
-  digitalWrite(HEATER_PIN, LOW); // OFF
-
-  esp_err_t err = gpio_hold_en(static_cast<gpio_num_t>(LIGHT_PIN));
-  if (err != ESP_OK) {
-    logEspErr("gpio_hold_en(LIGHT_PIN)", err);
-    return false;
-  }
-
-  err = gpio_hold_en(static_cast<gpio_num_t>(PUMP_PIN));
-  if (err != ESP_OK) {
-    logEspErr("gpio_hold_en(PUMP_PIN)", err);
-    return false;
-  }
-
-  err = gpio_hold_en(static_cast<gpio_num_t>(HEATER_PIN));
-  if (err != ESP_OK) {
-    logEspErr("gpio_hold_en(HEATER_PIN)", err);
-    return false;
-  }
-
-  gpio_deep_sleep_hold_en();
 
   return true;
 }
@@ -621,46 +565,47 @@ bool SystemController::runFeederCalibration(U8G2 *display) {
   return ok;
 }
 
-void SystemController::enterNightDeepSleep() {
+void SystemController::enterNightLightSleep() {
   if (!rtcReady) {
-    LogManager::logWarn("RTC niedostepny - pomijam deep sleep.");
+    LogManager::logWarn("RTC niedostepny - pomijam light sleep.");
     return;
   }
   DateTime now = getCurrentDateTime();
 
-  LogManager::logInfo("Noc: wylaczam urzadzenia i przechodze do deep sleep.");
+  LogManager::logInfo("Noc: przechodze do light sleep.");
 
   tempController.forceHeaterOff();
   SharedState::updateRelays(false, false, false, false);
 
-  if (!holdOutputsInOffState()) {
-    LogManager::logError("Nie udalo sie zablokowac wyjsc OFF przed deep sleep.");
-    return;
-  }
-
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
-  esp_err_t err =
-      esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
-  if (err != ESP_OK) {
-    logEspErr("esp_sleep_pd_config", err);
-    return;
-  }
-
-  if (!configureButtonWakeup()) {
-    LogManager::logError("Konfiguracja wakeup GPIO14 nieudana - pomijam deep sleep.");
+  if (!configureLightSleepWakeup()) {
+    LogManager::logError(
+        "Konfiguracja wakeup dla light sleep nieudana - pomijam light sleep.");
     return;
   }
 
   uint64_t timerWakeUs = computeSleepUsUntilDayStart(now);
-  err = esp_sleep_enable_timer_wakeup(timerWakeUs);
+  esp_err_t err = esp_sleep_enable_timer_wakeup(timerWakeUs);
   if (err != ESP_OK) {
     logEspErr("esp_sleep_enable_timer_wakeup", err);
     return;
   }
 
   Serial.flush();
-  esp_deep_sleep_start();
+  err = esp_light_sleep_start();
+  if (err != ESP_OK) {
+    logEspErr("esp_light_sleep_start", err);
+    return;
+  }
+
+  const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  if (cause == ESP_SLEEP_WAKEUP_GPIO) {
+    PowerManager::registerActivity();
+    LogManager::logInfo("Wybudzenie z light sleep przez GPIO.");
+  } else if (cause == ESP_SLEEP_WAKEUP_TIMER) {
+    LogManager::logInfo("Wybudzenie z light sleep przez timer.");
+  }
 }
 
 void SystemController::handlePowerManagement(U8G2 *display,
@@ -698,15 +643,18 @@ void SystemController::handlePowerManagement(U8G2 *display,
   }
 
   if (!isNightTimeNow()) {
+    if (!AkwariumWifi::getIsAPMode() && AkwariumWifi::isStaOff()) {
+      AkwariumWifi::requestStaOn();
+    }
     handleOnlyOledTimeout(OLED_IDLE_TIMEOUT_MS);
     return;
   }
 
   if (!AkwariumWifi::isStaOff()) {
-    AkwariumWifi::requestStaOffForDeepSleep();
+    AkwariumWifi::requestStaOffForSleep();
   }
 
-  if (!canEnterDeepSleep(nowMs, lastAction)) {
+  if (!canEnterLightSleep(nowMs, lastAction)) {
     bool keepInteractive = ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
     if (display) {
       display->setPowerSave(keepInteractive ? 0 : 1);
@@ -721,6 +669,6 @@ void SystemController::handlePowerManagement(U8G2 *display,
     display->setPowerSave(1);
   }
 
-  PowerManager::setMode(MODE_DEEP_SLEEP);
-  enterNightDeepSleep();
+  PowerManager::setMode(MODE_LIGHT_SLEEP);
+  enterNightLightSleep();
 }

@@ -126,9 +126,9 @@ Publiczne API:
 
 Bezposredni zapis na piny:
 
-- `LIGHT_PIN`: `LOW=ON`, `HIGH=OFF`
+- `LIGHT_PIN`: `HIGH=ON`, `LOW=OFF`
 - `PUMP_PIN`: `HIGH=ON`
-- `HEATER_PIN`: `HIGH=ON`
+- `HEATER_PIN`: `LOW=ON`, `HIGH=OFF`
 
 oraz `servoController.update()` i `feederController.update()`.
 
@@ -136,16 +136,16 @@ oraz `servoController.update()` i `feederController.update()`.
 
 `handlePowerManagement()`:
 
-- po 4 min bezczynnosci -> OLED power-save (jesli `alwaysScreenOn=false`)
-- Deep Sleep po 5 min bezczynnosci i warunkach bezpieczenstwa:
+- po 2 min bezczynnosci -> OLED power-save (jesli `alwaysScreenOn=false`)
+- Light Sleep po 5 min bezczynnosci i warunkach bezpieczenstwa:
   - grzalka OFF
   - OTA OFF
   - AP OFF
   - STA/radio OFF (wymagane `AkwariumWifi::isStaOff()`)
   - BLE OFF (brak advertising i brak polaczonego klienta)
-- usypianie na 30 min
+- usypianie do kolejnego startu dnia z harmonogramu
 - wakeup:
-  - `ESP_EXT1_WAKEUP_ANY_LOW` (przyciski)
+  - dowolny przycisk (`GPIO wakeup`, poziom LOW)
   - timer RTC
 
 ### 5.5 Kalibracja karmnika

@@ -388,25 +388,11 @@ void updateUiState() {
   }
 
   case UiState::BLUETOOTH: {
-    static bool hasAnyClient = false;
-    bool connectedNow = BleManager::isConnected();
-
-    if (connectedNow) {
-      hasAnyClient = true;
-    }
-
-    // Auto-exit analogicznie do AP (po pierwszym polaczeniu i rozlaczeniu)
-    if (hasAnyClient && !connectedNow) {
-      BleManager::stop();
-      uiState = UiState::HOME;
-      hasAnyClient = false;
-    }
-
-    // Manual exit
+    // BLE pozostaje wlaczone podczas calej obslugi klienta.
+    // Konczymy sesje tylko po recznym wyjsciu z ekranu Bluetooth.
     if (upJustPressed) {
       BleManager::stop();
       uiState = UiState::MENU;
-      hasAnyClient = false;
     }
     break;
   }
@@ -684,7 +670,7 @@ void setup() {
   Wire.begin(8, 9);
   Wire.setClock(100000L);
 
-  // Natychmiastowa odpowiedz po wybudzeniu z deep sleep.
+  // Natychmiastowa odpowiedz po starcie urzadzenia.
   display.begin();
   display.setContrast(255);
   display.setPowerSave(0);

@@ -8,6 +8,10 @@ using Plugin.BLE;
 using Plugin.BLE.Abstractions.Contracts;
 using Plugin.BLE.Abstractions.EventArgs;
 using Plugin.BLE.Abstractions.Exceptions;
+#if WINDOWS
+using Windows.Devices.Bluetooth;
+using Windows.Devices.Enumeration;
+#endif
 
 namespace AquariumController.Mobile.Services;
 
@@ -155,12 +159,14 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 
 			if (_knownDevices.TryGetValue(deviceId, out var scannedDevice))
 			{
+				await EnsureDeviceSecurityReadyAsync(scannedDevice, cancellationToken);
 				await GetAdapter().ConnectToDeviceAsync(scannedDevice);
 				_connectedDevice = scannedDevice;
 			}
 			else
 			{
 				_connectedDevice = await GetAdapter().ConnectToKnownDeviceAsync(deviceId, cancellationToken: cancellationToken);
+				await EnsureDeviceSecurityReadyAsync(_connectedDevice, cancellationToken);
 			}
 
 			await WarmUpGattSessionAsync(cancellationToken);
@@ -626,6 +632,17 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 			cancellationToken);
 	}
 
+	private async Task EnsureDeviceSecurityReadyAsync(IDevice device, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+
+#if WINDOWS
+		await EnsureWindowsPairingAsync(device);
+#else
+		await Task.CompletedTask;
+#endif
+	}
+
 	private async Task<byte[]> ReadCharacteristicCoreAsync(
 		Guid serviceUuid,
 		Guid characteristicUuid,
@@ -757,11 +774,41 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 		cancellationToken.ThrowIfCancellationRequested();
 		await EnsureConnectedAsync(cancellationToken);
 
-		var service = await _connectedDevice!.GetServiceAsync(serviceUuid)
-			?? throw new InvalidOperationException($"BLE service {serviceUuid} was not found.");
+		Exception? lastError = null;
+		for (var attempt = 1; attempt <= 5; attempt++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			try
+			{
+				var service = await _connectedDevice!.GetServiceAsync(serviceUuid);
+				if (service is null)
+				{
+					lastError = new InvalidOperationException($"BLE service {serviceUuid} was not found.");
+				}
+				else
+				{
+					var characteristic = await service.GetCharacteristicAsync(characteristicUuid);
+					if (characteristic is not null)
+					{
+						return characteristic;
+					}
 
-		return await service.GetCharacteristicAsync(characteristicUuid)
-			?? throw new InvalidOperationException($"BLE characteristic {characteristicUuid} was not found.");
+					lastError = new InvalidOperationException($"BLE characteristic {characteristicUuid} was not found.");
+				}
+			}
+			catch (Exception ex) when (attempt < 5)
+			{
+				lastError = ex;
+				_logger.LogDebug(ex, "BLE discovery attempt {Attempt} for {CharacteristicUuid} failed. Retrying.", attempt, characteristicUuid);
+			}
+
+			if (attempt < 5)
+			{
+				await Task.Delay(TimeSpan.FromMilliseconds(150 * attempt), cancellationToken);
+			}
+		}
+
+		throw lastError ?? new InvalidOperationException($"BLE characteristic {characteristicUuid} was not found.");
 	}
 
 	private static TPayload? DeserializePayload<TPayload>(byte[] payload)
@@ -900,6 +947,85 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 			_ => new InvalidOperationException(message, exception)
 		};
 	}
+
+#if WINDOWS
+	private async Task EnsureWindowsPairingAsync(IDevice device)
+	{
+		var deviceInfo = await TryGetWindowsDeviceInformationAsync(device);
+		if (deviceInfo is null)
+		{
+			_logger.LogDebug("Skipping explicit Windows pairing because native BLE device info was unavailable.");
+			return;
+		}
+
+		if (deviceInfo.Pairing.IsPaired)
+		{
+			_logger.LogDebug("BLE device {DeviceId} is already paired in Windows.", deviceInfo.Id);
+			return;
+		}
+
+		if (!deviceInfo.Pairing.CanPair)
+		{
+			throw new InvalidOperationException(
+				"Windows nie moze sparowac tego urzadzenia z poziomu aplikacji. Sparuj sterownik recznie w Ustawienia > Bluetooth i sprobuj ponownie.");
+		}
+
+		var pairingResult = await MainThread.InvokeOnMainThreadAsync(
+			() => deviceInfo.Pairing.PairAsync(DevicePairingProtectionLevel.EncryptionAndAuthentication).AsTask());
+
+		if (pairingResult.Status is DevicePairingResultStatus.Paired or DevicePairingResultStatus.AlreadyPaired)
+		{
+			_logger.LogInformation(
+				"Windows paired BLE device {DeviceId}. Protection level: {ProtectionLevel}.",
+				deviceInfo.Id,
+				pairingResult.ProtectionLevelUsed);
+			return;
+		}
+
+		throw new InvalidOperationException(
+			$"Parowanie BLE w Windows nie powiodlo sie ({pairingResult.Status}). Potwierdz systemowe okno parowania i wpisz PIN pokazany na OLED sterownika.");
+	}
+
+	private static async Task<DeviceInformation?> TryGetWindowsDeviceInformationAsync(IDevice device)
+	{
+		if (device.NativeDevice is DeviceInformation deviceInformation)
+		{
+			return deviceInformation;
+		}
+
+		if (device.NativeDevice is BluetoothLEDevice bluetoothLeDevice)
+		{
+			return await DeviceInformation.CreateFromIdAsync(bluetoothLeDevice.DeviceId);
+		}
+
+		if (device.NativeDevice is null)
+		{
+			return null;
+		}
+
+		var nativeType = device.NativeDevice.GetType();
+		var deviceId = nativeType.GetProperty("DeviceId")?.GetValue(device.NativeDevice) as string
+			?? nativeType.GetProperty("Id")?.GetValue(device.NativeDevice) as string;
+
+		if (!string.IsNullOrWhiteSpace(deviceId))
+		{
+			return await DeviceInformation.CreateFromIdAsync(deviceId);
+		}
+
+		if (nativeType.GetProperty("BluetoothAddress")?.GetValue(device.NativeDevice) is ulong bluetoothAddress)
+		{
+			var bluetoothLeDeviceFromAddress = await MainThread.InvokeOnMainThreadAsync(
+				() => BluetoothLEDevice.FromBluetoothAddressAsync(bluetoothAddress).AsTask());
+
+			if (bluetoothLeDeviceFromAddress is not null)
+			{
+				return await DeviceInformation.CreateFromIdAsync(bluetoothLeDeviceFromAddress.DeviceId);
+			}
+		}
+
+		return null;
+	}
+#endif
 
 #if ANDROID
 	[System.Runtime.Versioning.SupportedOSPlatform("android31.0")]

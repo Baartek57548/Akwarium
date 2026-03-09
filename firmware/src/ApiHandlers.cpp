@@ -155,6 +155,7 @@ static String buildStatusJson() {
   JsonObject system = doc.createNestedObject("system");
   system["firmwareName"] = firmwareInfo.firmwareName;
   system["firmwareVersion"] = firmwareInfo.firmwareVersion;
+  system["buildRef"] = firmwareInfo.buildRef;
   system["buildDate"] = firmwareInfo.buildDate;
   system["buildTime"] = firmwareInfo.buildTime;
   system["idfVersion"] = firmwareInfo.idfVersion;

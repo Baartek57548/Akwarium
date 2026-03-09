@@ -32,6 +32,7 @@ static String otaUploadRejectReason;
 static volatile bool apStartRequested = false;
 static volatile bool apStopRequested = false;
 static volatile bool staOffRequested = false;
+static volatile bool staOnRequested = false;
 static volatile bool staIsOff = false;
 
 WebServer &AkwariumWifi::getServer() { return server; }
@@ -63,19 +64,19 @@ static void setupWebServer() {
     server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     server.sendHeader("Pragma", "no-cache");
     server.sendHeader("Expires", "0");
-    server.send_P(200, "text/html", web_index_html);
+    server.send_P(200, "text/html; charset=utf-8", web_index_html);
   });
 
   server.on("/style.css", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
     server.sendHeader("Cache-Control", "public, max-age=60");
-    server.send_P(200, "text/css", web_style_css);
+    server.send_P(200, "text/css; charset=utf-8", web_style_css);
   });
 
   server.on("/script.js", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
     server.sendHeader("Cache-Control", "public, max-age=60");
-    server.send_P(200, "application/javascript", web_script_js);
+    server.send_P(200, "application/javascript; charset=utf-8", web_script_js);
   });
 
   server.on("/settime", HTTP_POST, []() {
@@ -133,7 +134,7 @@ static void setupWebServer() {
                       ? otaUploadRejectReason
                       : "Inna sesja OTA jest juz aktywna.";
           html += "</p></div></body></html>";
-          server.send(409, "text/html", html);
+          server.send(409, "text/html; charset=utf-8", html);
           otaUploadRejected = false;
           otaUploadRejectReason = "";
           return;
@@ -167,7 +168,7 @@ static void setupWebServer() {
                       "odrzucony lub uszkodzony.</p>";
         html += "</div><script>setTimeout(()=>window.location.href='/', "
                 "10000);</script></body></html>";
-        server.send(200, "text/html", html);
+        server.send(200, "text/html; charset=utf-8", html);
 
         if (otaSuccess) {
           delay(1000);
@@ -253,7 +254,7 @@ static void stopAPInternal() {
   // UWAGA: Nie wywolujemy setupNetwork() - blokowaloby i mogloby powodowac WDT.
 }
 
-static void disableStaForDeepSleepInternal() {
+static void disableStaForSleepInternal() {
   if (isAPMode) {
     return;
   }
@@ -261,7 +262,15 @@ static void disableStaForDeepSleepInternal() {
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_OFF);
   staIsOff = true;
-  Serial.println("[WIFI-STA] Wylaczono STA/radio dla deep sleep.");
+  Serial.println("[WIFI-STA] Wylaczono STA/radio dla nocnego sleep.");
+}
+
+static void enableStaAfterSleepInternal() {
+  if (isAPMode || !staIsOff) {
+    return;
+  }
+
+  setupNetwork();
 }
 
 static void processAPRequests() {
@@ -278,7 +287,13 @@ static void processAPRequests() {
 
   if (staOffRequested && !isAPMode) {
     staOffRequested = false;
-    disableStaForDeepSleepInternal();
+    staOnRequested = false;
+    disableStaForSleepInternal();
+  }
+
+  if (staOnRequested && !isAPMode) {
+    staOnRequested = false;
+    enableStaAfterSleepInternal();
   }
 }
 
@@ -318,9 +333,18 @@ void AkwariumWifi::stopAP() {
   apStopRequested = true;
 }
 
-void AkwariumWifi::requestStaOffForDeepSleep() {
+void AkwariumWifi::requestStaOffForSleep() {
   apStartRequested = false;
+  staOnRequested = false;
   staOffRequested = true;
+}
+
+void AkwariumWifi::requestStaOn() {
+  if (isAPMode) {
+    return;
+  }
+  staOffRequested = false;
+  staOnRequested = true;
 }
 
 bool AkwariumWifi::isStaOff() { return staIsOff; }

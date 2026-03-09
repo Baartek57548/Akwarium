@@ -20,15 +20,19 @@ private:
   bool hasValidTemperature;
   unsigned long lastTempRead;
   const unsigned long TEMP_READ_INTERVAL = 2000;
+  bool heaterOutputActiveHigh;
 
   // Nowe zmienne do statystyk
   float dailyMinTemp;
   float dailyMaxTemp;
   bool isValidTempSample(float t) const;
   void refreshSensorPresence();
+  void writeHeaterOutput(bool enabled);
 
 public:
-  TemperatureController(int oneWirePin, int heaterPin, float targetTemp = 24.0f, float hysteresis = 0.5f);
+  TemperatureController(int oneWirePin, int heaterPin, float targetTemp = 24.0f,
+                        float hysteresis = 0.5f,
+                        bool heaterOutputActiveHigh = true);
   void begin();
   float readTemperature();
   void controlHeater(float currentTemp);

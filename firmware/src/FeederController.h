@@ -16,6 +16,7 @@ private:
   int feederPin;
   int sensorPin;
   bool invertSensor;
+  bool feederOutputActiveHigh;
   bool feeding;
   unsigned long feedStartTime;
   unsigned long feedDuration;
@@ -29,9 +30,11 @@ private:
   const unsigned long MIN_CYCLE_MS = 300;
   Error lastError;
   bool isSensorConnected() const;
+  void writeFeederOutput(bool enabled);
 
 public:
-  FeederController(int feederPin, int sensorPin, bool invertSensor = false);
+  FeederController(int feederPin, int sensorPin, bool invertSensor = false,
+                   bool feederOutputActiveHigh = true);
   void begin();
   Error startFeed(unsigned long durationMs, bool useSensor = false);
   void update();

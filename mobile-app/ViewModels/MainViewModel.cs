@@ -45,7 +45,13 @@ public sealed class ActivityLogEntry
 
 	public string FormattedText => $"[{Timestamp.LocalDateTime:HH:mm:ss}] {Message}";
 
+	public string LevelText => IsCritical ? "ERROR" : "INFO";
+
 	public Color ColorHex => IsCritical ? Color.FromArgb("#FB7185") : Color.FromArgb("#67E8F9");
+
+	public Color LevelAccentColor => IsCritical ? Color.FromArgb("#F87171") : Color.FromArgb("#22D3EE");
+
+	public Color LevelBackgroundColor => IsCritical ? Color.FromArgb("#1F1317") : Color.FromArgb("#0B1A23");
 }
 
 public sealed class FirmwarePackageCard
@@ -98,13 +104,16 @@ public sealed class MainViewModel : ObservableObject
 	private AquariumDeviceInfo _currentDeviceInfo = AquariumDeviceInfo.Empty;
 	private bool _isConnected;
 	private bool _isDashboardTabSelected = true;
+	private bool _isScheduleTabSelected;
+	private bool _isFeederTabSelected;
 	private bool _isLogsTabSelected;
-	private bool _isSystemTabSelected;
+	private bool _isSettingsTabSelected;
 	private bool _canSaveSchedules;
 	private string _statusMessage = "Polacz kontroler przez BLE, aby odczytac status i harmonogramy.";
 	private string _lastStatusUpdateText = "Brak odswiezenia.";
 	private string _latestResultText = "Brak odpowiedzi sterownika.";
 	private string _currentTimeText = DateTime.Now.ToString("HH:mm:ss");
+	private string _logSearchText = string.Empty;
 	private string _scheduleValidationSummary = string.Empty;
 	private string _lightScheduleErrorText = string.Empty;
 	private string _filterScheduleErrorText = string.Empty;
@@ -171,8 +180,11 @@ public sealed class MainViewModel : ObservableObject
 		VisibleLogs = new ObservableCollection<ActivityLogEntry>();
 
 		ShowDashboardTabCommand = new RelayCommand(() => SelectTab(nameof(IsDashboardTabSelected)));
+		ShowScheduleTabCommand = new RelayCommand(() => SelectTab(nameof(IsScheduleTabSelected)));
+		ShowFeederTabCommand = new RelayCommand(() => SelectTab(nameof(IsFeederTabSelected)));
 		ShowLogsTabCommand = new RelayCommand(() => SelectTab(nameof(IsLogsTabSelected)));
-		ShowSystemTabCommand = new RelayCommand(() => SelectTab(nameof(IsSystemTabSelected)));
+		ShowSettingsTabCommand = new RelayCommand(() => SelectTab(nameof(IsSettingsTabSelected)));
+		ShowSystemTabCommand = ShowSettingsTabCommand;
 		ShowSystemLogsCommand = new RelayCommand(() => ApplyLogFilter(false));
 		ShowCriticalLogsCommand = new RelayCommand(() => ApplyLogFilter(true));
 		ClearLogsViewCommand = new RelayCommand(ClearLogsView);
@@ -274,6 +286,11 @@ public sealed class MainViewModel : ObservableObject
 			OnPropertyChanged(nameof(NetworkSummaryText));
 			OnPropertyChanged(nameof(ServoModeText));
 			OnPropertyChanged(nameof(ServoPercentText));
+			OnPropertyChanged(nameof(IsAerationActive));
+			OnPropertyChanged(nameof(RelayActiveCount));
+			OnPropertyChanged(nameof(TemperatureRangeProgress));
+			OnPropertyChanged(nameof(MinimumTemperatureProgress));
+			OnPropertyChanged(nameof(TargetTemperatureProgress));
 			OnPropertyChanged(nameof(ConnectionClientsText));
 		}
 	}
@@ -296,6 +313,9 @@ public sealed class MainViewModel : ObservableObject
 			OnPropertyChanged(nameof(CurrentFirmwarePartitionText));
 			OnPropertyChanged(nameof(CurrentFirmwareCapabilityText));
 			OnPropertyChanged(nameof(OtaInfoText));
+			OnPropertyChanged(nameof(TemperatureRangeProgress));
+			OnPropertyChanged(nameof(MinimumTemperatureProgress));
+			OnPropertyChanged(nameof(TargetTemperatureProgress));
 		}
 	}
 
@@ -323,16 +343,39 @@ public sealed class MainViewModel : ObservableObject
 		private set => SetProperty(ref _isDashboardTabSelected, value);
 	}
 
+	public bool IsScheduleTabSelected
+	{
+		get => _isScheduleTabSelected;
+		private set => SetProperty(ref _isScheduleTabSelected, value);
+	}
+
+	public bool IsFeederTabSelected
+	{
+		get => _isFeederTabSelected;
+		private set => SetProperty(ref _isFeederTabSelected, value);
+	}
+
 	public bool IsLogsTabSelected
 	{
 		get => _isLogsTabSelected;
 		private set => SetProperty(ref _isLogsTabSelected, value);
 	}
 
+	public bool IsSettingsTabSelected
+	{
+		get => _isSettingsTabSelected;
+		private set
+		{
+			if (SetProperty(ref _isSettingsTabSelected, value))
+			{
+				OnPropertyChanged(nameof(IsSystemTabSelected));
+			}
+		}
+	}
+
 	public bool IsSystemTabSelected
 	{
-		get => _isSystemTabSelected;
-		private set => SetProperty(ref _isSystemTabSelected, value);
+		get => IsSettingsTabSelected;
 	}
 
 	public string StatusMessage
@@ -356,7 +399,25 @@ public sealed class MainViewModel : ObservableObject
 	public string CurrentTimeText
 	{
 		get => _currentTimeText;
-		private set => SetProperty(ref _currentTimeText, value);
+		private set
+		{
+			if (SetProperty(ref _currentTimeText, value))
+			{
+				OnPropertyChanged(nameof(CurrentDateText));
+			}
+		}
+	}
+
+	public string LogSearchText
+	{
+		get => _logSearchText;
+		set
+		{
+			if (SetProperty(ref _logSearchText, value))
+			{
+				ApplyLogFilter(_showCriticalLogsOnly);
+			}
+		}
 	}
 
 	public string ScheduleValidationSummary
@@ -714,6 +775,8 @@ public sealed class MainViewModel : ObservableObject
 		}
 	}
 
+	public string CurrentDateText => DateTime.Now.ToString("dddd, d MMMM yyyy", new CultureInfo("pl-PL"));
+
 	public string AdapterStateText => $"Adapter BLE: {MapAdapterState(_bluetoothService.AdapterState)}";
 
 	public string ConnectionStateText => IsConnected ? "Polaczono" : "Rozlaczono";
@@ -729,6 +792,27 @@ public sealed class MainViewModel : ObservableObject
 	public string ServoPercentText => $"{ServoPercent}%";
 
 	public string ServoModeText => CurrentStatus.ServoModeText;
+
+	public bool IsAerationActive => CurrentStatus.ServoPosition < 90;
+
+	public int RelayActiveCount =>
+		(CurrentStatus.IsLightOn ? 1 : 0) +
+		(CurrentStatus.IsFilterOn ? 1 : 0) +
+		(CurrentStatus.IsHeaterOn ? 1 : 0) +
+		(IsAerationActive ? 1 : 0);
+
+	public int TotalLogCount => _allLogs.Count;
+
+	public int InfoLogCount => _allLogs.Count(entry => !entry.IsCritical);
+
+	public int CriticalLogCount => _allLogs.Count(entry => entry.IsCritical);
+
+	public int VisibleLogCount => VisibleLogs.Count;
+
+	public IReadOnlyList<ActivityLogEntry> RecentLogs => _allLogs
+		.OrderByDescending(entry => entry.Timestamp)
+		.Take(6)
+		.ToArray();
 
 	public string SelectedDeviceSummary
 	{
@@ -778,6 +862,50 @@ public sealed class MainViewModel : ObservableObject
 		? "-"
 		: $"{SelectedHysteresisOption.Value:0.0} C";
 
+	public string TemperatureSummaryText => $"Cel {TargetTemperatureText} | histereza {TemperatureHysteresisText}";
+
+	public double TemperatureRangeProgress => ResolveTemperatureProgress(CurrentStatus.Temperature);
+
+	public double MinimumTemperatureProgress => ResolveTemperatureProgress(CurrentStatus.MinimumTemperature);
+
+	public double TargetTemperatureProgress => ResolveTemperatureProgress(
+		SelectedHeaterTarget?.Value is int value
+			? value
+			: CurrentStatus.EffectiveThresholdTemperature);
+
+	public string LightScheduleSummaryText => FormatScheduleSummary(
+		SelectedLightMode,
+		SelectedDayStartHour,
+		SelectedDayStartMinute,
+		SelectedDayEndHour,
+		SelectedDayEndMinute);
+
+	public string FilterScheduleSummaryText => FormatScheduleSummary(
+		SelectedFilterMode,
+		SelectedFilterOnHour,
+		SelectedFilterOnMinute,
+		SelectedFilterOffHour,
+		SelectedFilterOffMinute);
+
+	public string AerationScheduleSummaryText => FormatScheduleSummary(
+		SelectedAerationMode,
+		SelectedAerationOnHour,
+		SelectedAerationOnMinute,
+		SelectedAerationOffHour,
+		SelectedAerationOffMinute);
+
+	public string FeedTimeText => $"{SelectedFeedHour?.Value ?? 0:00}:{SelectedFeedMinute?.Value ?? 0:00}";
+
+	public string FeedScheduleSummaryText => SelectedFeedMode?.Value switch
+	{
+		0 => "Wylaczone",
+		1 => $"Codziennie {FeedTimeText}",
+		2 => $"Co 2 dni o {FeedTimeText}",
+		3 => $"Co 3 dni o {FeedTimeText}",
+		int mode => $"Tryb {mode} o {FeedTimeText}",
+		_ => "Brak harmonogramu"
+	};
+
 	public bool CanSaveSchedules
 	{
 		get => _canSaveSchedules;
@@ -786,7 +914,13 @@ public sealed class MainViewModel : ObservableObject
 
 	public IRelayCommand ShowDashboardTabCommand { get; }
 
+	public IRelayCommand ShowScheduleTabCommand { get; }
+
+	public IRelayCommand ShowFeederTabCommand { get; }
+
 	public IRelayCommand ShowLogsTabCommand { get; }
+
+	public IRelayCommand ShowSettingsTabCommand { get; }
 
 	public IRelayCommand ShowSystemTabCommand { get; }
 
@@ -860,8 +994,10 @@ public sealed class MainViewModel : ObservableObject
 	private void SelectTab(string propertyName)
 	{
 		IsDashboardTabSelected = propertyName == nameof(IsDashboardTabSelected);
+		IsScheduleTabSelected = propertyName == nameof(IsScheduleTabSelected);
+		IsFeederTabSelected = propertyName == nameof(IsFeederTabSelected);
 		IsLogsTabSelected = propertyName == nameof(IsLogsTabSelected);
-		IsSystemTabSelected = propertyName == nameof(IsSystemTabSelected);
+		IsSettingsTabSelected = propertyName == nameof(IsSettingsTabSelected) || propertyName == nameof(IsSystemTabSelected);
 	}
 
 	private async Task ScanAsync()
@@ -877,6 +1013,7 @@ public sealed class MainViewModel : ObservableObject
 				DiscoveredDevices.Add(device);
 			}
 
+			UpdateConnectionState();
 			SelectedDevice = DiscoveredDevices.FirstOrDefault();
 			StatusMessage = devices.Count == 0
 				? "Nie wykryto zadnego kontrolera BLE."
@@ -1295,6 +1432,13 @@ public sealed class MainViewModel : ObservableObject
 			: $"Popraw formularz przed zapisem. Pierwszy blad: {summary[0]}";
 
 		CanSaveSchedules = IsConnected && summary.Count == 0;
+		OnPropertyChanged(nameof(TemperatureSummaryText));
+		OnPropertyChanged(nameof(TargetTemperatureProgress));
+		OnPropertyChanged(nameof(LightScheduleSummaryText));
+		OnPropertyChanged(nameof(FilterScheduleSummaryText));
+		OnPropertyChanged(nameof(AerationScheduleSummaryText));
+		OnPropertyChanged(nameof(FeedTimeText));
+		OnPropertyChanged(nameof(FeedScheduleSummaryText));
 	}
 
 	private static string ValidateScheduleCard(
@@ -1370,6 +1514,11 @@ public sealed class MainViewModel : ObservableObject
 
 		var logs = _allLogs
 			.Where(entry => !criticalOnly || entry.IsCritical)
+			.Where(entry =>
+				string.IsNullOrWhiteSpace(LogSearchText) ||
+				entry.Message.Contains(LogSearchText, StringComparison.OrdinalIgnoreCase) ||
+				entry.FormattedText.Contains(LogSearchText, StringComparison.OrdinalIgnoreCase) ||
+				entry.LevelText.Contains(LogSearchText, StringComparison.OrdinalIgnoreCase))
 			.OrderByDescending(entry => entry.Timestamp)
 			.ToArray();
 
@@ -1377,6 +1526,8 @@ public sealed class MainViewModel : ObservableObject
 		{
 			VisibleLogs.Add(entry);
 		}
+
+		NotifyLogMetricsChanged();
 	}
 
 	private void ClearLogsView()
@@ -1391,6 +1542,15 @@ public sealed class MainViewModel : ObservableObject
 		var entry = new ActivityLogEntry(DateTimeOffset.Now, category, message, critical);
 		_allLogs.Add(entry);
 		ApplyLogFilter(_showCriticalLogsOnly);
+	}
+
+	private void NotifyLogMetricsChanged()
+	{
+		OnPropertyChanged(nameof(TotalLogCount));
+		OnPropertyChanged(nameof(InfoLogCount));
+		OnPropertyChanged(nameof(CriticalLogCount));
+		OnPropertyChanged(nameof(VisibleLogCount));
+		OnPropertyChanged(nameof(RecentLogs));
 	}
 
 	private void HandleException(string contextMessage, Exception exception, bool critical)
@@ -1469,6 +1629,40 @@ public sealed class MainViewModel : ObservableObject
 		}
 
 		return $"{existing} {extra}";
+	}
+
+	private static string FormatScheduleSummary(
+		SelectionOption<AquariumScheduleMode>? mode,
+		SelectionOption<int>? startHour,
+		SelectionOption<int>? startMinute,
+		SelectionOption<int>? endHour,
+		SelectionOption<int>? endMinute)
+	{
+		if (mode is null)
+		{
+			return "Brak danych";
+		}
+
+		return mode.Value switch
+		{
+			AquariumScheduleMode.AlwaysOn => "Zawsze wlaczone",
+			AquariumScheduleMode.AlwaysOff => "Wylaczone",
+			_ => $"{startHour?.Value ?? 0:00}:{startMinute?.Value ?? 0:00} - {endHour?.Value ?? 0:00}:{endMinute?.Value ?? 0:00}"
+		};
+	}
+
+	private double ResolveTemperatureProgress(double temperature)
+	{
+		var rule = CurrentDeviceInfo.ValidationProfile.Temperature;
+		var min = rule.Min > 0 ? rule.Min : AquariumValidationProfile.Default.Temperature.Min;
+		var max = rule.Max > min ? rule.Max : AquariumValidationProfile.Default.Temperature.Max;
+
+		if (double.IsNaN(temperature) || temperature <= -99 || max <= min)
+		{
+			return 0d;
+		}
+
+		return Math.Clamp((temperature - min) / (max - min), 0d, 1d);
 	}
 
 	private double ResolveDefaultThreshold()

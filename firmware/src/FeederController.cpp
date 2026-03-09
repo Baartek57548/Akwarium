@@ -1,15 +1,25 @@
 #include "FeederController.h"
 
-FeederController::FeederController(int feederPin, int sensorPin, bool invertSensor)
+FeederController::FeederController(int feederPin, int sensorPin,
+                                   bool invertSensor,
+                                   bool feederOutputActiveHigh)
   : feederPin(feederPin), sensorPin(sensorPin), invertSensor(invertSensor),
-    feeding(false), feedStartTime(0), feedDuration(0), safetyTimeout(15000), useSensorStop(false),
-    feedPhase(FeedPhase::WAIT_FOR_FIRST_ONE), phaseStartTime(0), lastSensorState(false),
-    lastError(Error::NONE) {}
+    feederOutputActiveHigh(feederOutputActiveHigh), feeding(false),
+    feedStartTime(0), feedDuration(0), safetyTimeout(15000),
+    useSensorStop(false), feedPhase(FeedPhase::WAIT_FOR_FIRST_ONE),
+    phaseStartTime(0), lastSensorState(false), lastError(Error::NONE) {}
+
+void FeederController::writeFeederOutput(bool enabled) {
+  digitalWrite(feederPin,
+               enabled ? (feederOutputActiveHigh ? HIGH : LOW)
+                       : (feederOutputActiveHigh ? LOW : HIGH));
+}
 
 void FeederController::begin() {
+  writeFeederOutput(false);
   pinMode(feederPin, OUTPUT);
   pinMode(sensorPin, INPUT_PULLDOWN);
-  digitalWrite(feederPin, LOW);
+  writeFeederOutput(false);
 }
 
 Error FeederController::startFeed(unsigned long durationMs, bool useSensor) {
@@ -17,7 +27,7 @@ Error FeederController::startFeed(unsigned long durationMs, bool useSensor) {
 
   lastSensorState = isSensorConnected();
 
-  digitalWrite(feederPin, HIGH);
+  writeFeederOutput(true);
   feeding = true;
   feedStartTime = millis();
   feedDuration = durationMs;
@@ -35,7 +45,7 @@ void FeederController::update() {
 
   unsigned long now = millis();
   if (now - feedStartTime > safetyTimeout) {
-    digitalWrite(feederPin, LOW);
+    writeFeederOutput(false);
     feeding = false;
     lastError = Error::TIMEOUT;
     return;
@@ -67,7 +77,7 @@ void FeederController::update() {
       if (!lastSensorState && sensorConnected &&
           (now - phaseStartTime >= RETURN_GUARD_MS) &&
           (now - feedStartTime >= MIN_CYCLE_MS)) {
-        digitalWrite(feederPin, LOW);
+        writeFeederOutput(false);
         feeding = false;
         lastError = Error::NONE;
       }
@@ -75,7 +85,7 @@ void FeederController::update() {
       return;
     }
   } else if (now - feedStartTime >= feedDuration) {
-    digitalWrite(feederPin, LOW);
+    writeFeederOutput(false);
     feeding = false;
     lastError = Error::NONE;
   }

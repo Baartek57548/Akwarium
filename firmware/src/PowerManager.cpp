@@ -37,7 +37,7 @@ void PowerManager::registerActivity() {
 
 void PowerManager::setMode(PowerMode mode) {
   currentMode = mode;
-  // Prawdziwa logika wprowadzania w deep sleep bedzie realizowana w
+  // Prawdziwa logika wprowadzania w light sleep bedzie realizowana w
   // SystemController, tu trzymamy tylko flagę
 }
 

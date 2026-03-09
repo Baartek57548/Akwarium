@@ -205,6 +205,7 @@ static void buildDeviceInfoJson(char *json, size_t jsonSize) {
   StaticJsonDocument<896> doc;
   doc["nm"] = firmwareInfo.firmwareName;
   doc["ver"] = firmwareInfo.firmwareVersion;
+  doc["ref"] = firmwareInfo.buildRef;
   doc["dt"] = firmwareInfo.buildDate;
   doc["tm"] = firmwareInfo.buildTime;
   doc["idf"] = firmwareInfo.idfVersion;

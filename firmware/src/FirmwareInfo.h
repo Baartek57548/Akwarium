@@ -8,12 +8,17 @@
 #endif
 
 #ifndef AQUARIUM_FIRMWARE_VERSION
-#define AQUARIUM_FIRMWARE_VERSION "2.0.0"
+#define AQUARIUM_FIRMWARE_VERSION "dev"
+#endif
+
+#ifndef AQUARIUM_FIRMWARE_BUILD_REF
+#define AQUARIUM_FIRMWARE_BUILD_REF "local"
 #endif
 
 struct FirmwareRuntimeInfo {
   const char *firmwareName;
   const char *firmwareVersion;
+  const char *buildRef;
   const char *buildDate;
   const char *buildTime;
   const char *idfVersion;

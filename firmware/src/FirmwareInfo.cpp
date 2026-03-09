@@ -13,6 +13,7 @@ namespace {
 __attribute__((used)) static const char AQUARIUM_FIRMWARE_BINARY_METADATA[] =
     "AQFWMETA|project=" AQUARIUM_FIRMWARE_NAME
     "|version=" AQUARIUM_FIRMWARE_VERSION
+    "|ref=" AQUARIUM_FIRMWARE_BUILD_REF
     "|date=" __DATE__
     "|time=" __TIME__
     "|idf=" IDF_VER;
@@ -33,6 +34,7 @@ FirmwareRuntimeInfo FirmwareInfo::getRuntimeInfo() {
   FirmwareRuntimeInfo info = {};
   info.firmwareName = AQUARIUM_FIRMWARE_NAME;
   info.firmwareVersion = AQUARIUM_FIRMWARE_VERSION;
+  info.buildRef = AQUARIUM_FIRMWARE_BUILD_REF;
   info.buildDate = (appDesc != nullptr && appDesc->date[0] != '\0') ? appDesc->date : __DATE__;
   info.buildTime = (appDesc != nullptr && appDesc->time[0] != '\0') ? appDesc->time : __TIME__;
   info.idfVersion =

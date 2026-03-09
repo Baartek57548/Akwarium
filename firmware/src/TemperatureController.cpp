@@ -4,17 +4,25 @@
 #include <math.h>
 
 TemperatureController::TemperatureController(int oneWirePin, int heaterPin,
-                                             float targetTemp, float hysteresis)
+                                             float targetTemp, float hysteresis,
+                                             bool heaterOutputActiveHigh)
     : oneWire(oneWirePin), sensors(&oneWire), oneWirePin(oneWirePin),
       heaterPin(heaterPin), targetTemp(targetTemp), hysteresis(hysteresis),
       heaterState(false), lastSwitchTime(0), sensorPresent(false),
       lastTemperature(0.0f), hasValidTemperature(false), lastTempRead(0),
-      dailyMinTemp(100.0f), dailyMaxTemp(-100.0f) {}
+      heaterOutputActiveHigh(heaterOutputActiveHigh), dailyMinTemp(100.0f),
+      dailyMaxTemp(-100.0f) {}
+
+void TemperatureController::writeHeaterOutput(bool enabled) {
+  digitalWrite(heaterPin,
+               enabled ? (heaterOutputActiveHigh ? HIGH : LOW)
+                       : (heaterOutputActiveHigh ? LOW : HIGH));
+}
 
 void TemperatureController::begin() {
   pinMode(oneWirePin, INPUT_PULLUP);
   pinMode(heaterPin, OUTPUT);
-  digitalWrite(heaterPin, LOW);
+  writeHeaterOutput(false);
 
   sensors.begin();
   sensors.setWaitForConversion(true);
@@ -86,13 +94,13 @@ void TemperatureController::controlHeater(float currentTemp) {
 
   if (heaterState && currentTemp >= targetTemp) {
     if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {
-      digitalWrite(heaterPin, LOW);
+      writeHeaterOutput(false);
       heaterState = false;
       lastSwitchTime = now;
     }
   } else if (!heaterState && currentTemp <= (targetTemp - hysteresis)) {
     if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {
-      digitalWrite(heaterPin, HIGH);
+      writeHeaterOutput(true);
       heaterState = true;
       lastSwitchTime = now;
     }
@@ -110,7 +118,7 @@ void TemperatureController::setHysteresis(float value) {
 bool TemperatureController::isHeaterOn() { return heaterState; }
 
 void TemperatureController::forceHeaterOff() {
-  digitalWrite(heaterPin, LOW);
+  writeHeaterOutput(false);
   heaterState = false;
   lastSwitchTime = millis();
 }
