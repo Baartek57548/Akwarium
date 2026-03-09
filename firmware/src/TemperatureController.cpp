@@ -22,7 +22,9 @@ void TemperatureController::writeHeaterOutput(bool enabled) {
 void TemperatureController::begin() {
   pinMode(oneWirePin, INPUT_PULLUP);
   pinMode(heaterPin, OUTPUT);
-  writeHeaterOutput(false);
+  heaterState = true;
+  writeHeaterOutput(true);
+  lastSwitchTime = millis() - MIN_SWITCH_INTERVAL;
 
   sensors.begin();
   sensors.setWaitForConversion(true);

@@ -80,7 +80,7 @@ void ConfigManager::loadDefaultConfig() {
   sysConfig.aerationMode = static_cast<uint8_t>(ScheduleMode::Schedule);
   sysConfig.aerationHourOn = 10;
   sysConfig.aerationMinuteOn = 0;
-  sysConfig.aerationHourOff = 21;
+  sysConfig.aerationHourOff = 19;
   sysConfig.aerationMinuteOff = 0;
   sysConfig.filterMode = static_cast<uint8_t>(ScheduleMode::Schedule);
   sysConfig.filterHourOn = 10;

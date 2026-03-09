@@ -55,8 +55,8 @@ LIGHT_PIN          GPIO5
 
 Uwagi:
 
-- `LIGHT_PIN` i `PUMP_PIN` dzialaja klasycznie (`HIGH = ON`, `LOW = OFF`).
-- `HEATER_PIN` ma logike odwrotna na wyjsciu sterujacym (`LOW = grzanie`, `HIGH = odciecie grzalki`), bo przelacza styk rozlaczajacy grzalke.
+- `LIGHT_PIN` i `PUMP_PIN` sa aktywne stanem niskim (`LOW = ON`, `HIGH = OFF`).
+- `HEATER_PIN` ma logike odwrotna wzgledem pozostalych wyjsc (`HIGH = grzalka podlaczona`, `LOW = rozlaczenie grzalki`).
 - `FEEDER_PIN` steruje przekaznikiem aktywnym stanem niskim (`LOW = karmienie`, `HIGH = stop`).
 
 ## 4. Build i upload (PlatformIO)
@@ -163,7 +163,7 @@ Checklista testow smoke znajduje sie w:
 Domyslne wartosci z `ConfigManager::loadDefaultConfig()`:
 
 - dzien: `10:00 -> 21:30`
-- napowietrzanie: `10:00 -> 21:00`
+- napowietrzanie: `10:00 -> 19:00`
 - filtr: `10:30 -> 20:30`
 - temperatura docelowa: `25.0 C`
 - histereza temperatury: `0.5 C`
@@ -179,7 +179,8 @@ Domyslne wartosci z `ConfigManager::loadDefaultConfig()`:
 
 ## 11. Bezpieczenstwo runtime
 
-- brak poprawnego odczytu DS18B20 (seria bledow) -> fail-safe, grzalka OFF
-- twardy limit temperatury: przy `>= 28.0 C` grzalka jest natychmiast odcinana
+- prog temperatury dziala jako maksymalna dopuszczalna temperatura wody
+- przy `>= targetTemp` grzalka jest rozlaczana, a ponownie podlaczana przy `<= targetTemp - hysteresis`
+- w trybie `HeaterMode::Off` grzalka pozostaje rozlaczona
 - manualny override serwa wygasa automatycznie po 5 minutach
 - karmnik ma timeout bezpieczenstwa (`15 s`) i logike cyklu czujnika

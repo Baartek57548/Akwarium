@@ -45,6 +45,8 @@ public sealed class ActivityLogEntry
 
 	public string FormattedText => $"[{Timestamp.LocalDateTime:HH:mm:ss}] {Message}";
 
+	public string TimestampText => Timestamp.LocalDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+
 	public string LevelText => IsCritical ? "ERROR" : "INFO";
 
 	public Color ColorHex => IsCritical ? Color.FromArgb("#FB7185") : Color.FromArgb("#67E8F9");
@@ -99,6 +101,7 @@ public sealed class MainViewModel : ObservableObject
 	private CancellationTokenSource? _otaCancellationSource;
 	private bool _initialized;
 	private bool _showCriticalLogsOnly;
+	private IReadOnlyList<ActivityLogEntry> _visibleLogs = Array.Empty<ActivityLogEntry>();
 
 	private AquariumStatus _currentStatus = AquariumStatus.Empty;
 	private AquariumDeviceInfo _currentDeviceInfo = AquariumDeviceInfo.Empty;
@@ -177,8 +180,6 @@ public sealed class MainViewModel : ObservableObject
 		_feedModes = BuildFeedModes(AquariumValidationProfile.Default.FeedModes);
 
 		DiscoveredDevices = new ObservableCollection<BleDeviceInfo>();
-		VisibleLogs = new ObservableCollection<ActivityLogEntry>();
-
 		ShowDashboardTabCommand = new RelayCommand(() => SelectTab(nameof(IsDashboardTabSelected)));
 		ShowScheduleTabCommand = new RelayCommand(() => SelectTab(nameof(IsScheduleTabSelected)));
 		ShowFeederTabCommand = new RelayCommand(() => SelectTab(nameof(IsFeederTabSelected)));
@@ -220,7 +221,7 @@ public sealed class MainViewModel : ObservableObject
 		SelectedFilterOffMinute = FindOption(_minuteOptions, 30);
 		SelectedAerationOnHour = FindOption(_hourOptions, 10);
 		SelectedAerationOnMinute = FindOption(_minuteOptions, 0);
-		SelectedAerationOffHour = FindOption(_hourOptions, 21);
+		SelectedAerationOffHour = FindOption(_hourOptions, 19);
 		SelectedAerationOffMinute = FindOption(_minuteOptions, 0);
 		SelectedHeaterTarget = FindOption(_heaterTargetOptions, 25);
 		SelectedHysteresisOption = FindOption(_hysteresisOptions, 0.5);
@@ -234,7 +235,19 @@ public sealed class MainViewModel : ObservableObject
 
 	public ObservableCollection<BleDeviceInfo> DiscoveredDevices { get; }
 
-	public ObservableCollection<ActivityLogEntry> VisibleLogs { get; }
+	public IReadOnlyList<ActivityLogEntry> VisibleLogs
+	{
+		get => _visibleLogs;
+		private set
+		{
+			if (SetProperty(ref _visibleLogs, value))
+			{
+				OnPropertyChanged(nameof(VisibleLogCount));
+				OnPropertyChanged(nameof(HasVisibleLogs));
+				OnPropertyChanged(nameof(HasNoVisibleLogs));
+			}
+		}
+	}
 
 	public IReadOnlyList<SelectionOption<AquariumScheduleMode>> ScheduleModes => _scheduleModes;
 
@@ -808,6 +821,10 @@ public sealed class MainViewModel : ObservableObject
 	public int CriticalLogCount => _allLogs.Count(entry => entry.IsCritical);
 
 	public int VisibleLogCount => VisibleLogs.Count;
+
+	public bool HasVisibleLogs => VisibleLogCount > 0;
+
+	public bool HasNoVisibleLogs => !HasVisibleLogs;
 
 	public IReadOnlyList<ActivityLogEntry> RecentLogs => _allLogs
 		.OrderByDescending(entry => entry.Timestamp)
@@ -1510,7 +1527,6 @@ public sealed class MainViewModel : ObservableObject
 	private void ApplyLogFilter(bool criticalOnly)
 	{
 		_showCriticalLogsOnly = criticalOnly;
-		VisibleLogs.Clear();
 
 		var logs = _allLogs
 			.Where(entry => !criticalOnly || entry.IsCritical)
@@ -1522,10 +1538,7 @@ public sealed class MainViewModel : ObservableObject
 			.OrderByDescending(entry => entry.Timestamp)
 			.ToArray();
 
-		foreach (var entry in logs)
-		{
-			VisibleLogs.Add(entry);
-		}
+		VisibleLogs = logs;
 
 		NotifyLogMetricsChanged();
 	}
@@ -1533,7 +1546,6 @@ public sealed class MainViewModel : ObservableObject
 	private void ClearLogsView()
 	{
 		_allLogs.Clear();
-		VisibleLogs.Clear();
 		AddLog("system", "Widok logow wyczyszczony.", false);
 	}
 
@@ -1550,6 +1562,8 @@ public sealed class MainViewModel : ObservableObject
 		OnPropertyChanged(nameof(InfoLogCount));
 		OnPropertyChanged(nameof(CriticalLogCount));
 		OnPropertyChanged(nameof(VisibleLogCount));
+		OnPropertyChanged(nameof(HasVisibleLogs));
+		OnPropertyChanged(nameof(HasNoVisibleLogs));
 		OnPropertyChanged(nameof(RecentLogs));
 	}
 

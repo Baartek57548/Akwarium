@@ -26,10 +26,12 @@
 #define BAT_ADC_PIN 7
 #define BAT_EN_PIN 10
 
-static constexpr bool LIGHT_OUTPUT_ACTIVE_HIGH = true;
-static constexpr bool PUMP_OUTPUT_ACTIVE_HIGH = true;
-// Grzalka jest wpieta przez styk NC, wiec relay ON oznacza fizyczne odlaczenie.
-static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = false;
+static constexpr bool LIGHT_OUTPUT_ACTIVE_HIGH = false;
+static constexpr bool PUMP_OUTPUT_ACTIVE_HIGH = false;
+// Grzalka pozostaje podlaczona przy stanie wysokim. Stan niski rozlacza ja
+// awaryjnie po przekroczeniu progu albo w trybie OFF.
+static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = true;
+static constexpr bool FEEDER_OUTPUT_ACTIVE_HIGH = false;
 
 static uint8_t outputLevelForState(bool enabled, bool activeHigh) {
   return enabled ? (activeHigh ? HIGH : LOW) : (activeHigh ? LOW : HIGH);
@@ -53,7 +55,7 @@ TemperatureController SystemController::tempController(
     ONE_WIRE_BUS, HEATER_PIN, 24.0f, 0.5f, HEATER_OUTPUT_ACTIVE_HIGH);
 FeederController SystemController::feederController(FEEDER_PIN,
                                                     FEEDER_SENSOR_PIN, false,
-                                                    false);
+                                                    FEEDER_OUTPUT_ACTIVE_HIGH);
 ServoController SystemController::servoController(SERVO_PIN, 90);
 BatteryReader SystemController::batteryReader(BAT_ADC_PIN);
 RTC_DS3231 SystemController::rtc;
@@ -93,7 +95,7 @@ void SystemController::hardwareSetup() {
   pinMode(PUMP_PIN, OUTPUT);
   writeManagedOutput(PUMP_PIN, false, PUMP_OUTPUT_ACTIVE_HIGH);
   pinMode(HEATER_PIN, OUTPUT);
-  writeManagedOutput(HEATER_PIN, false, HEATER_OUTPUT_ACTIVE_HIGH);
+  writeManagedOutput(HEATER_PIN, true, HEATER_OUTPUT_ACTIVE_HIGH);
 
   pinMode(BAT_EN_PIN, OUTPUT);
   digitalWrite(BAT_EN_PIN, HIGH); // Załączenie dzielnika pomiarowego
@@ -202,14 +204,16 @@ void SystemController::updateDecisions() {
   bool runFilter = ScheduleManager::isFilterActive(nowMin);
   bool runAeration = ScheduleManager::isAerationActive(nowMin);
 
-  // Sterowanie grzalka tylko w aktywnych godzinach pracy akwarium.
+  // Prog temperatury jest traktowany jako maksymalna dopuszczalna temperatura.
+  // Grzalka pozostaje podlaczona, dopoki sterownik nie musi jej rozlaczyc.
   SharedStateData snap = SharedState::getSnapshot();
-  if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Threshold) &&
-      isLightActive && !isnan(snap.temperature) && tempInvalidReadCount < 3) {
+  if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Threshold)) {
     tempController.setTargetTemperature(cfg.targetTemp);
     tempController.setHysteresis(cfg.tempHysteresis);
-    tempController.controlHeater(snap.temperature);
-  } else {
+    if (!isnan(snap.temperature) && tempInvalidReadCount < 3) {
+      tempController.controlHeater(snap.temperature);
+    }
+  } else if (tempController.isHeaterOn()) {
     tempController.forceHeaterOff();
   }
 
@@ -250,7 +254,7 @@ void SystemController::updateDecisions() {
       map(servoTarget, SERVO_CLOSED_ANGLE, SERVO_OPEN_ANGLE, 0, 100);
   SharedState::updateAeration(aerationPct);
 
-  bool isHeaterOn = isLightActive && tempController.isHeaterOn();
+  bool isHeaterOn = tempController.isHeaterOn();
 
   SharedState::updateRelays(isHeaterOn, runFilter, isLightActive, isLightActive);
 }
@@ -574,8 +578,7 @@ void SystemController::enterNightLightSleep() {
 
   LogManager::logInfo("Noc: przechodze do light sleep.");
 
-  tempController.forceHeaterOff();
-  SharedState::updateRelays(false, false, false, false);
+  SharedState::updateRelays(tempController.isHeaterOn(), false, false, false);
 
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 

@@ -1,3 +1,6 @@
+# Canonical PlatformIO metadata script used by firmware builds.
+# Keep this file. Repo-root PlatformIO runs use `scripts/build_metadata.py`,
+# which delegates to this implementation.
 Import("env")
 
 import json

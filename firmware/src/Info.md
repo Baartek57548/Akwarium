@@ -112,8 +112,10 @@ Publiczne API:
   - `isFilterActive`
   - `isAerationActive`
 - sterowanie grzalka:
-  - target/histereza z config
-  - fail-safe OFF przy bledach sensora
+  - `targetTemp` to maksymalny prog temperatury
+  - przy `>= targetTemp` grzalka jest rozlaczana
+  - przy `<= targetTemp - hysteresis` grzalka jest ponownie podlaczana
+  - bledny odczyt sensora nie wymusza rozlaczenia grzalki
 - target serwa:
   - domyslnie CLOSED
   - OPEN w oknie napowietrzania
@@ -126,9 +128,10 @@ Publiczne API:
 
 Bezposredni zapis na piny:
 
-- `LIGHT_PIN`: `HIGH=ON`, `LOW=OFF`
-- `PUMP_PIN`: `HIGH=ON`
-- `HEATER_PIN`: `LOW=ON`, `HIGH=OFF`
+- `LIGHT_PIN`: `LOW=ON`, `HIGH=OFF`
+- `PUMP_PIN`: `LOW=ON`, `HIGH=OFF`
+- `HEATER_PIN`: `HIGH=grzalka podlaczona`, `LOW=rozlaczenie`
+- `FEEDER_PIN`: `LOW=karmienie`, `HIGH=stop`
 
 oraz `servoController.update()` i `feederController.update()`.
 
@@ -138,7 +141,6 @@ oraz `servoController.update()` i `feederController.update()`.
 
 - po 2 min bezczynnosci -> OLED power-save (jesli `alwaysScreenOn=false`)
 - Light Sleep po 5 min bezczynnosci i warunkach bezpieczenstwa:
-  - grzalka OFF
   - OTA OFF
   - AP OFF
   - STA/radio OFF (wymagane `AkwariumWifi::isStaOff()`)
@@ -208,7 +210,8 @@ Szczegoly:
   - `85.0 C` (typowy artefakt startowy)
   - wartosci poza zakresem
 - histereza + min interwal przelaczen grzalki `120000 ms`
-- twarde odciecie grzalki przy `>= 28.0 C`
+- przy `>= targetTemp` grzalka jest rozlaczana
+- przy `<= targetTemp - hysteresis` grzalka jest ponownie podlaczana
 
 ## 8. FeederController
 

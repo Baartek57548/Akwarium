@@ -281,8 +281,10 @@
                             <Border Grid.Column="2" Style="{StaticResource PanelCardStyle}">
                                 <VerticalStackLayout Padding="18" HorizontalOptions="Center" Spacing="12">
                                     <Label Style="{StaticResource SectionTitleStyle}" Text="Karmnik" />
-                                    <Border WidthRequest="150" HeightRequest="150" BackgroundColor="#1C1120" Stroke="#8B2E67" StrokeShape="RoundRectangle 75" StrokeThickness="2">
-                                        <Button Margin="12" BackgroundColor="#32142D" Command="{Binding FeedNowCommand}" CornerRadius="63" HeightRequest="126" Padding="0" Text="Karm teraz" TextColor="{StaticResource AccentPink}" WidthRequest="126" />
+                                    <Border WidthRequest="138" HeightRequest="138" Padding="14" BackgroundColor="#1C1120" Stroke="#8B2E67" StrokeShape="RoundRectangle 69" StrokeThickness="2">
+                                        <Grid>
+                                            <Button HorizontalOptions="Center" VerticalOptions="Center" BackgroundColor="#32142D" Command="{Binding FeedNowCommand}" CornerRadius="52" HeightRequest="104" Padding="0" Text="Karm teraz" TextColor="{StaticResource AccentPink}" WidthRequest="104" />
+                                        </Grid>
                                     </Border>
                                     <Label FontSize="12" HorizontalTextAlignment="Center" Text="{Binding FeedScheduleSummaryText}" TextColor="{StaticResource TextSecondary}" />
                                     <Button BackgroundColor="{StaticResource GhostButtonBg}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" Command="{Binding ShowFeederTabCommand}" CornerRadius="14" HeightRequest="38" Padding="14,0" Text="Zarzadzaj" TextColor="{StaticResource TextPrimary}" />
@@ -329,7 +331,7 @@
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                             <VerticalStackLayout Spacing="4">
                                 <Label Style="{StaticResource PageTitleStyle}" Text="Harmonogram" />
-                                <Label Style="{StaticResource PageSubtitleStyle}" Text="Okna czasowe i tryby pracy dla wszystkich sekcji sterownika." />
+                                <Label Style="{StaticResource PageSubtitleStyle}" Text="Okna czasowe i tryby pracy dla swiatla, filtra, napowietrzania i karmienia." />
                             </VerticalStackLayout>
                             <Button Grid.Column="1" BackgroundColor="{StaticResource AccentCyan}" Command="{Binding SaveSchedulesCommand}" CornerRadius="16" HeightRequest="46" IsEnabled="{Binding CanSaveSchedules}" Padding="18,0" Text="Zapisz zmiany" TextColor="#062133" />
                         </Grid>
@@ -387,8 +389,8 @@
                             </Border>
                         </Grid>
 
-                        <Grid ColumnDefinitions="1.1*,0.9*" ColumnSpacing="14">
-                            <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}">
+                        <Grid ColumnDefinitions="*" ColumnSpacing="14">
+                            <Border Style="{StaticResource PanelCardStyle}">
                                 <VerticalStackLayout Padding="16" Spacing="12">
                                     <Label Style="{StaticResource CardTitleStyle}" Text="Karmienie automatyczne" />
                                     <Grid ColumnDefinitions="160,*,*" ColumnSpacing="8">
@@ -398,19 +400,6 @@
                                     </Grid>
                                     <Label Style="{StaticResource TinyMutedTextStyle}" Text="{Binding FeedScheduleSummaryText}" />
                                     <Label FontSize="11" IsVisible="{Binding HasFeedScheduleError}" Text="{Binding FeedScheduleErrorText}" TextColor="{StaticResource AccentRed}" />
-                                </VerticalStackLayout>
-                            </Border>
-
-                            <Border Grid.Column="1" Style="{StaticResource PanelCardStyle}">
-                                <VerticalStackLayout Padding="16" Spacing="12">
-                                    <Label Style="{StaticResource CardTitleStyle}" Text="Grzalka i walidacja" />
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                                        <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HeaterTargetOptions}" SelectedItem="{Binding SelectedHeaterTarget}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HysteresisOptions}" SelectedItem="{Binding SelectedHysteresisOption}" TextColor="{StaticResource TextPrimary}" />
-                                    </Grid>
-                                    <Label Style="{StaticResource TinyMutedTextStyle}" Text="{Binding TemperatureSummaryText}" />
-                                    <Label FontSize="11" IsVisible="{Binding HasHeaterScheduleError}" Text="{Binding HeaterScheduleErrorText}" TextColor="{StaticResource AccentRed}" />
-                                    <Label FontSize="11" IsVisible="{Binding HasScheduleValidationSummary}" LineBreakMode="WordWrap" Text="{Binding ScheduleValidationSummary}" TextColor="{StaticResource TextSecondary}" />
                                 </VerticalStackLayout>
                             </Border>
                         </Grid>
@@ -431,8 +420,10 @@
                                 <Border Style="{StaticResource PanelCardStyle}" BackgroundColor="#14101E" Stroke="#5A2447">
                                     <VerticalStackLayout Padding="20" HorizontalOptions="Center" Spacing="14">
                                         <Label Style="{StaticResource SectionTitleStyle}" Text="Karmienie reczne" />
-                                        <Border WidthRequest="190" HeightRequest="190" BackgroundColor="#1C1220" Stroke="#A53B79" StrokeShape="RoundRectangle 95" StrokeThickness="3">
-                                            <Button Margin="17" BackgroundColor="#34142E" Command="{Binding FeedNowCommand}" CornerRadius="78" HeightRequest="156" Padding="0" Text="Karm teraz" TextColor="{StaticResource AccentPink}" WidthRequest="156" />
+                                        <Border WidthRequest="190" HeightRequest="190" Padding="18" BackgroundColor="#1C1220" Stroke="#A53B79" StrokeShape="RoundRectangle 95" StrokeThickness="3">
+                                            <Grid>
+                                                <Button HorizontalOptions="Center" VerticalOptions="Center" BackgroundColor="#34142E" Command="{Binding FeedNowCommand}" CornerRadius="72" HeightRequest="144" Padding="0" Text="Karm teraz" TextColor="{StaticResource AccentPink}" WidthRequest="144" />
+                                            </Grid>
                                         </Border>
                                         <Label FontSize="12" HorizontalTextAlignment="Center" Text="{Binding LatestResultText}" TextColor="{StaticResource TextSecondary}" />
                                     </VerticalStackLayout>
@@ -470,61 +461,61 @@
                         </Grid>
                     </VerticalStackLayout>
                 </ScrollView>
-                <ScrollView IsVisible="{Binding IsLogsTabSelected}">
-                    <ScrollView.Behaviors>
+                <Grid IsVisible="{Binding IsLogsTabSelected}" Padding="30" RowDefinitions="Auto,Auto,*" RowSpacing="20">
+                    <Grid.Behaviors>
                         <behaviors:EntranceAnimationBehavior />
-                    </ScrollView.Behaviors>
-                    <VerticalStackLayout Padding="30" Spacing="20">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                            <VerticalStackLayout Spacing="4">
-                                <Label Style="{StaticResource PageTitleStyle}" Text="Logi systemowe" />
-                                <Label Style="{StaticResource PageSubtitleStyle}" Text="Biezace logi aplikacji, komendy i wpisy krytyczne." />
-                            </VerticalStackLayout>
-                            <HorizontalStackLayout Grid.Column="1" Spacing="10">
-                                <Button BackgroundColor="{StaticResource GhostButtonBg}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" Command="{Binding ClearLogsViewCommand}" CornerRadius="16" HeightRequest="46" Padding="18,0" Text="Wyczysc widok" TextColor="{StaticResource TextPrimary}" />
-                                <Button BackgroundColor="#35141E" Command="{Binding ClearCriticalLogsCommand}" CornerRadius="16" HeightRequest="46" Padding="18,0" Text="Usun krytyczne" TextColor="{StaticResource AccentRed}" />
-                            </HorizontalStackLayout>
-                        </Grid>
+                    </Grid.Behaviors>
 
-                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
-                            <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="WSZYSTKICH" /><Label Style="{StaticResource MetricValueStyle}" Text="{Binding TotalLogCount}" /></VerticalStackLayout></Border>
-                            <Border Grid.Column="1" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="INFO" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding InfoLogCount}" TextColor="{StaticResource AccentCyan}" /></VerticalStackLayout></Border>
-                            <Border Grid.Column="2" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="KRYTYCZNYCH" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding CriticalLogCount}" TextColor="{StaticResource AccentRed}" /></VerticalStackLayout></Border>
-                            <Border Grid.Column="3" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="WIDOCZNYCH" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding VisibleLogCount}" TextColor="{StaticResource AccentGreen}" /></VerticalStackLayout></Border>
-                        </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Style="{StaticResource PageTitleStyle}" Text="Logi systemowe" />
+                            <Label Style="{StaticResource PageSubtitleStyle}" Text="Biezace logi aplikacji, komendy i wpisy krytyczne." />
+                        </VerticalStackLayout>
+                        <HorizontalStackLayout Grid.Column="1" Spacing="10">
+                            <Button BackgroundColor="{StaticResource GhostButtonBg}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" Command="{Binding ClearLogsViewCommand}" CornerRadius="16" HeightRequest="46" Padding="18,0" Text="Wyczysc widok" TextColor="{StaticResource TextPrimary}" />
+                            <Button BackgroundColor="#35141E" Command="{Binding ClearCriticalLogsCommand}" CornerRadius="16" HeightRequest="46" Padding="18,0" Text="Usun krytyczne" TextColor="{StaticResource AccentRed}" />
+                        </HorizontalStackLayout>
+                    </Grid>
 
-                        <Border Style="{StaticResource PanelCardStyle}" BackgroundColor="{StaticResource TerminalBg}">
-                            <VerticalStackLayout Padding="16" Spacing="12">
-                                <Grid ColumnDefinitions="Auto,Auto,*,220" ColumnSpacing="10">
-                                    <Button BackgroundColor="#0B2434" BorderColor="#1A5E78" BorderWidth="1" Command="{Binding ShowSystemLogsCommand}" CornerRadius="14" HeightRequest="40" Padding="16,0" Text="Biezace" TextColor="{StaticResource TextPrimary}" />
-                                    <Button Grid.Column="1" BackgroundColor="#35141E" BorderColor="#5B2435" BorderWidth="1" Command="{Binding ShowCriticalLogsCommand}" CornerRadius="14" HeightRequest="40" Padding="16,0" Text="Krytyczne" TextColor="{StaticResource TextPrimary}" />
-                                    <Label Grid.Column="2" VerticalOptions="Center" FontSize="12" Text="{Binding LatestResultText}" TextColor="{StaticResource TextSecondary}" />
-                                    <Entry Grid.Column="3" BackgroundColor="#0D182B" Placeholder="Szukaj..." Text="{Binding LogSearchText}" TextColor="{StaticResource TextPrimary}" />
-                                </Grid>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
+                        <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="WSZYSTKICH" /><Label Style="{StaticResource MetricValueStyle}" Text="{Binding TotalLogCount}" /></VerticalStackLayout></Border>
+                        <Border Grid.Column="1" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="INFO" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding InfoLogCount}" TextColor="{StaticResource AccentCyan}" /></VerticalStackLayout></Border>
+                        <Border Grid.Column="2" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="KRYTYCZNYCH" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding CriticalLogCount}" TextColor="{StaticResource AccentRed}" /></VerticalStackLayout></Border>
+                        <Border Grid.Column="3" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="WIDOCZNYCH" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding VisibleLogCount}" TextColor="{StaticResource AccentGreen}" /></VerticalStackLayout></Border>
+                    </Grid>
 
-                                <CollectionView HeightRequest="540" ItemsSource="{Binding VisibleLogs}" SelectionMode="None">
-                                    <CollectionView.ItemTemplate>
+                    <Border Grid.Row="2" Style="{StaticResource PanelCardStyle}" BackgroundColor="{StaticResource TerminalBg}">
+                        <Grid Padding="16" RowDefinitions="Auto,*" RowSpacing="12">
+                            <Grid ColumnDefinitions="Auto,Auto,*,220" ColumnSpacing="10">
+                                <Button BackgroundColor="#0B2434" BorderColor="#1A5E78" BorderWidth="1" Command="{Binding ShowSystemLogsCommand}" CornerRadius="14" HeightRequest="40" Padding="16,0" Text="Biezace" TextColor="{StaticResource TextPrimary}" />
+                                <Button Grid.Column="1" BackgroundColor="#35141E" BorderColor="#5B2435" BorderWidth="1" Command="{Binding ShowCriticalLogsCommand}" CornerRadius="14" HeightRequest="40" Padding="16,0" Text="Krytyczne" TextColor="{StaticResource TextPrimary}" />
+                                <Label Grid.Column="2" VerticalOptions="Center" FontSize="12" Text="{Binding LatestResultText}" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Grid.Column="3" BackgroundColor="#0D182B" Placeholder="Szukaj..." Text="{Binding LogSearchText}" TextColor="{StaticResource TextPrimary}" />
+                            </Grid>
+
+                            <ScrollView Grid.Row="1" IsVisible="{Binding HasVisibleLogs}">
+                                <VerticalStackLayout Spacing="0" BindableLayout.ItemsSource="{Binding VisibleLogs}">
+                                    <BindableLayout.ItemTemplate>
                                         <DataTemplate x:DataType="viewModels:ActivityLogEntry">
                                             <Border Margin="0,0,0,8" Padding="12" BackgroundColor="#0C1727" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 12">
                                                 <Grid ColumnDefinitions="64,80,*" ColumnSpacing="10">
                                                     <Label FontFamily="OpenSansSemibold" FontSize="10" Text="{Binding LevelText}" TextColor="{Binding LevelAccentColor}" />
-                                                    <Label Grid.Column="1" FontSize="11" Text="{Binding Timestamp.LocalDateTime, StringFormat='{}{0:HH:mm:ss}'}" TextColor="{StaticResource TextMuted}" />
+                                                    <Label Grid.Column="1" FontSize="11" Text="{Binding TimestampText}" TextColor="{StaticResource TextMuted}" />
                                                     <Label Grid.Column="2" FontSize="12" LineBreakMode="WordWrap" Text="{Binding Message}" TextColor="{StaticResource TextPrimary}" />
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
-                                    </CollectionView.ItemTemplate>
-                                    <CollectionView.EmptyView>
-                                        <VerticalStackLayout Padding="18" Spacing="6">
-                                            <Label FontFamily="OpenSansSemibold" FontSize="14" Text="Brak wpisow" TextColor="{StaticResource TextPrimary}" />
-                                            <Label FontSize="12" Text="Filtr nie zwrocil zadnych logow." TextColor="{StaticResource TextMuted}" />
-                                        </VerticalStackLayout>
-                                    </CollectionView.EmptyView>
-                                </CollectionView>
+                                    </BindableLayout.ItemTemplate>
+                                </VerticalStackLayout>
+                            </ScrollView>
+
+                            <VerticalStackLayout Grid.Row="1" IsVisible="{Binding HasNoVisibleLogs}" Padding="18" Spacing="6">
+                                <Label FontFamily="OpenSansSemibold" FontSize="14" Text="Brak wpisow" TextColor="{StaticResource TextPrimary}" />
+                                <Label FontSize="12" Text="Filtr nie zwrocil zadnych logow." TextColor="{StaticResource TextMuted}" />
                             </VerticalStackLayout>
-                        </Border>
-                    </VerticalStackLayout>
-                </ScrollView>
+                        </Grid>
+                    </Border>
+                </Grid>
                 <ScrollView IsVisible="{Binding IsSettingsTabSelected}">
                     <ScrollView.Behaviors>
                         <behaviors:EntranceAnimationBehavior />
