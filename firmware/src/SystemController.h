@@ -33,12 +33,17 @@ public:
 
   // Funkcja zarzadzania energia, wywolywana glownie przez VideoTask lub loop
   static void handlePowerManagement(U8G2 *display, AquariumAnimation *anim);
-  static bool canEnterLightSleep(unsigned long nowMs, unsigned long lastActionMs);
+  static bool canEnterLightSleep(unsigned long nowMs,
+                                 unsigned long lastActionMs);
   static void enterNightLightSleep();
 
   // Publiczna instancja RTC do globalnych funkcji czasowych
   static RTC_DS3231 rtc;
   static bool isRtcReady();
+
+  // Diagnostyka resetow
+  static int getLastResetReason();
+  static const char *getLastResetLabel();
 
 private:
   static void hardwareSetup();
@@ -60,6 +65,7 @@ private:
   static uint8_t tempInvalidReadCount;
   static bool tempSensorErrorLogged;
   static bool rtcReady;
+  static int lastResetReason;
 
   // Opcjonalne obiekty Timera by nie zamrazac petli
   static unsigned long lastTempCheckMs;

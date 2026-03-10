@@ -781,10 +781,10 @@ public sealed class MainViewModel : ObservableObject
 
 			if (SelectedDevice is not null)
 			{
-				return $"Wybrane urzadzenie: {SelectedDevice.DisplayName}. Uzyj Polacz, aby zsynchronizowac status.";
+				return $"Wybrane urzadzenie: {SelectedDevice.DisplayName}. Przed Polacz otworz ekran Bluetooth na OLED sterownika, aby zobaczyc PIN do parowania.";
 			}
 
-			return "Zeskanuj urzadzenia BLE i polacz kontroler, aby odczytac status, harmonogramy i profil walidacji.";
+			return "Zeskanuj urzadzenia BLE i polacz kontroler. Przy parowaniu otworz ekran Bluetooth na OLED sterownika i potwierdz PIN w Windows.";
 		}
 	}
 
@@ -1054,7 +1054,7 @@ public sealed class MainViewModel : ObservableObject
 
 		try
 		{
-			StatusMessage = $"Laczenie z {SelectedDevice.DisplayName}...";
+			StatusMessage = $"Laczenie z {SelectedDevice.DisplayName}... Otworz ekran Bluetooth na OLED sterownika i czekaj na okno parowania Windows.";
 			await _bluetoothService.ConnectAsync(SelectedDevice.Id);
 			UpdateConnectionState();
 			await RefreshStatusAsync();
@@ -1601,6 +1601,7 @@ public sealed class MainViewModel : ObservableObject
 			"invalid_hysteresis" => "Histereza musi miescic sie w zakresie 0.1-5.0 C.",
 			"invalid_feed_time" => "Karmienie wymaga godziny w kroku 5 minut.",
 			"invalid_feed_mode" => "Niepoprawny tryb karmienia.",
+			"rate_limited" => "Za szybko. Odczekaj chwile i sprobuj ponownie.",
 			"invalid_payload" => "Sterownik odrzucil payload BLE.",
 			"save_failed" => "Sterownik nie zapisal konfiguracji.",
 			_ => string.IsNullOrWhiteSpace(code) ? "Sterownik zwrocil nieznany blad." : code

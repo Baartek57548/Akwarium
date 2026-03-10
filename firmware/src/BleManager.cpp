@@ -14,8 +14,8 @@
 #include <ArduinoJson.h>
 #include <BLE2902.h>
 #include <BLEDevice.h>
-#include <BLEServer.h>
 #include <BLESecurity.h>
+#include <BLEServer.h>
 #include <BLEUtils.h>
 #include <esp_err.h>
 #include <esp_ota_ops.h>
@@ -46,7 +46,11 @@ static BLECharacteristic *pCharOtaData = nullptr;
 
 static volatile bool deviceConnected = false;
 static bool bleInitialized = false;
-static bool bleAdvertising = false;
+static volatile bool bleAdvertising = false;
+static volatile uint8_t connectedClientCount = 0;
+static volatile bool bleAdvertisingDesired = false;
+static volatile bool bleAuthenticated = false;
+static volatile bool blePostAuthSyncPending = false;
 static volatile bool resumeAdvertisingPending = false;
 static volatile unsigned long resumeAdvertisingAtMs = 0;
 static unsigned long lastNotifyTime = 0;
@@ -65,6 +69,8 @@ static char bleOtaDeclaredVersion[32] = "";
 static char bleOtaDeclaredProject[32] = "";
 
 static const unsigned long NOTIFY_INTERVAL_MS = 2000;
+static const unsigned long BLE_COMMAND_MIN_INTERVAL_MS = 120;
+static const unsigned long BLE_SETTINGS_MIN_INTERVAL_MS = 250;
 static const unsigned long RESUME_ADVERTISING_DELAY_MS = 150;
 static const unsigned long BLE_OTA_STALL_TIMEOUT_MS = 15000;
 static const unsigned long BLE_OTA_PROGRESS_NOTIFY_INTERVAL_MS = 300;
@@ -73,13 +79,168 @@ static const uint16_t BLE_PREFERRED_MTU = 185;
 static const char *BLE_DEVICE_NAME = "Akwarium_BLE";
 static const size_t BLE_OTA_CHUNK_HEADER_SIZE = 4;
 static const size_t BLE_OTA_RECOMMENDED_DATA_CHUNK_BYTES = 160;
+static unsigned long lastCommandAtMs = 0;
+static unsigned long lastSettingsAtMs = 0;
+static portMUX_TYPE bleStateMux = portMUX_INITIALIZER_UNLOCKED;
+
+// --- Deferred BLE command queue (flag-based) ---
+// Komendy BLE nie moga byc wykonywane bezposrednio w callbacku BLE,
+// poniewaz stos NimBLE jest za maly (~4KB) na operacje sprzetowe
+// i alokacje JSON, co prowadzi do watchdog reset / stack overflow.
+struct PendingBleCommand {
+  enum class Type : uint8_t {
+    NONE,
+    FEED_NOW,
+    SET_SERVO,
+    CLEAR_SERVO,
+    CLEAR_LOGS
+  };
+  Type type = Type::NONE;
+  int servoAngle = 0;
+};
+static volatile bool hasPendingBleCommand = false;
+static PendingBleCommand pendingBleCommand = {};
+
+static void abortBleOtaSession(const char *code, const char *reason);
+
+static void cleanupExcessBonds(int maxBonds) {
+  int devNum = esp_ble_get_bond_device_num();
+  if (devNum <= maxBonds)
+    return;
+
+  esp_ble_bond_dev_t *devList =
+      (esp_ble_bond_dev_t *)malloc(sizeof(esp_ble_bond_dev_t) * devNum);
+  if (!devList)
+    return;
+
+  esp_ble_get_bond_device_list(&devNum, devList);
+  for (int i = 0; i < devNum - maxBonds; i++) {
+    esp_ble_remove_bond_device(devList[i].bd_addr);
+    Serial.printf("[BLE] Usunieto stary bond #%d\n", i);
+  }
+  free(devList);
+}
+
+static void setBleAdvertisingDesired(bool desired) {
+  portENTER_CRITICAL(&bleStateMux);
+  bleAdvertisingDesired = desired;
+  portEXIT_CRITICAL(&bleStateMux);
+}
+
+static bool getBleAdvertisingDesired() {
+  portENTER_CRITICAL(&bleStateMux);
+  const bool desired = bleAdvertisingDesired;
+  portEXIT_CRITICAL(&bleStateMux);
+  return desired;
+}
+
+static void cacheConnectionCount(uint32_t count) {
+  const uint8_t capped = (count > 255U) ? 255U : static_cast<uint8_t>(count);
+  portENTER_CRITICAL(&bleStateMux);
+  connectedClientCount = capped;
+  deviceConnected = (count > 0U);
+  portEXIT_CRITICAL(&bleStateMux);
+}
+
+static void setBleAdvertisingActive(bool active) {
+  portENTER_CRITICAL(&bleStateMux);
+  bleAdvertising = active;
+  portEXIT_CRITICAL(&bleStateMux);
+}
+
+static void setBleAuthenticated(bool authenticated) {
+  portENTER_CRITICAL(&bleStateMux);
+  bleAuthenticated = authenticated;
+  portEXIT_CRITICAL(&bleStateMux);
+}
+
+static bool isBleAuthenticated() {
+  portENTER_CRITICAL(&bleStateMux);
+  const bool authenticated = bleAuthenticated;
+  portEXIT_CRITICAL(&bleStateMux);
+  return authenticated;
+}
+
+static void setBlePostAuthSyncPending(bool pending) {
+  portENTER_CRITICAL(&bleStateMux);
+  blePostAuthSyncPending = pending;
+  portEXIT_CRITICAL(&bleStateMux);
+}
+
+static bool isBlePostAuthSyncPending() {
+  portENTER_CRITICAL(&bleStateMux);
+  const bool pending = blePostAuthSyncPending;
+  portEXIT_CRITICAL(&bleStateMux);
+  return pending;
+}
 
 static void refreshConnectionState() {
   if (pServer) {
-    deviceConnected = (pServer->getConnectedCount() > 0);
+    cacheConnectionCount(pServer->getConnectedCount());
   } else {
-    deviceConnected = false;
+    cacheConnectionCount(0);
   }
+}
+
+static void startAdvertisingNow() {
+  if (!bleInitialized || bleAdvertising) {
+    return;
+  }
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  if (!pAdvertising) {
+    return;
+  }
+
+  pAdvertising->start();
+  setBleAdvertisingActive(true);
+  resumeAdvertisingPending = false;
+  lastNotifyTime = 0;
+  refreshConnectionState();
+  Serial.println("[BLE] Advertising wlaczony.");
+}
+
+static void stopAdvertisingNow() {
+  if (!bleInitialized || !bleAdvertising) {
+    return;
+  }
+
+  if (bleOtaActive || bleOtaHandle != 0) {
+    abortBleOtaSession(
+        "ota_aborted",
+        "Sesja BLE OTA zostala przerwana podczas zatrzymywania BLE.");
+  }
+
+  if (pServer) {
+    std::map<uint16_t, conn_status_t> peers = pServer->getPeerDevices(false);
+    for (const auto &entry : peers) {
+      pServer->disconnect(entry.first);
+    }
+  }
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  if (pAdvertising) {
+    pAdvertising->stop();
+  }
+
+  setBleAdvertisingActive(false);
+  setBleAuthenticated(false);
+  setBlePostAuthSyncPending(false);
+  resumeAdvertisingPending = false;
+  resumeAdvertisingAtMs = 0;
+  cacheConnectionCount(0);
+  lastNotifyTime = 0;
+  Serial.println("[BLE] Advertising wylaczony.");
+}
+
+static bool isRateLimited(unsigned long &lastAtMs,
+                          unsigned long minIntervalMs) {
+  unsigned long nowMs = millis();
+  if (lastAtMs != 0 && (nowMs - lastAtMs) < minIntervalMs) {
+    return true;
+  }
+  lastAtMs = nowMs;
+  return false;
 }
 
 static bool tryGetFloat(JsonObjectConst obj, const char *key, float &out) {
@@ -145,13 +306,13 @@ static bool tryGetInt(JsonObjectConst obj, const char *key, long &out) {
 }
 
 static void publishResult(const char *type, const char *code) {
-  if (!pCharResult || !deviceConnected) {
+  if (!bleInitialized || !pCharResult || !deviceConnected ||
+      !isBleAuthenticated()) {
     return;
   }
 
   char json[96];
-  snprintf(json, sizeof(json), "{\"t\":\"%s\",\"c\":\"%s\"}", type,
-           code);
+  snprintf(json, sizeof(json), "{\"t\":\"%s\",\"c\":\"%s\"}", type, code);
   pCharResult->setValue((uint8_t *)json, strlen(json));
   pCharResult->notify();
 }
@@ -171,7 +332,8 @@ static void setOtaLastState(const char *type, const char *code) {
 }
 
 static void populateValidationJson(JsonObject validation) {
-  const ValidationProfileSnapshot profile = ConfigValidation::getValidationProfile();
+  const ValidationProfileSnapshot profile =
+      ConfigValidation::getValidationProfile();
 
   validation["ms"] = profile.minuteStep;
   validation["sch"] = "schedule|always_on|always_off";
@@ -199,10 +361,10 @@ static void populateValidationJson(JsonObject validation) {
   preOff["step"] = 1;
 }
 
-static void buildDeviceInfoJson(char *json, size_t jsonSize) {
+static String buildDeviceInfoJsonString() {
   const FirmwareRuntimeInfo firmwareInfo = FirmwareInfo::getRuntimeInfo();
 
-  StaticJsonDocument<896> doc;
+  DynamicJsonDocument doc(896);
   doc["nm"] = firmwareInfo.firmwareName;
   doc["ver"] = firmwareInfo.firmwareVersion;
   doc["ref"] = firmwareInfo.buildRef;
@@ -220,7 +382,10 @@ static void buildDeviceInfoJson(char *json, size_t jsonSize) {
   doc["chunk"] = BLE_OTA_RECOMMENDED_DATA_CHUNK_BYTES;
   populateValidationJson(doc.createNestedObject("val"));
 
-  serializeJson(doc, json, jsonSize);
+  String json;
+  json.reserve(384);
+  serializeJson(doc, json);
+  return json;
 }
 
 static void updateDeviceInfoValue() {
@@ -228,30 +393,31 @@ static void updateDeviceInfoValue() {
     return;
   }
 
-  char json[768];
-  buildDeviceInfoJson(json, sizeof(json));
-  pCharDeviceInfo->setValue((uint8_t *)json, strlen(json));
+  String json = buildDeviceInfoJsonString();
+  pCharDeviceInfo->setValue((uint8_t *)json.c_str(), json.length());
 }
 
-static void buildOtaStateJson(char *json, size_t jsonSize) {
+static String buildOtaStateJsonString() {
   unsigned long rebootDelayMs = 0;
   if (bleOtaRestartPending) {
     long deltaMs = static_cast<long>(bleOtaRestartAtMs - millis());
     rebootDelayMs = deltaMs > 0 ? static_cast<unsigned long>(deltaMs) : 0UL;
   }
 
-  snprintf(json, jsonSize,
+  char json[256];
+  snprintf(json, sizeof(json),
            "{\"t\":\"%s\",\"c\":\"%s\",\"busy\":%s,\"ota\":\"%s\","
            "\"rx\":%u,\"size\":%u,\"chunk\":%u,\"reboot\":%lu,"
            "\"ver\":\"%s\",\"prj\":\"%s\"}",
-           bleOtaLastType, bleOtaLastCode,
-           bleOtaActive ? "true" : "false", OtaManager::getActiveTransport(),
+           bleOtaLastType, bleOtaLastCode, bleOtaActive ? "true" : "false",
+           OtaManager::getActiveTransport(),
            static_cast<unsigned int>(bleOtaReceivedSize),
            static_cast<unsigned int>(bleOtaExpectedSize),
            static_cast<unsigned int>(BLE_OTA_RECOMMENDED_DATA_CHUNK_BYTES),
            rebootDelayMs,
            bleOtaDeclaredVersion[0] != '\0' ? bleOtaDeclaredVersion : "",
            bleOtaDeclaredProject[0] != '\0' ? bleOtaDeclaredProject : "");
+  return String(json);
 }
 
 static void publishOtaState(const char *type, const char *code) {
@@ -262,12 +428,11 @@ static void publishOtaState(const char *type, const char *code) {
     return;
   }
 
-  char json[256];
-  buildOtaStateJson(json, sizeof(json));
-  pCharOtaControl->setValue((uint8_t *)json, strlen(json));
+  String json = buildOtaStateJsonString();
+  pCharOtaControl->setValue((uint8_t *)json.c_str(), json.length());
 
   refreshConnectionState();
-  if (deviceConnected) {
+  if (deviceConnected && isBleAuthenticated()) {
     pCharOtaControl->notify();
   }
 }
@@ -298,7 +463,7 @@ static void abortBleOtaSession(const char *code, const char *reason) {
   publishOtaState("err", code);
 }
 
-static void buildStatusJson(char *json, size_t jsonSize) {
+static String buildStatusJsonString() {
   SharedStateData snap = SharedState::getSnapshot();
   const Config cfg = ConfigManager::getCopy();
 
@@ -307,13 +472,9 @@ static void buildStatusJson(char *json, size_t jsonSize) {
     vBat = 0.0f;
   }
 
-  uint8_t clients = 0;
-  if (pServer) {
-    uint32_t count = pServer->getConnectedCount();
-    clients = (count > 255) ? 255 : static_cast<uint8_t>(count);
-  }
+  const uint8_t clients = connectedClientCount;
 
-  StaticJsonDocument<640> doc;
+  DynamicJsonDocument doc(768);
   doc["tmp"] = isnan(snap.temperature) ? -99.9f : snap.temperature;
   doc["tar"] = cfg.targetTemp;
   doc["thr"] = cfg.targetTemp;
@@ -333,8 +494,16 @@ static void buildStatusJson(char *json, size_t jsonSize) {
   doc["lm"] = cfg.lightMode;
   doc["am"] = cfg.aerationMode;
   doc["fm"] = cfg.filterMode;
+  doc["rst"] = SystemController::getLastResetReason();
+  const char *rstLabel = SystemController::getLastResetLabel();
+  if (rstLabel != nullptr) {
+    doc["err"] = rstLabel;
+  }
 
-  serializeJson(doc, json, jsonSize);
+  String json;
+  json.reserve(256);
+  serializeJson(doc, json);
+  return json;
 }
 
 class MySecurityCallbacks : public BLESecurityCallbacks {
@@ -357,10 +526,18 @@ class MySecurityCallbacks : public BLESecurityCallbacks {
 
   void onAuthenticationComplete(esp_ble_auth_cmpl_t auth_cmpl) override {
     if (!auth_cmpl.success) {
+      setBleAuthenticated(false);
+      setBlePostAuthSyncPending(false);
       Serial.printf("[BLE] Autoryzacja nieudana, reason=%d\n",
                     auth_cmpl.fail_reason);
+      // Usun uszkodzony bond, zeby ponowne parowanie bylo mozliwe
+      esp_ble_remove_bond_device(auth_cmpl.bd_addr);
+      Serial.println("[BLE] Usunięto bond po nieudanej autoryzacji.");
     } else {
+      setBleAuthenticated(true);
+      setBlePostAuthSyncPending(true);
       Serial.println("[BLE] Autoryzacja zakonczona sukcesem (bonded). ");
+      cleanupExcessBonds(4);
     }
   }
 };
@@ -368,26 +545,26 @@ class MySecurityCallbacks : public BLESecurityCallbacks {
 class MyServerCallbacks : public BLEServerCallbacks {
 private:
   static void handleConnect(BLEServer *server) {
-    deviceConnected = true;
+    cacheConnectionCount(server ? server->getConnectedCount() : 1U);
+    setBleAuthenticated(false);
+    setBlePostAuthSyncPending(false);
     resumeAdvertisingPending = false;
     lastNotifyTime = 0;
 
     uint32_t count = server ? server->getConnectedCount() : 1;
     Serial.printf("[BLE] Client polaczony. Klienci: %lu\n",
                   static_cast<unsigned long>(count));
-    BleManager::notifyStatus();
-    updateDeviceInfoValue();
-    publishOtaState("info", bleOtaActive ? "ota_receiving" : "ready");
-    publishResult("ack", "connected");
   }
 
   static void handleDisconnect(BLEServer *server) {
     uint32_t count = server ? server->getConnectedCount() : 0;
-    deviceConnected = (count > 0);
+    cacheConnectionCount(count);
+    setBleAuthenticated(false);
+    setBlePostAuthSyncPending(false);
     Serial.printf("[BLE] Client rozlaczony. Klienci: %lu\n",
                   static_cast<unsigned long>(count));
 
-    if (bleAdvertising && !deviceConnected) {
+    if (bleAdvertising && !deviceConnected && getBleAdvertisingDesired()) {
       resumeAdvertisingPending = true;
       resumeAdvertisingAtMs = millis() + RESUME_ADVERTISING_DELAY_MS;
     }
@@ -412,16 +589,24 @@ public:
 
 class StatusCallbacks : public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic *pCharacteristic) override {
-    char json[640];
-    buildStatusJson(json, sizeof(json));
-    pCharacteristic->setValue((uint8_t *)json, strlen(json));
+    if (!bleInitialized || !pCharacteristic)
+      return;
+    String json = buildStatusJsonString();
+    pCharacteristic->setValue((uint8_t *)json.c_str(), json.length());
   }
 };
 
 class CommandCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) override {
+    if (!bleInitialized || !pCharacteristic)
+      return;
     if (OtaManager::isOtaInProgress()) {
       publishResult("err", "ota_busy");
+      return;
+    }
+
+    if (isRateLimited(lastCommandAtMs, BLE_COMMAND_MIN_INTERVAL_MS)) {
+      publishResult("err", "rate_limited");
       return;
     }
 
@@ -449,10 +634,17 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
     PowerManager::registerActivity();
     Serial.println("[BLE] Command action: " + String(action));
 
+    // --- Deferred command execution ---
+    // Komendy hardware NIE SA wykonywane bezposrednio w callbacku BLE!
+    // Ustawiamy flage, a wykonanie nastapi w BleManager::update() na głównym
+    // wątku.
+
     if (strcmp(action, "feed_now") == 0) {
-      SystemController::feedNow();
+      portENTER_CRITICAL(&bleStateMux);
+      pendingBleCommand.type = PendingBleCommand::Type::FEED_NOW;
+      hasPendingBleCommand = true;
+      portEXIT_CRITICAL(&bleStateMux);
       publishResult("ack", "feed_now");
-      BleManager::notifyStatus();
       return;
     }
 
@@ -462,21 +654,29 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
         publishResult("err", "missing_angle");
         return;
       }
-      SystemController::setManualServo(constrain(static_cast<int>(angle), 0, 90));
+      portENTER_CRITICAL(&bleStateMux);
+      pendingBleCommand.type = PendingBleCommand::Type::SET_SERVO;
+      pendingBleCommand.servoAngle = constrain(static_cast<int>(angle), 0, 90);
+      hasPendingBleCommand = true;
+      portEXIT_CRITICAL(&bleStateMux);
       publishResult("ack", "set_servo");
-      BleManager::notifyStatus();
       return;
     }
 
     if (strcmp(action, "clear_servo") == 0) {
-      SystemController::clearManualServo();
+      portENTER_CRITICAL(&bleStateMux);
+      pendingBleCommand.type = PendingBleCommand::Type::CLEAR_SERVO;
+      hasPendingBleCommand = true;
+      portEXIT_CRITICAL(&bleStateMux);
       publishResult("ack", "clear_servo");
-      BleManager::notifyStatus();
       return;
     }
 
     if (strcmp(action, "clear_critical_logs") == 0) {
-      LogManager::clearCriticalLogs();
+      portENTER_CRITICAL(&bleStateMux);
+      pendingBleCommand.type = PendingBleCommand::Type::CLEAR_LOGS;
+      hasPendingBleCommand = true;
+      portEXIT_CRITICAL(&bleStateMux);
       publishResult("ack", "clear_logs");
       return;
     }
@@ -487,8 +687,15 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
 
 class SettingsCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) override {
+    if (!bleInitialized || !pCharacteristic)
+      return;
     if (OtaManager::isOtaInProgress()) {
       publishResult("err", "ota_busy");
+      return;
+    }
+
+    if (isRateLimited(lastSettingsAtMs, BLE_SETTINGS_MIN_INTERVAL_MS)) {
+      publishResult("err", "rate_limited");
       return;
     }
 
@@ -753,9 +960,9 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
     Config cfg = ConfigManager::getCopy();
     ConfigValidationResult validation = {};
     if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
-      publishResult("err",
-                    validation.errorCode[0] != '\0' ? validation.errorCode
-                                                    : "invalid_values");
+      publishResult("err", validation.errorCode[0] != '\0'
+                               ? validation.errorCode
+                               : "invalid_values");
       return;
     }
 
@@ -764,14 +971,20 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    BleManager::notifyStatus();
+    // notifyStatus() NIE jest wołane tutaj - ciezkie alokacje
+    // (DynamicJsonDocument
+    // + String + serializeJson) na stosie BLE callbacku (~4KB) powodowaly
+    // stack overflow -> LoadProhibited panic. Status zostanie zsynchronizowany
+    // automatycznie w BleManager::update() co 2 sekundy.
     Serial.println("[BLE] Settings updated & saved.");
     publishResult("ack", "settings_saved");
   }
 
   void onRead(BLECharacteristic *pCharacteristic) override {
+    if (!bleInitialized || !pCharacteristic)
+      return;
     const Config cfg = ConfigManager::getCopy();
-    StaticJsonDocument<640> doc;
+    DynamicJsonDocument doc(640);
     doc["lm"] = cfg.lightMode;
     doc["tar"] = cfg.targetTemp;
     doc["hm"] = cfg.heaterMode;
@@ -795,28 +1008,42 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
     doc["feM"] = cfg.filterMinuteOff;
     doc["spO"] = cfg.servoPreOffMins;
 
-    char json[640];
-    serializeJson(doc, json, sizeof(json));
+    String json;
+    json.reserve(192);
+    serializeJson(doc, json);
+    pCharacteristic->setValue((uint8_t *)json.c_str(), json.length());
+  }
+};
+
+class ResultCallbacks : public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic *pCharacteristic) override {
+    if (!bleInitialized || !pCharacteristic)
+      return;
+    const char *json = "{\"t\":\"info\",\"c\":\"result\"}";
     pCharacteristic->setValue((uint8_t *)json, strlen(json));
   }
 };
 
 class DeviceInfoCallbacks : public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic *pCharacteristic) override {
-    char json[768];
-    buildDeviceInfoJson(json, sizeof(json));
-    pCharacteristic->setValue((uint8_t *)json, strlen(json));
+    if (!bleInitialized || !pCharacteristic)
+      return;
+    String json = buildDeviceInfoJsonString();
+    pCharacteristic->setValue((uint8_t *)json.c_str(), json.length());
   }
 };
 
 class OtaControlCallbacks : public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic *pCharacteristic) override {
-    char json[256];
-    buildOtaStateJson(json, sizeof(json));
-    pCharacteristic->setValue((uint8_t *)json, strlen(json));
+    if (!bleInitialized || !pCharacteristic)
+      return;
+    String json = buildOtaStateJsonString();
+    pCharacteristic->setValue((uint8_t *)json.c_str(), json.length());
   }
 
   void onWrite(BLECharacteristic *pCharacteristic) override {
+    if (!bleInitialized || !pCharacteristic)
+      return;
     std::string rawValue = pCharacteristic->getValue();
     if (rawValue.empty()) {
       publishOtaState("err", "ota_empty_request");
@@ -989,8 +1216,7 @@ class OtaDataCallbacks : public BLECharacteristicCallbacks {
 
     PowerManager::registerActivity();
 
-    const uint8_t *rawData =
-        reinterpret_cast<const uint8_t *>(rawValue.data());
+    const uint8_t *rawData = reinterpret_cast<const uint8_t *>(rawValue.data());
     const uint32_t chunkOffset = decodeUInt32LE(rawData);
     const size_t chunkSize = rawValue.size() - BLE_OTA_CHUNK_HEADER_SIZE;
 
@@ -1054,7 +1280,10 @@ void BleManager::init() {
   pSecurity->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
   pSecurity->setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
   pSecurity->setKeySize(16);
-  pSecurity->setCapability(ESP_IO_CAP_OUT);
+  pSecurity->setCapability(ESP_IO_CAP_KBDISP);
+
+  // Usun nadmiarowe bondy z NVS przy starcie
+  cleanupExcessBonds(4);
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -1109,9 +1338,9 @@ void BleManager::init() {
 
   // Characteristic: OTA control (read/write/notify)
   pCharOtaControl = pService->createCharacteristic(
-      CHAR_OTA_CONTROL_UUID,
-      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE |
-          BLECharacteristic::PROPERTY_NOTIFY);
+      CHAR_OTA_CONTROL_UUID, BLECharacteristic::PROPERTY_READ |
+                                 BLECharacteristic::PROPERTY_WRITE |
+                                 BLECharacteristic::PROPERTY_NOTIFY);
   pCharOtaControl->setAccessPermissions(ESP_GATT_PERM_READ_ENCRYPTED |
                                         ESP_GATT_PERM_WRITE_ENCRYPTED);
   pCharOtaControl->setCallbacks(new OtaControlCallbacks());
@@ -1123,18 +1352,23 @@ void BleManager::init() {
   // Characteristic: OTA data stream (write)
   pCharOtaData = pService->createCharacteristic(
       CHAR_OTA_DATA_UUID,
-      BLECharacteristic::PROPERTY_WRITE |
-          BLECharacteristic::PROPERTY_WRITE_NR);
+      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
   pCharOtaData->setAccessPermissions(ESP_GATT_PERM_WRITE_ENCRYPTED);
   pCharOtaData->setCallbacks(new OtaDataCallbacks());
 
   pService->start();
 
-  char initialStatus[640];
-  buildStatusJson(initialStatus, sizeof(initialStatus));
-  pCharStatus->setValue((uint8_t *)initialStatus, strlen(initialStatus));
-  const char *resultReady = "{\"t\":\"info\",\"c\":\"ready\"}";
-  pCharResult->setValue((uint8_t *)resultReady, strlen(resultReady));
+  if (pCharStatus) {
+    String initialStatus = buildStatusJsonString();
+    pCharStatus->setValue((uint8_t *)initialStatus.c_str(),
+                          initialStatus.length());
+  }
+
+  if (pCharResult) {
+    const char *resultReady = "{\"t\":\"info\",\"c\":\"ready\"}";
+    pCharResult->setValue((uint8_t *)resultReady, strlen(resultReady));
+  }
+
   updateDeviceInfoValue();
   publishOtaState("info", "ready");
 
@@ -1145,66 +1379,32 @@ void BleManager::init() {
   pAdvertising->setMaxPreferred(0x12);
 
   bleInitialized = true;
-  bleAdvertising = false;
+  setBleAdvertisingActive(false);
+  setBleAdvertisingDesired(false);
+  setBleAuthenticated(false);
+  setBlePostAuthSyncPending(false);
+  cacheConnectionCount(0);
   lastNotifyTime = 0;
-  deviceConnected = false;
   resumeAdvertisingPending = false;
   resumeAdvertisingAtMs = 0;
   clearBleOtaSessionState(true);
   setOtaLastState("info", "ready");
-  Serial.println("[BLE] Serwer gotowy. Advertising uruchamiany z menu Bluetooth.");
+  Serial.println(
+      "[BLE] Serwer gotowy. Advertising uruchamiany z menu Bluetooth.");
 }
 
 void BleManager::start() {
   if (!bleInitialized) {
-    init();
-  }
-
-  if (bleAdvertising) {
     return;
   }
-
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  if (!pAdvertising) {
-    return;
-  }
-
-  pAdvertising->start();
-  bleAdvertising = true;
-  resumeAdvertisingPending = false;
-  lastNotifyTime = 0;
-  refreshConnectionState();
-  Serial.println("[BLE] Advertising wlaczony.");
+  setBleAdvertisingDesired(true);
 }
 
 void BleManager::stop() {
   if (!bleInitialized) {
     return;
   }
-
-  if (bleOtaActive || bleOtaHandle != 0) {
-    abortBleOtaSession("ota_aborted",
-                       "Sesja BLE OTA zostala przerwana podczas zatrzymywania BLE.");
-  }
-
-  if (pServer) {
-    std::map<uint16_t, conn_status_t> peers = pServer->getPeerDevices(false);
-    for (const auto &entry : peers) {
-      pServer->disconnect(entry.first);
-    }
-  }
-
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  if (pAdvertising) {
-    pAdvertising->stop();
-  }
-
-  bleAdvertising = false;
-  resumeAdvertisingPending = false;
-  resumeAdvertisingAtMs = 0;
-  deviceConnected = false;
-  lastNotifyTime = 0;
-  Serial.println("[BLE] Advertising wylaczony.");
+  setBleAdvertisingDesired(false);
 }
 
 void BleManager::notifyStatus() {
@@ -1212,17 +1412,56 @@ void BleManager::notifyStatus() {
     return;
   }
 
-  char json[640];
-  buildStatusJson(json, sizeof(json));
-  pCharStatus->setValue((uint8_t *)json, strlen(json));
-
   refreshConnectionState();
-  if (deviceConnected) {
+  if (deviceConnected && isBleAuthenticated()) {
+    unsigned long nowMs = millis();
+    if (lastNotifyTime != 0 && (nowMs - lastNotifyTime < NOTIFY_INTERVAL_MS)) {
+      return;
+    }
+
+    String json = buildStatusJsonString();
+    pCharStatus->setValue((uint8_t *)json.c_str(), json.length());
     pCharStatus->notify();
+    lastNotifyTime = nowMs;
   }
 }
 
 void BleManager::update() {
+  // --- Deferred BLE command processing ---
+  // Komendy odlozone z callbacku BLE sa teraz wykonywane na głównym wątku
+  // z pelnym stosem, co zapobiega watchdog reset / stack overflow.
+  if (hasPendingBleCommand) {
+    PendingBleCommand cmd;
+    portENTER_CRITICAL(&bleStateMux);
+    cmd = pendingBleCommand;
+    pendingBleCommand.type = PendingBleCommand::Type::NONE;
+    hasPendingBleCommand = false;
+    portEXIT_CRITICAL(&bleStateMux);
+
+    switch (cmd.type) {
+    case PendingBleCommand::Type::FEED_NOW:
+      SystemController::feedNow();
+      Serial.println("[BLE] Deferred: feedNow executed.");
+      break;
+    case PendingBleCommand::Type::SET_SERVO:
+      SystemController::setManualServo(cmd.servoAngle);
+      Serial.printf("[BLE] Deferred: setManualServo(%d) executed.\n",
+                    cmd.servoAngle);
+      break;
+    case PendingBleCommand::Type::CLEAR_SERVO:
+      SystemController::clearManualServo();
+      Serial.println("[BLE] Deferred: clearManualServo executed.");
+      break;
+    case PendingBleCommand::Type::CLEAR_LOGS:
+      LogManager::clearCriticalLogs();
+      Serial.println("[BLE] Deferred: clearCriticalLogs executed.");
+      break;
+    default:
+      break;
+    }
+    notifyStatus();
+  }
+
   if (bleOtaRestartPending &&
       static_cast<long>(millis() - bleOtaRestartAtMs) >= 0) {
     Serial.println("[BLE OTA] Restart po zakonczonej aktualizacji.");
@@ -1237,11 +1476,27 @@ void BleManager::update() {
                        "Sesja BLE OTA wygasla przez brak kolejnych pakietow.");
   }
 
+  const bool shouldAdvertise = getBleAdvertisingDesired();
+  if (shouldAdvertise != bleAdvertising) {
+    if (shouldAdvertise) {
+      startAdvertisingNow();
+    } else {
+      stopAdvertisingNow();
+    }
+  }
+
   if (!bleAdvertising) {
     return;
   }
 
   refreshConnectionState();
+
+  if (isBlePostAuthSyncPending() && deviceConnected && isBleAuthenticated()) {
+    setBlePostAuthSyncPending(false);
+    notifyStatus();
+    publishOtaState("info", bleOtaActive ? "ota_receiving" : "ready");
+    publishResult("ack", "connected");
+  }
 
   if (resumeAdvertisingPending && !deviceConnected &&
       static_cast<long>(millis() - resumeAdvertisingAtMs) >= 0) {
@@ -1252,27 +1507,17 @@ void BleManager::update() {
     resumeAdvertisingPending = false;
   }
 
-  if (deviceConnected && (millis() - lastNotifyTime >= NOTIFY_INTERVAL_MS)) {
+  if (deviceConnected && isBleAuthenticated() &&
+      (millis() - lastNotifyTime >= NOTIFY_INTERVAL_MS)) {
     notifyStatus();
-    lastNotifyTime = millis();
   }
 }
 
-bool BleManager::isConnected() {
-  refreshConnectionState();
-  return deviceConnected;
-}
+bool BleManager::isConnected() { return deviceConnected; }
 
 bool BleManager::isAdvertising() { return bleAdvertising; }
 
-uint8_t BleManager::getConnectedClients() {
-  if (pServer == nullptr) {
-    return deviceConnected ? 1 : 0;
-  }
-
-  uint32_t count = pServer->getConnectedCount();
-  return (count > 255) ? 255 : static_cast<uint8_t>(count);
-}
+uint8_t BleManager::getConnectedClients() { return connectedClientCount; }
 
 const char *BleManager::getDeviceName() { return BLE_DEVICE_NAME; }
 

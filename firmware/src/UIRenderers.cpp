@@ -1,7 +1,7 @@
 #include "UIRenderers.h"
 #include "AquariumAnimation.h"
 #include "AquariumBitmaps.h"
-
+#include "SystemController.h"
 
 // Makra ulatwiajace migracje - dzieki temu unikamy 1000 refaktorow ctx->
 #define display ctx->display
@@ -96,6 +96,22 @@ void HomeRenderer::drawFrame(AquariumAnimation *ctx) {
   display->drawStr(0, 5, timeBuffer);
   display->drawLine(0, 6, 127, 6);
 
+  // Reset reason banner (30s po starcie, tylko dla crash-resetow)
+  {
+    const char *rstLabel = SystemController::getLastResetLabel();
+    if (rstLabel != nullptr && millis() < 30000UL) {
+      char rstBuf[22];
+      snprintf(rstBuf, sizeof(rstBuf), "RST:%s c=%d", rstLabel,
+               SystemController::getLastResetReason());
+      display->setDrawColor(1);
+      display->drawBox(0, 0, 128, 7);
+      display->setDrawColor(0);
+      display->setFont(u8g2_font_4x6_tr);
+      display->drawStr(1, 6, rstBuf);
+      display->setDrawColor(1);
+    }
+  }
+
   // Left block: filter/light status and divider.
   display->drawXBMP(1, 8, 7, 10, image_Layer_19_bits);
   display->drawXBMP(0, 21, 9, 11, image_Layer_19_1_bits);
@@ -186,4 +202,3 @@ void HomeRenderer::drawFeedingScreen(AquariumAnimation *ctx) {
       feedingActive = false;
   }
 }
-

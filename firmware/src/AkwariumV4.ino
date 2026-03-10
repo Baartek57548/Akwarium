@@ -69,6 +69,20 @@ static bool shouldApplyUiIdleHomeTimeout(UiState state) {
   return true;
 }
 
+static void syncBleSessionWithUiState() {
+  // BLE nie moze juz startowac tylko dlatego, ze OLED jest aktywny.
+  // Reklamowanie jest dozwolone tylko na ekranie Bluetooth, a aktywne
+  // polaczenie moze tymczasowo utrzymac sesje po wyjsciu z tego widoku.
+  const bool shouldEnableBle =
+      (uiState == UiState::BLUETOOTH) || BleManager::isConnected();
+
+  if (shouldEnableBle) {
+    BleManager::start();
+  } else {
+    BleManager::stop();
+  }
+}
+
 struct PendingScheduleUpdate {
   uint8_t lightMode;
   uint8_t dayStartHour;
@@ -302,7 +316,7 @@ void updateUiState() {
       if ((uiStateBeforeFeeding == UiState::ACCESS_POINT &&
            !AkwariumWifi::getIsAPMode()) ||
           (uiStateBeforeFeeding == UiState::BLUETOOTH &&
-           !BleManager::isAdvertising())) {
+           !BleManager::isAdvertising() && !BleManager::isConnected())) {
         uiState = UiState::HOME;
       } else {
         uiState = uiStateBeforeFeeding;
@@ -388,10 +402,10 @@ void updateUiState() {
   }
 
   case UiState::BLUETOOTH: {
-    // BLE pozostaje wlaczone podczas calej obslugi klienta.
-    // Konczymy sesje tylko po recznym wyjsciu z ekranu Bluetooth.
+    // Ekran Bluetooth jest tylko widokiem statusu. Reklamowanie BLE jest teraz
+    // sprzezone globalnie z aktywnym OLED, a aktywne polaczenie blokuje
+    // wygaszenie ekranu.
     if (upJustPressed) {
-      BleManager::stop();
       uiState = UiState::MENU;
     }
     break;
@@ -563,6 +577,7 @@ void VideoTask(void *pvParameters) {
   while (true) {
     if (animation != nullptr) {
       updateUiState();
+      syncBleSessionWithUiState();
       captureUiChanges();
 
       bool isUp = (digitalRead(BUTTON_UP_PIN) == LOW);

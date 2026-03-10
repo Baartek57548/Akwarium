@@ -29,6 +29,7 @@
 
 		<!-- Display name -->
 		<ApplicationTitle>AquariumController.Mobile</ApplicationTitle>
+		<ApplicationIcon Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">Resources\AppIcon\final.ico</ApplicationIcon>
 
 		<!-- App Identifier -->
 		<ApplicationId>com.companyname.aquariumcontroller.mobile</ApplicationId>

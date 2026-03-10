@@ -45,14 +45,32 @@ static void logWakeupCauseOnBoot();
 static bool isNightTimeNow();
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
 static bool configureLightSleepWakeup();
+static void syncBleWithOledState(bool oledShouldStayOn);
 
 static const unsigned long LIGHT_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
 static const unsigned long OLED_IDLE_TIMEOUT_MS = 120000UL;
 static bool wokeFromButtonThisBoot = false;
 
-TemperatureController SystemController::tempController(
-    ONE_WIRE_BUS, HEATER_PIN, 24.0f, 0.5f, HEATER_OUTPUT_ACTIVE_HIGH);
+static void syncBleWithOledState(bool oledShouldStayOn) {
+  const bool bleConnected = BleManager::isConnected();
+  const bool bleAdvertising = BleManager::isAdvertising();
+
+  // BLE jest sterowane przez UI, nie przez sam aktywny OLED.
+  // Tutaj jedynie dopinamy awaryjne zatrzymanie reklamowania przy wygaszeniu
+  // ekranu lub przejsciu do snu, o ile klient nie jest podlaczony.
+  if (bleConnected) {
+    return;
+  }
+
+  if (!oledShouldStayOn && bleAdvertising) {
+    BleManager::stop();
+  }
+}
+
+TemperatureController
+    SystemController::tempController(ONE_WIRE_BUS, HEATER_PIN, 24.0f, 0.5f,
+                                     HEATER_OUTPUT_ACTIVE_HIGH);
 FeederController SystemController::feederController(FEEDER_PIN,
                                                     FEEDER_SENSOR_PIN, false,
                                                     FEEDER_OUTPUT_ACTIVE_HIGH);
@@ -82,12 +100,30 @@ unsigned long SystemController::manualServoTimer = 0;
 uint8_t SystemController::tempInvalidReadCount = 0;
 bool SystemController::tempSensorErrorLogged = false;
 bool SystemController::rtcReady = false;
+int SystemController::lastResetReason = 0;
 
 unsigned long SystemController::lastTempCheckMs = 0;
 unsigned long SystemController::lastBatCheckMs =
     -600000UL; // Start pomiaru baterii natychmiast
 
 bool SystemController::isRtcReady() { return rtcReady; }
+
+int SystemController::getLastResetReason() { return lastResetReason; }
+
+const char *SystemController::getLastResetLabel() {
+  switch (static_cast<esp_reset_reason_t>(lastResetReason)) {
+  case ESP_RST_TASK_WDT:
+    return "watchdog";
+  case ESP_RST_INT_WDT:
+    return "watchdog";
+  case ESP_RST_PANIC:
+    return "panic";
+  case ESP_RST_BROWNOUT:
+    return "brownout";
+  default:
+    return nullptr;
+  }
+}
 
 void SystemController::hardwareSetup() {
   pinMode(LIGHT_PIN, OUTPUT);
@@ -141,12 +177,13 @@ void SystemController::init() {
   // Rejestracja biezacego zadania (loop) do Watchdoga
   esp_task_wdt_add(NULL);
 
-  esp_reset_reason_t reason = esp_reset_reason();
-  if (reason == ESP_RST_TASK_WDT) {
-    LogManager::logError(
-        "System zresetowany przez Task Watchdog (Deadlock/Soft Lock)!");
-  } else if (reason == ESP_RST_PANIC) {
-    LogManager::logError("System zresetowany przez Panic/Exception!");
+  lastResetReason = static_cast<int>(esp_reset_reason());
+  const char *rstLabel = getLastResetLabel();
+  if (rstLabel != nullptr) {
+    char msg[80];
+    snprintf(msg, sizeof(msg), "RESET: %s (code=%d)", rstLabel,
+             lastResetReason);
+    LogManager::logError(msg);
   } else {
     LogManager::logInfo("System zainicjalizowany poprawnie.");
   }
@@ -256,7 +293,8 @@ void SystemController::updateDecisions() {
 
   bool isHeaterOn = tempController.isHeaterOn();
 
-  SharedState::updateRelays(isHeaterOn, runFilter, isLightActive, isLightActive);
+  SharedState::updateRelays(isHeaterOn, runFilter, isLightActive,
+                            isLightActive);
 }
 
 void SystemController::applyOutputs() {
@@ -291,8 +329,7 @@ bool SystemController::isFeedingNow() { return feederController.isFeeding(); }
 
 void SystemController::setManualServo(int angle) {
   manualServoOverride = true;
-  manualServoAngle =
-      constrain(angle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
+  manualServoAngle = constrain(angle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
   manualServoTimer = millis();
 }
 
@@ -382,7 +419,8 @@ bool SystemController::canEnterLightSleep(unsigned long nowMs,
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
   const Config cfg = ConfigManager::getCopy();
   if (cfg.dayStartHour > 23 || cfg.dayStartMinute > 59) {
-    LogManager::logWarn("Niepoprawny start dnia, timer sleep ustawiony na 30 min.");
+    LogManager::logWarn(
+        "Niepoprawny start dnia, timer sleep ustawiony na 30 min.");
     return 30ULL * 60ULL * 1000000ULL;
   }
 
@@ -398,9 +436,9 @@ static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {
   }
 
   char msg[96];
-  snprintf(msg, sizeof(msg),
-           "Timer wakeup za %lu s (start dnia %02u:%02u).",
-           static_cast<unsigned long>(diffSec), static_cast<unsigned>(cfg.dayStartHour),
+  snprintf(msg, sizeof(msg), "Timer wakeup za %lu s (start dnia %02u:%02u).",
+           static_cast<unsigned long>(diffSec),
+           static_cast<unsigned>(cfg.dayStartHour),
            static_cast<unsigned>(cfg.dayStartMinute));
   LogManager::logInfo(msg);
 
@@ -454,7 +492,8 @@ static void drawFeederCalibrationPrompt(U8G2 *display, const char *line1,
   display->sendBuffer();
 }
 
-static void drawFeederCalibrationAnimation(U8G2 *display, unsigned long elapsedMs,
+static void drawFeederCalibrationAnimation(U8G2 *display,
+                                           unsigned long elapsedMs,
                                            unsigned long expectedMs) {
   if (!display)
     return;
@@ -465,14 +504,14 @@ static void drawFeederCalibrationAnimation(U8G2 *display, unsigned long elapsedM
 
   unsigned long clampedElapsed =
       (expectedMs > 0) ? min(elapsedMs, expectedMs) : elapsedMs;
-  uint8_t progressPct = (expectedMs > 0)
-                            ? static_cast<uint8_t>((clampedElapsed * 100UL) /
-                                                   expectedMs)
-                            : 0;
-  uint8_t progressFill = (expectedMs > 0)
-                             ? static_cast<uint8_t>((clampedElapsed * 112UL) /
-                                                    expectedMs)
-                             : 0;
+  uint8_t progressPct =
+      (expectedMs > 0)
+          ? static_cast<uint8_t>((clampedElapsed * 100UL) / expectedMs)
+          : 0;
+  uint8_t progressFill =
+      (expectedMs > 0)
+          ? static_cast<uint8_t>((clampedElapsed * 112UL) / expectedMs)
+          : 0;
   if (progressFill > 112)
     progressFill = 112;
 
@@ -538,7 +577,8 @@ bool SystemController::runFeederCalibration(U8G2 *display) {
   constexpr unsigned long CALIBRATION_EXPECTED_MS = 7000UL;
 
   LogManager::logInfo("Kalibracja karmnika uruchomiona z menu.");
-  drawFeederCalibrationPrompt(display, "Kalibracja karmnika", "Przygotowanie...");
+  drawFeederCalibrationPrompt(display, "Kalibracja karmnika",
+                              "Przygotowanie...");
   delay(250);
 
   feederController.clearError();
@@ -617,15 +657,20 @@ void SystemController::handlePowerManagement(U8G2 *display,
   unsigned long lastAction = PowerManager::getLastActivityTime();
   const Config cfg = ConfigManager::getCopy();
   const SharedStateData snap = SharedState::getSnapshot();
+  const bool bleConnected = BleManager::isConnected();
 
   auto handleOnlyOledTimeout = [&](unsigned long timeoutMs) {
-    if ((nowMs - lastAction) > timeoutMs && !cfg.alwaysScreenOn) {
+    const bool shouldKeepOledOn = bleConnected || cfg.alwaysScreenOn ||
+                                  ((nowMs - lastAction) <= timeoutMs);
+
+    if (!shouldKeepOledOn) {
       if (PowerManager::getCurrentMode() == MODE_ACTIVE) {
         PowerManager::setMode(MODE_LOW_POWER);
       }
       if (display) {
         display->setPowerSave(1);
       }
+      syncBleWithOledState(false);
     } else {
       if (PowerManager::getCurrentMode() != MODE_ACTIVE) {
         PowerManager::setMode(MODE_ACTIVE);
@@ -635,6 +680,7 @@ void SystemController::handlePowerManagement(U8G2 *display,
       if (display) {
         display->setPowerSave(0);
       }
+      syncBleWithOledState(true);
     }
   };
 
@@ -658,11 +704,13 @@ void SystemController::handlePowerManagement(U8G2 *display,
   }
 
   if (!canEnterLightSleep(nowMs, lastAction)) {
-    bool keepInteractive = ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
+    bool keepInteractive = bleConnected || cfg.alwaysScreenOn ||
+                           ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
     if (display) {
       display->setPowerSave(keepInteractive ? 0 : 1);
     }
     PowerManager::setMode(keepInteractive ? MODE_ACTIVE : MODE_LOW_POWER);
+    syncBleWithOledState(keepInteractive);
     return;
   }
 
@@ -672,6 +720,7 @@ void SystemController::handlePowerManagement(U8G2 *display,
     display->setPowerSave(1);
   }
 
+  syncBleWithOledState(false);
   PowerManager::setMode(MODE_LIGHT_SLEEP);
   enterNightLightSleep();
 }

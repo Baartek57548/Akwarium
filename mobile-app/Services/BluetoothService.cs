@@ -34,6 +34,7 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 	private bool _isInitialized;
 	private bool _disposed;
 	private int _negotiatedMtu = 23;
+	private bool _bleOtaAvailable = true;
 
 	public BluetoothService(ILogger<BluetoothService> logger)
 	{
@@ -142,6 +143,7 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 	public async Task ConnectAsync(Guid deviceId, CancellationToken cancellationToken = default)
 	{
 		await _operationGate.WaitAsync(cancellationToken);
+		IDevice? targetDevice = null;
 		try
 		{
 			await EnsureBleReadyAsync(cancellationToken);
@@ -159,14 +161,16 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 
 			if (_knownDevices.TryGetValue(deviceId, out var scannedDevice))
 			{
-				await EnsureDeviceSecurityReadyAsync(scannedDevice, cancellationToken);
-				await GetAdapter().ConnectToDeviceAsync(scannedDevice);
-				_connectedDevice = scannedDevice;
+				targetDevice = scannedDevice;
+				await EnsureDeviceSecurityReadyAsync(targetDevice, cancellationToken);
+				await GetAdapter().ConnectToDeviceAsync(targetDevice);
+				_connectedDevice = targetDevice;
 			}
 			else
 			{
-				_connectedDevice = await GetAdapter().ConnectToKnownDeviceAsync(deviceId, cancellationToken: cancellationToken);
-				await EnsureDeviceSecurityReadyAsync(_connectedDevice, cancellationToken);
+				targetDevice = await GetAdapter().ConnectToKnownDeviceAsync(deviceId, cancellationToken: cancellationToken);
+				await EnsureDeviceSecurityReadyAsync(targetDevice, cancellationToken);
+				_connectedDevice = targetDevice;
 			}
 
 			await WarmUpGattSessionAsync(cancellationToken);
@@ -177,6 +181,18 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 		}
 		catch (Exception ex)
 		{
+#if WINDOWS
+			if (targetDevice is not null &&
+				await TryRepairWindowsPairingAsync(targetDevice, ex, cancellationToken))
+			{
+				await DisconnectDeviceCoreAsync();
+				await EnsureDeviceSecurityReadyAsync(targetDevice, cancellationToken);
+				await GetAdapter().ConnectToDeviceAsync(targetDevice);
+				_connectedDevice = targetDevice;
+				await WarmUpGattSessionAsync(cancellationToken);
+				return;
+			}
+#endif
 			throw WrapException("Connecting to Aquarium Controller failed.", ex);
 		}
 		finally
@@ -394,6 +410,7 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 		try
 		{
 			await EnsureConnectedAsync(cancellationToken);
+			EnsureBleOtaAvailable();
 
 			progress?.Report(new OtaUploadProgress(0, firmwareImage.Length, "Przygotowywanie sesji BLE OTA..."));
 
@@ -592,6 +609,7 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 
 	private async Task WarmUpGattSessionAsync(CancellationToken cancellationToken)
 	{
+		_bleOtaAvailable = true;
 		try
 		{
 			_negotiatedMtu = await _connectedDevice!.RequestMtuAsync(185, cancellationToken);
@@ -621,15 +639,23 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 			AquariumBleContract.DeviceInfoCharacteristicUuid,
 			cancellationToken);
 
-		await GetCharacteristicAsync(
-			AquariumBleContract.ServiceUuid,
-			AquariumBleContract.OtaControlCharacteristicUuid,
-			cancellationToken);
+		try
+		{
+			await GetCharacteristicAsync(
+				AquariumBleContract.ServiceUuid,
+				AquariumBleContract.OtaControlCharacteristicUuid,
+				cancellationToken);
 
-		await GetCharacteristicAsync(
-			AquariumBleContract.ServiceUuid,
-			AquariumBleContract.OtaDataCharacteristicUuid,
-			cancellationToken);
+			await GetCharacteristicAsync(
+				AquariumBleContract.ServiceUuid,
+				AquariumBleContract.OtaDataCharacteristicUuid,
+				cancellationToken);
+		}
+		catch (Exception ex)
+		{
+			_bleOtaAvailable = false;
+			_logger.LogDebug(ex, "BLE OTA characteristics are not available on this firmware.");
+		}
 	}
 
 	private async Task EnsureDeviceSecurityReadyAsync(IDevice device, CancellationToken cancellationToken)
@@ -681,6 +707,7 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 		AquariumOtaControlRequest request,
 		CancellationToken cancellationToken)
 	{
+		EnsureBleOtaAvailable();
 		var payload = JsonSerializer.SerializeToUtf8Bytes(request, SerializerOptions);
 
 		await WriteCharacteristicCoreAsync(
@@ -694,6 +721,7 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 
 	private async Task<AquariumOtaState> ReadOtaStateCoreAsync(CancellationToken cancellationToken)
 	{
+		EnsureBleOtaAvailable();
 		await Task.Delay(120, cancellationToken);
 
 		var payload = await ReadCharacteristicCoreAsync(
@@ -708,6 +736,11 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 	{
 		try
 		{
+			if (!_bleOtaAvailable)
+			{
+				return;
+			}
+
 			if (_connectedDevice is null)
 			{
 				return;
@@ -724,6 +757,14 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 		catch (Exception ex)
 		{
 			_logger.LogDebug(ex, "BLE OTA abort request could not be delivered.");
+		}
+	}
+
+	private void EnsureBleOtaAvailable()
+	{
+		if (!_bleOtaAvailable)
+		{
+			throw new InvalidOperationException("Sterownik nie wspiera BLE OTA (brak charakterystyk).");
 		}
 	}
 
@@ -938,13 +979,15 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 	{
 		_logger.LogError(exception, "{Message}", message);
 
+		var detail = string.IsNullOrWhiteSpace(exception.Message) ? exception.GetType().Name : exception.Message;
+
 		return exception switch
 		{
 			DeviceConnectionException => new InvalidOperationException(
-				$"{message} Pair the device in the OS prompt and verify the BLE PIN configured in firmware.",
+				$"{message} {detail} Otworz ekran Bluetooth na OLED sterownika i potwierdz systemowe parowanie z PIN-em.",
 				exception),
 			CharacteristicReadException => new InvalidOperationException($"{message} Device rejected the read request.", exception),
-			_ => new InvalidOperationException(message, exception)
+			_ => new InvalidOperationException($"{message} {detail}", exception)
 		};
 	}
 
@@ -967,7 +1010,7 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 		if (!deviceInfo.Pairing.CanPair)
 		{
 			throw new InvalidOperationException(
-				"Windows nie moze sparowac tego urzadzenia z poziomu aplikacji. Sparuj sterownik recznie w Ustawienia > Bluetooth i sprobuj ponownie.");
+				"Windows nie moze sparowac tego urzadzenia z poziomu aplikacji. Otworz ekran Bluetooth na OLED sterownika, sparuj urzadzenie recznie w Ustawienia > Bluetooth i sprobuj ponownie.");
 		}
 
 		var pairingResult = await MainThread.InvokeOnMainThreadAsync(
@@ -983,7 +1026,66 @@ public sealed class BluetoothService : IBluetoothService, IDisposable
 		}
 
 		throw new InvalidOperationException(
-			$"Parowanie BLE w Windows nie powiodlo sie ({pairingResult.Status}). Potwierdz systemowe okno parowania i wpisz PIN pokazany na OLED sterownika.");
+			$"Parowanie BLE w Windows nie powiodlo sie. Status Windows: {pairingResult.Status}. Otworz ekran Bluetooth na OLED sterownika, poczekaj na systemowe okno parowania i wpisz PIN pokazany na OLED.");
+	}
+
+	private static bool IsLikelyPairingIssue(Exception exception)
+	{
+		if (exception is DeviceConnectionException or CharacteristicReadException)
+		{
+			return true;
+		}
+
+		var message = exception.Message ?? string.Empty;
+		return message.Contains("pair", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("auth", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("encrypt", StringComparison.OrdinalIgnoreCase)
+			|| message.Contains("not authorized", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private async Task<bool> TryRepairWindowsPairingAsync(
+		IDevice device,
+		Exception exception,
+		CancellationToken cancellationToken)
+	{
+		if (!IsLikelyPairingIssue(exception))
+		{
+			return false;
+		}
+
+		var deviceInfo = await TryGetWindowsDeviceInformationAsync(device);
+		if (deviceInfo is null || !deviceInfo.Pairing.IsPaired)
+		{
+			return false;
+		}
+
+		cancellationToken.ThrowIfCancellationRequested();
+		_logger.LogWarning(exception, "Attempting Windows pairing repair for BLE device {DeviceId}.", deviceInfo.Id);
+
+		var unpairResult = await MainThread.InvokeOnMainThreadAsync(
+			() => deviceInfo.Pairing.UnpairAsync().AsTask());
+
+		if (unpairResult.Status is not DeviceUnpairingResultStatus.Unpaired
+			and not DeviceUnpairingResultStatus.AlreadyUnpaired)
+		{
+			_logger.LogWarning("Windows unpair failed. Status: {Status}.", unpairResult.Status);
+			return false;
+		}
+
+		var pairingResult = await MainThread.InvokeOnMainThreadAsync(
+			() => deviceInfo.Pairing.PairAsync(DevicePairingProtectionLevel.EncryptionAndAuthentication).AsTask());
+
+		if (pairingResult.Status is DevicePairingResultStatus.Paired or DevicePairingResultStatus.AlreadyPaired)
+		{
+			_logger.LogInformation(
+				"Windows pairing repair succeeded for {DeviceId}. Protection level: {ProtectionLevel}.",
+				deviceInfo.Id,
+				pairingResult.ProtectionLevelUsed);
+			return true;
+		}
+
+		_logger.LogWarning("Windows pairing repair failed. Status: {Status}.", pairingResult.Status);
+		return false;
 	}
 
 	private static async Task<DeviceInformation?> TryGetWindowsDeviceInformationAsync(IDevice device)
