@@ -71,7 +71,7 @@ static char bleOtaDeclaredProject[32] = "";
 static const unsigned long NOTIFY_INTERVAL_MS = 2000;
 static const unsigned long BLE_COMMAND_MIN_INTERVAL_MS = 120;
 static const unsigned long BLE_SETTINGS_MIN_INTERVAL_MS = 250;
-static const unsigned long RESUME_ADVERTISING_DELAY_MS = 150;
+static const unsigned long RESUME_ADVERTISING_DELAY_MS = 1000;
 static const unsigned long BLE_OTA_STALL_TIMEOUT_MS = 15000;
 static const unsigned long BLE_OTA_PROGRESS_NOTIFY_INTERVAL_MS = 300;
 static const unsigned long BLE_OTA_RESTART_DELAY_MS = 1200;
@@ -533,11 +533,23 @@ class MySecurityCallbacks : public BLESecurityCallbacks {
       // Usun uszkodzony bond, zeby ponowne parowanie bylo mozliwe
       esp_ble_remove_bond_device(auth_cmpl.bd_addr);
       Serial.println("[BLE] Usunięto bond po nieudanej autoryzacji.");
+      
+      // Dodatkowo czyscimy wszystkie bondy przy powtarzających się problemach
+      static int failedAuthCount = 0;
+      failedAuthCount++;
+      if (failedAuthCount > 2) {
+        Serial.println("[BLE] Wiele nieudanych autoryzacji, czyszczenie wszystkich bondów...");
+        esp_ble_clear_bond_device_list();
+        failedAuthCount = 0;
+      }
     } else {
       setBleAuthenticated(true);
       setBlePostAuthSyncPending(true);
       Serial.println("[BLE] Autoryzacja zakonczona sukcesem (bonded). ");
       cleanupExcessBonds(4);
+      // Reset licznika po udanej autoryzacji
+      static int failedAuthCount = 0;
+      failedAuthCount = 0;
     }
   }
 };
@@ -567,6 +579,7 @@ private:
     if (bleAdvertising && !deviceConnected && getBleAdvertisingDesired()) {
       resumeAdvertisingPending = true;
       resumeAdvertisingAtMs = millis() + RESUME_ADVERTISING_DELAY_MS;
+      Serial.println("[BLE] Planuję wznowienie advertisingu za " + String(RESUME_ADVERTISING_DELAY_MS) + "ms");
     }
   }
 
