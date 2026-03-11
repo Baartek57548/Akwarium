@@ -154,6 +154,12 @@ void SystemController::hardwareSetup() {
     rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
   } else {
     rtcReady = true;
+    // Sprawdz czy czas w RTC jest rozsądny (nie za stary)
+    DateTime now = rtc.now();
+    if (now.year() < 2024 || now.year() > 2030) {
+      LogManager::logWarn("RTC ma niepoprawny czas, przywracanie domyslnego...");
+      rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+    }
   }
 }
 
