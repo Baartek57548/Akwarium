@@ -61,9 +61,8 @@ LIGHT_PIN          GPIO5
 
 Uwagi:
 
-- `LIGHT_PIN` i `PUMP_PIN` sa aktywne stanem niskim (`LOW = ON`, `HIGH = OFF`).
-- `HEATER_PIN` ma logike odwrotna wzgledem pozostalych wyjsc (`HIGH = grzalka podlaczona`, `LOW = rozlaczenie grzalki`).
-- `FEEDER_PIN` steruje przekaznikiem aktywnym stanem niskim (`LOW = karmienie`, `HIGH = stop`).
+- `LIGHT_PIN`, `PUMP_PIN` i `FEEDER_PIN` korzystaja z przekaznikow aktywnych stanem niskim i toru NC (`LOW = ON`, `HIGH = OFF`, zmiana stanu styku po podaniu `LOW`).
+- `HEATER_PIN` jest na torze NO i ma logike odwrotna (`HIGH = grzalka podlaczona`, `LOW = rozlaczenie grzalki`).
 
 ## 4. Build i upload (PlatformIO)
 
@@ -197,8 +196,8 @@ Domyslne wartosci z `ConfigManager::loadDefaultConfig()`:
 
 ## 11. Bezpieczenstwo runtime
 
-- prog temperatury dziala jako maksymalna dopuszczalna temperatura wody
-- przy `>= targetTemp` grzalka jest rozlaczana, a ponownie podlaczana przy `<= targetTemp - hysteresis`
+- prog temperatury dziala jako poziom bazowy, a odciecie nastepuje przy `>= targetTemp + hysteresis`
+- ponowne podlaczenie grzalki nastepuje przy `<= targetTemp`
 - w trybie `HeaterMode::Off` grzalka pozostaje rozlaczona
 - manualny override serwa wygasa automatycznie po 5 minutach
 - karmnik ma timeout bezpieczenstwa (`15 s`) i logike cyklu czujnika

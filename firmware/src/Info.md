@@ -112,9 +112,9 @@ Publiczne API:
   - `isFilterActive`
   - `isAerationActive`
 - sterowanie grzalka:
-  - `targetTemp` to maksymalny prog temperatury
-  - przy `>= targetTemp` grzalka jest rozlaczana
-  - przy `<= targetTemp - hysteresis` grzalka jest ponownie podlaczana
+  - `targetTemp` to poziom bazowy
+  - przy `>= targetTemp + hysteresis` grzalka jest rozlaczana
+  - przy `<= targetTemp` grzalka jest ponownie podlaczana
   - bledny odczyt sensora nie wymusza rozlaczenia grzalki
 - target serwa:
   - domyslnie CLOSED
@@ -132,6 +132,8 @@ Bezposredni zapis na piny:
 - `PUMP_PIN`: `LOW=ON`, `HIGH=OFF`
 - `HEATER_PIN`: `HIGH=grzalka podlaczona`, `LOW=rozlaczenie`
 - `FEEDER_PIN`: `LOW=karmienie`, `HIGH=stop`
+- `LIGHT/PUMP/FEEDER`: przekazniki aktywne stanem niskim na torze NC
+- `HEATER`: przekaznik na torze NO (domyslnie podlaczona, `LOW` rozlacza)
 
 oraz `servoController.update()` i `feederController.update()`.
 
@@ -210,8 +212,8 @@ Szczegoly:
   - `85.0 C` (typowy artefakt startowy)
   - wartosci poza zakresem
 - histereza + min interwal przelaczen grzalki `120000 ms`
-- przy `>= targetTemp` grzalka jest rozlaczana
-- przy `<= targetTemp - hysteresis` grzalka jest ponownie podlaczana
+- przy `>= targetTemp + hysteresis` grzalka jest rozlaczana
+- przy `<= targetTemp` grzalka jest ponownie podlaczana
 
 ## 8. FeederController
 

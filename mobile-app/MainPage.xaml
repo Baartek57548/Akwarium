@@ -21,12 +21,12 @@
     </ContentPage.Background>
 
     <ContentPage.Resources>
-        <Color x:Key="SidebarBg">#080C1C</Color>
-        <Color x:Key="SidebarNavActive">#0C2132</Color>
-        <Color x:Key="MainSurface">#081120</Color>
-        <Color x:Key="PanelBg">#0B1424</Color>
-        <Color x:Key="CardBg">#0D182B</Color>
-        <Color x:Key="BorderColor">#13243A</Color>
+        <Color x:Key="SidebarBg">#B6080C1C</Color>
+        <Color x:Key="SidebarNavActive">#7A0C2132</Color>
+        <Color x:Key="MainSurface">#6C081120</Color>
+        <Color x:Key="PanelBg">#700B1424</Color>
+        <Color x:Key="CardBg">#5C0D182B</Color>
+        <Color x:Key="BorderColor">#72324761</Color>
         <Color x:Key="BorderAccent">#184C62</Color>
         <Color x:Key="TextPrimary">#F1F5F9</Color>
         <Color x:Key="TextSecondary">#94A3B8</Color>
@@ -172,8 +172,31 @@
     </ContentPage.Resources>
 
     <Grid>
+        <Image Aspect="AspectFill" Source="water_bg_target2.jpg" />
+
+        <!-- Subtle top glow matching reference look -->
+        <BoxView Opacity="0.24">
+            <BoxView.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#A7BDD8" Offset="0.0" />
+                    <GradientStop Color="#00000000" Offset="0.46" />
+                </LinearGradientBrush>
+            </BoxView.Background>
+        </BoxView>
+
+        <!-- Mid-screen ocean haze to match water depth in the reference -->
+        <BoxView Opacity="0.22">
+            <BoxView.Background>
+                <RadialGradientBrush Center="0.58,0.53" Radius="0.85">
+                    <GradientStop Color="#2B78A8" Offset="0.0" />
+                    <GradientStop Color="#0E3558" Offset="0.45" />
+                    <GradientStop Color="#00000000" Offset="1.0" />
+                </RadialGradientBrush>
+            </BoxView.Background>
+        </BoxView>
+
         <!-- Dark overlay for readability -->
-        <BoxView BackgroundColor="#020814" Opacity="0.85" />
+        <BoxView BackgroundColor="#031022" Opacity="0.10" />
 
         <Grid Padding="22" ColumnDefinitions="240,*" ColumnSpacing="22">
         <Border Grid.Column="0" BackgroundColor="{StaticResource SidebarBg}" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 26" StrokeThickness="1">
@@ -557,11 +580,9 @@
                         </HorizontalStackLayout>
                     </Grid>
 
-                    <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
-                        <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="WSZYSTKICH" /><Label Style="{StaticResource MetricValueStyle}" Text="{Binding TotalLogCount}" /></VerticalStackLayout></Border>
-                        <Border Grid.Column="1" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="INFO" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding InfoLogCount}" TextColor="{StaticResource AccentCyan}" /></VerticalStackLayout></Border>
-                        <Border Grid.Column="2" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="KRYTYCZNYCH" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding CriticalLogCount}" TextColor="{StaticResource AccentRed}" /></VerticalStackLayout></Border>
-                        <Border Grid.Column="3" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="WIDOCZNYCH" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding VisibleLogCount}" TextColor="{StaticResource AccentGreen}" /></VerticalStackLayout></Border>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="14">
+                        <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="INFO" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding InfoLogCount}" TextColor="{StaticResource AccentCyan}" /></VerticalStackLayout></Border>
+                        <Border Grid.Column="1" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="4"><Label Style="{StaticResource TinyMutedTextStyle}" Text="KRYTYCZNE" /><Label Style="{StaticResource MetricValueStyle}" FontSize="24" Text="{Binding CriticalLogCount}" TextColor="{StaticResource AccentRed}" /></VerticalStackLayout></Border>
                     </Grid>
 
                     <Border Grid.Row="2" Style="{StaticResource PanelCardStyle}" BackgroundColor="{StaticResource TerminalBg}">

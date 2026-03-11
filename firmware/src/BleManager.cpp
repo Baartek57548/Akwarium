@@ -477,7 +477,7 @@ static String buildStatusJsonString() {
   DynamicJsonDocument doc(768);
   doc["tmp"] = isnan(snap.temperature) ? -99.9f : snap.temperature;
   doc["tar"] = cfg.targetTemp;
-  doc["thr"] = cfg.targetTemp;
+  doc["thr"] = cfg.targetTemp + cfg.tempHysteresis;
   doc["hm"] = cfg.heaterMode;
   doc["hys"] = cfg.tempHysteresis;
   doc["mn"] = isnan(snap.minTemp) ? -99.9f : snap.minTemp;

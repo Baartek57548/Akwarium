@@ -26,10 +26,12 @@
 #define BAT_ADC_PIN 7
 #define BAT_EN_PIN 10
 
+// Relays for light/filter/feeder are active-low and wired on NC path in this
+// build profile: LOW drives the relay and changes contact state.
 static constexpr bool LIGHT_OUTPUT_ACTIVE_HIGH = false;
 static constexpr bool PUMP_OUTPUT_ACTIVE_HIGH = false;
-// Grzalka pozostaje podlaczona przy stanie wysokim. Stan niski rozlacza ja
-// awaryjnie po przekroczeniu progu albo w trybie OFF.
+// Heater relay is wired on NO path with opposite behavior:
+// HIGH keeps heater connected, LOW disconnects heater.
 static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = true;
 static constexpr bool FEEDER_OUTPUT_ACTIVE_HIGH = false;
 
@@ -247,8 +249,9 @@ void SystemController::updateDecisions() {
   bool runFilter = ScheduleManager::isFilterActive(nowMin);
   bool runAeration = ScheduleManager::isAerationActive(nowMin);
 
-  // Prog temperatury jest traktowany jako maksymalna dopuszczalna temperatura.
-  // Grzalka pozostaje podlaczona, dopoki sterownik nie musi jej rozlaczyc.
+  // Grzalka pracuje domyslnie w trybie "podlaczona", a sterownik realizuje
+  // odciecie dopiero po przekroczeniu targetTemp + hysteresis. Ponowne
+  // podlaczenie nastepuje przy temperaturze <= targetTemp.
   SharedStateData snap = SharedState::getSnapshot();
   if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Threshold)) {
     tempController.setTargetTemperature(cfg.targetTemp);
