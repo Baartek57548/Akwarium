@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aquarium Controller ESP32</title>
+    <link rel="stylesheet" href="style.css?v=3">
+    <style>
+        /* Custom Time Inputs (Pills) */
+        input[type="time"].time-pill {
+            background: rgba(11, 19, 36, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #f8fafc;
+            border-radius: 12px;
+            padding: 4px 6px;
+            font-size: 11px;
+            cursor: pointer;
+            font-family: inherit;
+            outline: none;
+            transition: background 0.2s, border-color 0.2s;
+            text-align: center;
+        }
+        input[type="time"].time-pill:hover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        input[type="time"].time-pill::-webkit-calendar-picker-indicator {
+            filter: invert(0.6) sepia(1) saturate(5) hue-rotate(175deg);
+            cursor: pointer;
+            width: 12px;
+            height: 12px;
+            padding: 0;
+            margin-left: 2px;
+        }
+        
+        /* Temp Chart Styles */
+        .temp-chart {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            height: 120px;
+            gap: 8px;
+            padding-top: 35px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+        .target-temp-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            border-top: 1px dashed rgba(255, 255, 255, 0.6);
+            z-index: 5;
+            pointer-events: none;
+        }
+        .target-temp-label {
+            position: absolute;
+            right: 0;
+            top: -22px;
+            font-size: 10px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            background: rgba(0,0,0,0.6);
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .hysteresis-zone {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            background: rgba(34, 211, 238, 0.05);
+            z-index: 4;
+            pointer-events: none;
+            border-top: 1px solid rgba(34, 211, 238, 0.2);
+            border-bottom: 1px solid rgba(34, 211, 238, 0.2);
+        }
+        .temp-bar-wrap {
+            flex: 1;
+            display: flex;
+            align-items: flex-end;
+            height: 100%;
+        }
+        .temp-bar {
+            width: 100%;
+            background: rgba(139, 92, 246, 0.6);
+            border-radius: 6px 6px 2px 2px;
+            transition: all 0.3s;
+            min-height: 8px;
+            z-index: 10;
+        }
+        .temp-bar:hover {
+            background: rgba(139, 92, 246, 0.9);
+            transform: scaleY(1.05);
+            transform-origin: bottom;
+        }
+        .temp-bar.active {
+            background: var(--accent-cyan);
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.6);
+        }
+        .temp-bar.hot {
+            background: rgba(251, 146, 60, 0.85);
+            box-shadow: 0 0 12px rgba(251, 146, 60, 0.4);
+        }
+
+        /* Module Badges Additions */
+        .pulse-dot-cyan {
+            width: 8px;
+            height: 8px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--accent-cyan);
+            animation: pulse-cyan 2s infinite;
+        }
+        @keyframes pulse-cyan {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-water fa-bounce" style="--fa-animation-duration: 3s; color: var(--accent-cyan);"></i>
+                <div class="brand-text">
+                    <h1>AquaSync</h1>
+                    <span>ESP32-S3 System</span>
+                </div>
+            </div>
+            
+            <ul class="nav-menu">
+                <li class="nav-item active" data-target="dashboard">
+                    <a href="#"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
+                </li>
+                <li class="nav-item" data-target="harmonogramy">
+                    <a href="#"><i class="fa-solid fa-calendar-days"></i> Harmonogramy</a>
+                </li>
+                <li class="nav-item" data-target="logi">
+                    <a href="#"><i class="fa-solid fa-terminal"></i> Logi Systemu</a>
+                </li>
+            </ul>
+
+            <div class="sidebar-bottom">
+                <ul class="nav-menu">
+                    <li class="nav-item" data-target="ota">
+                        <a href="#"><i class="fa-solid fa-cloud-arrow-up"></i> OTA Aktualizacja</a>
+                    </li>
+                    <li class="nav-item" data-target="ustawienia">
+                        <a href="#"><i class="fa-solid fa-gear"></i> Ustawienia</a>
+                    </li>
+                </ul>
+                <div class="sys-version">
+                    v4.2.0-stable<br>
+                    <span>FreeRTOS Core</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 1px; margin-right: 5px;">AKTYWNE SIECI:</span>
+                    <div class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
+                        <span class="pulse-dot" style="width: 8px; height: 8px;"></span>
+                        Access Point (AP)
+                    </div>
+                    <div class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
+                        <span class="pulse-dot" style="width: 8px; height: 8px;"></span>
+                        Station (STA)
+                    </div>
+                    <div class="status-badge" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.3); color: var(--accent-cyan); padding: 6px 14px; font-size: 13px;">
+                        <span class="pulse-dot-cyan"></span>
+                        Bluetooth (BLE)
+                    </div>
+                </div>
+                
+                <div class="topbar-widgets">
+                    <div class="info-pill" title="Bateria RTC (DS3231)">
+                        <i class="fa-solid fa-battery-three-quarters"></i>
+                        <span id="rtc-battery">2.9V</span>
+                    </div>
+                    <div class="time-widget">
+                        <span id="current-time">00:00:00</span>
+                        <span id="current-date">01 Sty 2026</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <section id="dashboard" class="view-section active">
+                <div class="view-header">
+                    <h2>Przegląd Systemu</h2>
+                    <p>Bieżący status wszystkich urządzeń i sensorów.</p>
+                </div>
+                <!-- Dashboard Grid -->
+                <div class="dashboard-grid">
+                    <!-- Wiersz 1: Temperatura, Bateria, Siec -->
+                    <div class="card glass" style="padding: 16px;">
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">TEMPERATURA</span>
+                        <div class="temp-value" style="font-size: 36px; font-weight: 600; text-shadow: none;">--.-<span class="unit" style="font-size: 24px; color: var(--text-main);"> C</span></div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Cel 25 C | Histereza 0,5 C</div>
+                    </div>
+
+                    <div class="card glass" style="padding: 16px;">
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">BATERIA</span>
+                        <div class="temp-value" style="font-size: 36px; font-weight: 600; text-shadow: none; margin-bottom: 12px;">0%</div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="height: 4px; background: rgba(255,255,255,0.05);"></div>
+                        </div>
+                    </div>
+
+                    <div class="card glass" style="padding: 16px;">
+                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">SIEC</span>
+                        <div class="temp-value" style="font-size: 30px; font-weight: 600; text-shadow: none;">OFFLINE</div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">STA -</div>
+                    </div>
+
+                    <!-- Wiersz 2: Przekazniki, Harmonogram dzisiaj, Karmnik -->
+                    <div class="card glass" style="padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Przekazniki</span>
+                            <span style="font-size: 11px; color: var(--text-muted);">1 / 4</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
+                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Swiatlo</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Off</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
+                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Filtr</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Off</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
+                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Grzalka</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Standby</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
+                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Napowietrzanie</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Open</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card glass" style="padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Harmonogram dzisiaj</span>
+                            <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 12px; padding: 6px 16px; border-radius: 16px; color: var(--accent-cyan); border-color: rgba(6, 182, 212, 0.3);">Edytuj</button>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
+                                <span style="font-size: 12px; color: var(--text-main);">Swiatlo</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">10:00 - 21:30</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
+                                <span style="font-size: 12px; color: var(--text-main);">Filtr</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">10:30 - 20:30</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
+                                <span style="font-size: 12px; color: var(--text-main);">Napowietrzanie</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">10:00 - 19:00</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
+                                <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card glass" style="padding: 20px; align-items: center;">
+                        <span style="font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 25px; align-self: flex-start;">Karmnik</span>
+                        
+                        <div style="position: relative; width: 140px; height: 140px; border-radius: 50%; border: 2px solid #8B2E67; display: flex; align-items: center; justify-content: center; background: #1C1120; margin-bottom: 20px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
+                            <button onclick="triggerFeed()" style="width: 110px; height: 110px; border-radius: 50%; background: #32142D; border: none; color: #F472B6; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#4a1e43'" onmouseout="this.style.background='#32142D'">Karm teraz</button>
+                        </div>
+                        
+                        <span style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Codziennie 18:00</span>
+                        <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 13px; padding: 10px 24px; border-radius: 16px; background: rgba(255,255,255,0.03);">Zarzadzaj</button>
+                    </div>
+
+                    <!-- Wiersz 3: Zakres temperatury (Wykres 20 bar) -->
+                    <div class="card glass" style="grid-column: 1 / -1; padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Zakres temperatury</span>
+                            <span style="font-size: 11px; color: var(--text-muted); padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 10px;">Ostatnie 3 godz. (20 odczytów)</span>
+                        </div>
+                        
+                        <div class="temp-chart">
+                            <!-- Histereza i cel -->
+                            <div class="hysteresis-zone" style="height: 30%; bottom: 40%;"></div>
+                            <div class="target-temp-line" style="bottom: 55%;"><span class="target-temp-label">25.0°C Docelowa</span></div>
+                            
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 30%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 35%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 32%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 45%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 42%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 38%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 46%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 55%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 60%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 68%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 64%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 70%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 80%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar hot" style="height: 90%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 75%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar active" style="height: 55%;"></div></div>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 10px; color: var(--text-muted);">
+                            <span>-190 min</span>
+                            <span>Teraz</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Harmonogramy View -->
+            <section id="harmonogramy" class="view-section">
+                <div class="view-header">
+                    <h2>Harmonogramy</h2>
+                    <p>Zarządzaj cyklem dobowym wszystkich urządzeń akwarium.</p>
+                </div>
+                
+                <div class="timeline-container glass p-4">
+                    <h3 class="mh-2 mb-4">Grafik Pracy (24h)</h3>
+                    
+                    <div class="schedule-item">
+                        <div class="schedule-icon"><i class="fa-regular fa-lightbulb" style="color: var(--accent-yellow);"></i></div>
+                        <div class="schedule-details">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <div class="schedule-title" style="margin-bottom: 0;">Oświetlenie Główne</div>
+                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                    <option value="harmonogram" selected>Harmonogram</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                </select>
+                            </div>
+                            <div class="schedule-bar-container" style="margin-bottom: 30px;">
+                                <div class="schedule-bar" style="left: 41.6%; width: 47.9%; background: var(--accent-yellow);"></div>
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 41.6%; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 89.5%; transform: translateX(-50%); width: 75px;" value="21:30">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="schedule-item mt-4">
+                        <div class="schedule-icon"><i class="fa-solid fa-wind" style="color: var(--accent-white);"></i></div>
+                        <div class="schedule-details">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <div class="schedule-title" style="margin-bottom: 0;">Napowietrzanie</div>
+                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                    <option value="harmonogram" selected>Harmonogram</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                </select>
+                            </div>
+                            <div class="schedule-bar-container" style="margin-bottom: 30px;">
+                                <div class="schedule-bar" style="left: 41.6%; width: 37.5%; background: var(--accent-white);"></div>
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 41.6%; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 79.1%; transform: translateX(-50%); width: 75px;" value="19:00">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="schedule-item mt-4">
+                        <div class="schedule-icon"><i class="fa-solid fa-filter" style="color: var(--accent-blue);"></i></div>
+                        <div class="schedule-details">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <div class="schedule-title" style="margin-bottom: 0;">Filtracja</div>
+                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                    <option value="harmonogram" selected>Harmonogram</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                </select>
+                            </div>
+                            <div class="schedule-bar-container" style="margin-bottom: 30px;">
+                                <div class="schedule-bar" style="left: 43.7%; width: 41.6%; background: var(--accent-blue);"></div>
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 43.7%; transform: translateX(-50%); width: 75px;" value="10:30">
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 85.3%; transform: translateX(-50%); width: 75px;" value="20:30">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="schedule-item mt-4">
+                        <div class="schedule-icon"><i class="fa-solid fa-fish" style="color: var(--accent-cyan);"></i></div>
+                        <div class="schedule-details">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <div class="schedule-title" style="margin-bottom: 0;">Karmienie (Automatyczne)</div>
+                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                    <option value="wylaczone">Wyłączone</option>
+                                    <option value="codziennie" selected>Codziennie</option>
+                                    <option value="co_2_dni">Co 2 dni</option>
+                                    <option value="co_3_dni">Co 3 dni</option>
+                                </select>
+                            </div>
+                            <div class="schedule-bar-container" style="margin-bottom: 30px;">
+                                <div class="schedule-point" style="left: 75%; background: var(--accent-cyan);"></div>
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 75%; transform: translateX(-50%); width: 75px;" value="18:00">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logi View -->
+            <section id="logi" class="view-section">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+                    <div class="view-header" style="margin-bottom: 0;">
+                        <h2>Logi systemowe</h2>
+                        <p>Biezace logi aplikacji, komendy i wpisy krytyczne.</p>
+                    </div>
+                    <div style="display: flex; gap: 15px;">
+                        <button class="btn btn-secondary" style="border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1);">Wyczysc widok</button>
+                        <button class="btn btn-primary" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.15)'">Usun krytyczne</button>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px;">
+                    <div class="card glass" style="padding: 20px; border-radius: 16px;">
+                        <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; letter-spacing: 1px;">INFO</div>
+                        <div style="font-size: 28px; font-weight: 600; color: var(--accent-cyan);">2</div>
+                    </div>
+                    <div class="card glass" style="padding: 20px; border-radius: 16px;">
+                        <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; letter-spacing: 1px;">KRYTYCZNYCH</div>
+                        <div style="font-size: 28px; font-weight: 600; color: #ef4444;">0</div>
+                    </div>
+                </div>
+            
+                <div class="card glass" style="padding: 20px; border-radius: 16px; min-height: 500px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <button class="btn btn-secondary active" style="padding: 8px 16px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.4); color: var(--accent-cyan); font-size: 13px; font-weight: 600; background: rgba(6, 182, 212, 0.1);">Biezace</button>
+                            <button class="btn btn-secondary" style="padding: 8px 16px; border-radius: 12px; border: 1px solid transparent; color: var(--text-main); font-size: 13px; font-weight: 600; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.color='#ef4444';" onmouseout="this.style.background='transparent'; this.style.color='var(--text-main)';">Krytyczne</button>
+                            <span style="font-size: 13px; color: var(--text-muted); margin-left: 10px;">Brak odpowiedzi sterownika.</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="text" placeholder="Szukaj..." style="background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 8px; padding: 10px 16px; color: var(--text-main); font-size: 13px; width: 250px; outline: none;">
+                            <button class="btn btn-secondary" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.03);" title="Pobierz logi"><i class="fa-solid fa-download" style="color: var(--accent-cyan);"></i></button>
+                        </div>
+                    </div>
+            
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 14px 20px; display: flex; align-items: center; font-size: 13px;">
+                            <span style="color: var(--accent-cyan); font-weight: 600; width: 80px;">INFO</span>
+                            <span style="color: var(--text-muted); width: 100px;">17:54:08</span>
+                            <span style="color: var(--text-main);">Streaming logow firmware nie jest obecnie wystawiony przez kontrakt BLE. Widok pokazuje logi aplikacji i wyniki komend.</span>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 14px 20px; display: flex; align-items: center; font-size: 13px;">
+                            <span style="color: var(--accent-cyan); font-weight: 600; width: 80px;">INFO</span>
+                            <span style="color: var(--text-muted); width: 100px;">17:54:08</span>
+                            <span style="color: var(--text-main);">Panel BLE uruchomiony. Oczekiwanie na polaczenie.</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- OTA View -->
+            <section id="ota" class="view-section">
+                <div class="view-header">
+                    <h2>OTA Aktualizacja</h2>
+                    <p>Wgraj nowy plik .bin firmware'u do mikrokontrolera ESP32-S3.</p>
+                </div>
+                
+                <div class="card glass" style="max-width: 640px; margin: 0 auto; padding: 50px 40px; border: 1px solid rgba(255,255,255,0.05); border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="width: 80px; height: 80px; background: rgba(59, 130, 246, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px auto;">
+                            <i class="fa-solid fa-cloud-arrow-up fa-2x" style="color: var(--accent-blue);"></i>
+                        </div>
+                        
+                        <h3 class="mb-2" style="font-size: 24px; font-weight: 600; color: #f8fafc;">Instalacja nowej wersji</h2>
+                        <p class="text-muted mb-4" style="font-size: 14px; max-width: 400px; margin-left: auto; margin-right: auto; line-height: 1.5;">Prześlij skompilowany plik <code style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-family: monospace; color: var(--accent-cyan);">.bin</code> aby zaktualizować oprogramowanie bazowe mikrokontrolera ESP32-S3 sterującego akwarium.</p>
+                        
+                        <div class="file-upload-wrapper mb-4" style="border: 2px dashed rgba(255,255,255,0.15); border-radius: 16px; padding: 40px 20px; transition: border-color 0.3s, background 0.3s; cursor: pointer; background: rgba(0,0,0,0.2);" onmouseover="this.style.borderColor='var(--accent-blue)'; this.style.background='rgba(59, 130, 246, 0.05)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.15)'; this.style.background='rgba(0,0,0,0.2)';" onclick="document.getElementById('firmware-file').click()">
+                            <input type="file" id="firmware-file" accept=".bin" style="display: none;">
+                            <i class="fa-solid fa-file-arrow-up mb-3" style="font-size: 32px; color: var(--text-muted);"></i>
+                            <div style="font-size: 16px; font-weight: 500; color: var(--text-main); margin-bottom: 8px;">Przeciągnij plik tutaj lub kliknij</div>
+                            <div style="font-size: 12px; color: var(--text-muted);">Maksymalny rozmiar pliku: 4 MB</div>
+                        </div>
+
+                        <div id="ota-progress" style="display: none; width: 100%; text-align: left; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 24px;">
+                            <div class="progress-label mb-2" style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 500;">
+                                <span style="color: var(--accent-cyan);">Wgrywanie aktualizacji... <i class="fa-solid fa-circle-notch fa-spin ml-2"></i></span>
+                                <span id="ota-percent" style="color: var(--text-main);">0%</span>
+                            </div>
+                            <div class="progress-bar mb-3" style="height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                                <div class="progress-fill" id="ota-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)); border-radius: 4px; transition: width 0.3s ease;"></div>
+                            </div>
+                            <p class="text-muted" style="font-size: 12px; margin: 0;"><i class="fa-solid fa-triangle-exclamation" style="color: var(--accent-yellow); margin-right: 6px;"></i> Proszę nie wyłączać urządzenia ani nie odświeżać strony w trakcie aktualizacji.</p>
+                        </div>
+                        
+                        <button class="btn btn-primary w-100" id="upload-btn" onclick="simulateOTA()" disabled style="padding: 14px; font-size: 15px; background: linear-gradient(135deg, var(--accent-blue), #2563eb); border: none; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; border-radius: 12px; transition: 0.3s; opacity: 0.5;">
+                            <i class="fa-solid fa-microchip" style="margin-right: 8px;"></i> Rozpocznij Aktualizację
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Ustawienia View -->
+            <section id="ustawienia" class="view-section">
+                <div class="view-header">
+                    <h2>Ustawienia Systemu</h2>
+                    <p>Konfiguracja urządzenia, sieci WiFi i preferencji sprzętowych.</p>
+                </div>
+                
+                <div class="dashboard-grid">
+                    <!-- WiFi config -->
+                    <div class="card glass">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fa-solid fa-wifi" style="color: var(--success-color);"></i>
+                                <h2>Sieć WiFi</h2>
+                            </div>
+                        </div>
+                        <div class="card-body form-group">
+                            <label>Aktywne SSID (Station):</label>
+                            <input type="text" class="form-control mb-3" value="MojaSiec_5G" disabled>
+                            
+                            <label>Przydzielony Adres IP:</label>
+                            <input type="text" class="form-control mb-4" value="192.168.1.144" disabled>
+                            
+                            <button class="btn btn-secondary w-100"><i class="fa-solid fa-satellite-dish"></i> Skanuj i Konfiguruj Sieci AP</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Temp config -->
+                    <div class="card glass">
+                        <div class="card-header" style="justify-content: space-between; align-items: center;">
+                            <div class="card-title">
+                                <i class="fa-solid fa-temperature-half" style="color: var(--accent-orange);"></i>
+                                <h2>Automatyka Temp.</h2>
+                            </div>
+                            <label class="switch" title="Włącz/Wyłącz Regulację">
+                                <input type="checkbox" checked>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="card-body form-group">
+                            <div class="grid-2-col mb-4">
+                                <div>
+                                    <label>Cel Temp. (°C):</label>
+                                    <input type="number" class="form-control" step="0.5" value="25.0">
+                                </div>
+                                <div>
+                                    <label>Histereza (°C):</label>
+                                    <input type="number" class="form-control" step="0.1" value="0.5">
+                                </div>
+                            </div>
+                            
+                            <button class="btn btn-primary w-100"><i class="fa-solid fa-floppy-disk"></i> Zapisz Ustawienia Temp.</button>
+                        </div>
+                    </div>
+
+                    <!-- System Info -->
+                    <div class="card glass">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fa-solid fa-circle-info" style="color: var(--accent-blue);"></i>
+                                <h2>Informacje Systemowe</h2>
+                            </div>
+                        </div>
+                        <div class="card-body" style="gap: 12px;">
+                            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">Wersja Oprogramowania:</span>
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13px;">v4.2.0-stable</span>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">Środowisko RTOS:</span>
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13px;">FreeRTOS Core 1</span>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">Czas pracy (Uptime):</span>
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13px;">14 dni, 08:31:02</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Time Setup -->
+                    <div class="card glass">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fa-solid fa-clock" style="color: var(--accent-magenta);"></i>
+                                <h2>Ustawienia Zegara RTC</h2>
+                            </div>
+                        </div>
+                        <div class="card-body form-group">
+                            <label>Ostatnia synchronizacja RTC (DS3231):</label>
+                            <input type="text" class="form-control mb-3" value="11 mar 2026, 18:00" disabled>
+                            
+                            <div class="grid-2-col">
+                                <button class="btn btn-secondary w-100" style="padding: 10px 14px; font-size: 13px;"><i class="fa-solid fa-arrows-rotate"></i> Synch. z NTP</button>
+                                <button class="btn btn-secondary w-100" style="padding: 10px 14px; font-size: 13px;"><i class="fa-solid fa-laptop"></i> Pobierz Czas Przeglądarki</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System actions -->
+                    <div class="card glass span-2">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fa-solid fa-microchip" style="color: var(--danger-color);"></i>
+                                <h2>Zarządzanie Urządzeniem</h2>
+                            </div>
+                        </div>
+                        <div class="card-body" style="gap: 15px;">
+                            <div style="margin-bottom: 5px;">
+                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; max-width: 700px;">
+                                    <strong>Restart ESP32</strong> wymusza ponowne uruchomienie systemu z zachowaniem wszystkich ustawień i harmonogramów w uPamięci (NVS).<br>
+                                    <strong>Przywrócenie Ustawień Fabrycznych</strong> (hard reset) trwale kasuje wszystkie dane na urządzeniu (w tym dane logowania WiFi AP oraz ustawioną automatykę temp/karmnika).
+                                </p>
+                            </div>
+                            <div class="grid-2-col">
+                                <button class="btn btn-secondary w-100" style="padding: 14px; font-size: 14px;"><i class="fa-solid fa-rotate-right"></i> Zrestartuj Sterownik</button>
+                                <button class="btn btn-primary outline w-100" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); padding: 14px; background: rgba(239, 68, 68, 0.05); font-size: 14px;"><i class="fa-solid fa-triangle-exclamation"></i> Przywróć Ustawienia Fabryczne</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Feedback Modal -->
+    <div class="overlay" id="feed-modal">
+        <div class="modal glass">
+            <div class="modal-content">
+                <i class="fa-solid fa-spinner fa-spin fa-2xl" id="modal-icon" style="color: var(--accent-cyan); margin-bottom: 20px;"></i>
+                <h3 id="modal-text">Trwa karmienie...</h3>
+                <p id="modal-subtext">Sensor położenia w trakcie odczytu</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

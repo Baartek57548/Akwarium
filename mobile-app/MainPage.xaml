@@ -12,10 +12,11 @@
     Title="Akwarium">
 
     <ContentPage.Background>
-        <LinearGradientBrush EndPoint="1,1">
-            <GradientStop Color="#050814" Offset="0.0" />
-            <GradientStop Color="#091226" Offset="0.5" />
-            <GradientStop Color="#0A1628" Offset="1.0" />
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#0A1E3A" Offset="0.0" />
+            <GradientStop Color="#061830" Offset="0.3" />
+            <GradientStop Color="#041020" Offset="0.6" />
+            <GradientStop Color="#020814" Offset="1.0" />
         </LinearGradientBrush>
     </ContentPage.Background>
 
@@ -40,6 +41,81 @@
         <Color x:Key="AccentRed">#F87171</Color>
         <Color x:Key="GhostButtonBg">#0E192B</Color>
         <Color x:Key="TerminalBg">#09111E</Color>
+
+        <Style x:Key="FluentButtonStyle" TargetType="Button">
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="HeightRequest" Value="46" />
+            <Setter Property="Padding" Value="18,0" />
+            <Setter Property="FontFamily" Value="OpenSansSemibold" />
+            <Setter Property="VisualStateManager.VisualStateGroups">
+                <VisualStateGroupList>
+                    <VisualStateGroup x:Name="CommonStates">
+                        <VisualState x:Name="Normal" />
+                        <VisualState x:Name="PointerOver">
+                            <VisualState.Setters>
+                                <Setter Property="Scale" Value="1.03" />
+                            </VisualState.Setters>
+                        </VisualState>
+                        <VisualState x:Name="Pressed">
+                            <VisualState.Setters>
+                                <Setter Property="Scale" Value="0.97" />
+                            </VisualState.Setters>
+                        </VisualState>
+                    </VisualStateGroup>
+                </VisualStateGroupList>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="HeightRequest" Value="38" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="FontFamily" Value="OpenSansSemibold" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="VisualStateManager.VisualStateGroups">
+                <VisualStateGroupList>
+                    <VisualStateGroup x:Name="CommonStates">
+                        <VisualState x:Name="Normal" />
+                        <VisualState x:Name="PointerOver">
+                            <VisualState.Setters>
+                                <Setter Property="Scale" Value="1.03" />
+                            </VisualState.Setters>
+                        </VisualState>
+                        <VisualState x:Name="Pressed">
+                            <VisualState.Setters>
+                                <Setter Property="Scale" Value="0.96" />
+                            </VisualState.Setters>
+                        </VisualState>
+                    </VisualStateGroup>
+                </VisualStateGroupList>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryActionButtonStyle" TargetType="Button">
+            <Setter Property="CornerRadius" Value="72" />
+            <Setter Property="HeightRequest" Value="144" />
+            <Setter Property="WidthRequest" Value="144" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontFamily" Value="OpenSansSemibold" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="VisualStateManager.VisualStateGroups">
+                <VisualStateGroupList>
+                    <VisualStateGroup x:Name="CommonStates">
+                        <VisualState x:Name="Normal" />
+                        <VisualState x:Name="PointerOver">
+                            <VisualState.Setters>
+                                <Setter Property="Scale" Value="1.08" />
+                            </VisualState.Setters>
+                        </VisualState>
+                        <VisualState x:Name="Pressed">
+                            <VisualState.Setters>
+                                <Setter Property="Scale" Value="0.92" />
+                            </VisualState.Setters>
+                        </VisualState>
+                    </VisualStateGroup>
+                </VisualStateGroupList>
+            </Setter>
+        </Style>
 
         <Style x:Key="PanelCardStyle" TargetType="Border">
             <Setter Property="BackgroundColor" Value="{StaticResource PanelBg}" />
@@ -95,16 +171,20 @@
         </Style>
     </ContentPage.Resources>
 
-    <Grid Padding="22" ColumnDefinitions="240,*" ColumnSpacing="22">
+    <Grid>
+        <!-- Dark overlay for readability -->
+        <BoxView BackgroundColor="#020814" Opacity="0.85" />
+
+        <Grid Padding="22" ColumnDefinitions="240,*" ColumnSpacing="22">
         <Border Grid.Column="0" BackgroundColor="{StaticResource SidebarBg}" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 26" StrokeThickness="1">
             <Grid RowDefinitions="Auto,*,Auto">
                 <Grid Padding="20,20,20,18" ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                    <Border WidthRequest="42" HeightRequest="42" BackgroundColor="#0B2434" Stroke="#1A5E78" StrokeShape="RoundRectangle 14" StrokeThickness="1">
-                        <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="OpenSansSemibold" FontSize="20" Text="A" TextColor="{StaticResource AccentCyan}" />
+                    <Border WidthRequest="42" HeightRequest="42" BackgroundColor="{StaticResource AccentCyan}" StrokeShape="RoundRectangle 12">
+                        <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="24" Text="&#xE90F;" TextColor="White" />
                     </Border>
                     <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                        <Label FontFamily="OpenSansSemibold" FontSize="14" Text="Sterownik" TextColor="{StaticResource TextPrimary}" />
-                        <Label FontFamily="OpenSansSemibold" FontSize="11" Text="AKWARIUM PRO" TextColor="{StaticResource AccentCyan}" />
+                        <Label FontFamily="OpenSansSemibold" FontSize="16" Text="Sterownik Akwarium" TextColor="{StaticResource TextPrimary}" />
+                        <Label FontSize="12" Text="PRO" TextColor="{StaticResource AccentCyan}" FontAttributes="Bold"/>
                     </VerticalStackLayout>
                 </Grid>
 
@@ -123,7 +203,7 @@
                         </Border.GestureRecognizers>
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                             <Border WidthRequest="30" HeightRequest="30" BackgroundColor="#0F2732" Stroke="Transparent" StrokeShape="RoundRectangle 10">
-                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="OpenSansSemibold" FontSize="13" Text="D" TextColor="{StaticResource AccentCyan}" />
+                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE80F;" TextColor="White" />
                             </Border>
                             <Label Grid.Column="1" VerticalOptions="Center" FontSize="13" Text="Panel glowny" TextColor="{StaticResource TextPrimary}" />
                         </Grid>
@@ -141,7 +221,7 @@
                         </Border.GestureRecognizers>
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                             <Border WidthRequest="30" HeightRequest="30" BackgroundColor="#221E0E" Stroke="Transparent" StrokeShape="RoundRectangle 10">
-                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="OpenSansSemibold" FontSize="13" Text="H" TextColor="{StaticResource AccentYellow}" />
+                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE81C;" TextColor="White" />
                             </Border>
                             <Label Grid.Column="1" VerticalOptions="Center" FontSize="13" Text="Harmonogram" TextColor="{StaticResource TextPrimary}" />
                         </Grid>
@@ -159,7 +239,7 @@
                         </Border.GestureRecognizers>
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                             <Border WidthRequest="30" HeightRequest="30" BackgroundColor="#251224" Stroke="Transparent" StrokeShape="RoundRectangle 10">
-                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="OpenSansSemibold" FontSize="13" Text="K" TextColor="{StaticResource AccentPink}" />
+                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE8F3;" TextColor="White" />
                             </Border>
                             <Label Grid.Column="1" VerticalOptions="Center" FontSize="13" Text="Karmnik" TextColor="{StaticResource TextPrimary}" />
                         </Grid>
@@ -177,7 +257,7 @@
                         </Border.GestureRecognizers>
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                             <Border WidthRequest="30" HeightRequest="30" BackgroundColor="#111926" Stroke="Transparent" StrokeShape="RoundRectangle 10">
-                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="OpenSansSemibold" FontSize="13" Text="L" TextColor="{StaticResource AccentBlue}" />
+                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE8FD;" TextColor="White" />
                             </Border>
                             <Label Grid.Column="1" VerticalOptions="Center" FontSize="13" Text="Logi systemowe" TextColor="{StaticResource TextPrimary}" />
                         </Grid>
@@ -195,7 +275,7 @@
                         </Border.GestureRecognizers>
                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                             <Border WidthRequest="30" HeightRequest="30" BackgroundColor="#17122A" Stroke="Transparent" StrokeShape="RoundRectangle 10">
-                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="OpenSansSemibold" FontSize="13" Text="U" TextColor="{StaticResource AccentPurple}" />
+                                <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE713;" TextColor="White" />
                             </Border>
                             <Label Grid.Column="1" VerticalOptions="Center" FontSize="13" Text="Ustawienia" TextColor="{StaticResource TextPrimary}" />
                         </Grid>
@@ -244,7 +324,7 @@
                                         <Label FontSize="11" HorizontalTextAlignment="End" Text="{Binding ConnectionStatusBadgeText}" TextColor="{StaticResource TextSecondary}" />
                                     </VerticalStackLayout>
                                 </Border>
-                                <Button BackgroundColor="#0B2434" BorderColor="#1A5E78" BorderWidth="1" Command="{Binding RefreshStatusCommand}" CornerRadius="16" HeightRequest="46" Padding="18,0" Text="Odswiez" TextColor="{StaticResource AccentCyan}" />
+                                <Button BackgroundColor="#0B2434" BorderColor="#1A5E78" BorderWidth="1" Command="{Binding RefreshStatusCommand}" Style="{StaticResource FluentButtonStyle}" Text="Odswiez" TextColor="{StaticResource AccentCyan}" />
                             </HorizontalStackLayout>
                         </Grid>
 
@@ -287,7 +367,7 @@
                                         </Grid>
                                     </Border>
                                     <Label FontSize="12" HorizontalTextAlignment="Center" Text="{Binding FeedScheduleSummaryText}" TextColor="{StaticResource TextSecondary}" />
-                                    <Button BackgroundColor="{StaticResource GhostButtonBg}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" Command="{Binding ShowFeederTabCommand}" CornerRadius="14" HeightRequest="38" Padding="14,0" Text="Zarzadzaj" TextColor="{StaticResource TextPrimary}" />
+                                    <Button BackgroundColor="{StaticResource GhostButtonBg}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" Command="{Binding ShowFeederTabCommand}" Style="{StaticResource SecondaryButtonStyle}" Text="Zarzadzaj" TextColor="{StaticResource TextPrimary}" />
                                 </VerticalStackLayout>
                             </Border>
                         </Grid>
@@ -615,4 +695,5 @@
             </Grid>
         </Border>
     </Grid>
+</Grid>
 </ContentPage>
