@@ -539,7 +539,7 @@ class MySecurityCallbacks : public BLESecurityCallbacks {
       failedAuthCount++;
       if (failedAuthCount > 2) {
         Serial.println("[BLE] Wiele nieudanych autoryzacji, czyszczenie wszystkich bondów...");
-        esp_ble_clear_bond_device_list();
+        cleanupExcessBonds(0);
         failedAuthCount = 0;
       }
     } else {
