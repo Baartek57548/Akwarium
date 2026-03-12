@@ -1,3 +1,12 @@
+const API_STATUS = '/api/status';
+const API_ACTION = '/api/action';
+const API_LOGS = '/api/logs';
+const API_OTA = '/update';
+
+let backendConnected = false;
+let activeLogType = 'normal';
+let cachedLogs = { normal: [], critical: [] };
+
 // Clock Logic
 function updateClock() {
     const now = new Date();
@@ -8,6 +17,96 @@ function updateClock() {
     if (timeEl && dateEl) {
         timeEl.textContent = now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         dateEl.textContent = now.toLocaleDateString('pl-PL', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+}
+
+function setBackendState(isConnected) {
+    backendConnected = isConnected;
+    const statusEl = document.getElementById('logs-status');
+    if (statusEl) {
+        statusEl.textContent = isConnected ? 'Połączono z backendem ESP32.' : 'Brak odpowiedzi sterownika.';
+    }
+}
+
+function createLogRow(level, text) {
+    return `
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 14px 20px; display: flex; align-items: center; font-size: 13px;">
+            <span style="color: ${level === 'CRITICAL' ? '#ef4444' : 'var(--accent-cyan)'}; font-weight: 600; width: 80px;">${level}</span>
+            <span style="color: var(--text-muted); width: 100px;">${new Date().toLocaleTimeString('pl-PL')}</span>
+            <span style="color: var(--text-main);">${text}</span>
+        </div>`;
+}
+
+function renderLogs() {
+    const list = document.getElementById('logs-list');
+    const infoCount = document.getElementById('info-count');
+    const criticalCount = document.getElementById('critical-count');
+    const searchInput = document.getElementById('logs-search');
+    if (!list) return;
+
+    const query = (searchInput?.value || '').trim().toLowerCase();
+    const source = activeLogType === 'critical' ? cachedLogs.critical : cachedLogs.normal;
+    const filtered = source.filter(item => item.toLowerCase().includes(query));
+
+    if (infoCount) infoCount.textContent = String(cachedLogs.normal.length);
+    if (criticalCount) criticalCount.textContent = String(cachedLogs.critical.length);
+
+    if (filtered.length === 0) {
+        list.innerHTML = createLogRow('INFO', 'Brak logów dla wybranego filtra.');
+        return;
+    }
+
+    list.innerHTML = filtered
+        .map(item => createLogRow(activeLogType === 'critical' ? 'CRITICAL' : 'INFO', item))
+        .join('');
+}
+
+async function fetchStatus() {
+    try {
+        const response = await fetch(API_STATUS, { cache: 'no-store' });
+        if (!response.ok) throw new Error('status http');
+        const data = await response.json();
+        setBackendState(true);
+
+        const apBadge = document.getElementById('ap-badge');
+        const staBadge = document.getElementById('sta-badge');
+        if (apBadge && staBadge && data.network) {
+            const apMode = !!data.network.apMode;
+            apBadge.style.opacity = apMode ? '1' : '0.45';
+            staBadge.style.opacity = apMode ? '0.45' : '1';
+        }
+
+        const rtcBattery = document.getElementById('rtc-battery');
+        if (rtcBattery && data.battery?.voltage !== undefined) {
+            rtcBattery.textContent = `${Number(data.battery.voltage).toFixed(2)}V`;
+        }
+    } catch (e) {
+        setBackendState(false);
+    }
+}
+
+async function fetchLogs() {
+    try {
+        const response = await fetch(API_LOGS, { cache: 'no-store' });
+        if (!response.ok) throw new Error('logs http');
+        const logs = await response.json();
+        cachedLogs.normal = Array.isArray(logs.normal) ? logs.normal : [];
+        cachedLogs.critical = Array.isArray(logs.critical) ? logs.critical : [];
+        renderLogs();
+    } catch (e) {
+        // keep last logs
+    }
+}
+
+async function sendAction(action, payload = {}) {
+    const params = new URLSearchParams({ action, ...payload });
+    const response = await fetch(API_ACTION, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+    });
+    if (!response.ok) {
+        throw new Error(await response.text());
     }
 }
 
@@ -61,6 +160,10 @@ function triggerFeed() {
     }
 
     modal.style.display = 'flex';
+
+    sendAction('feed_now').catch(() => {
+        // fallback only to local animation if backend not reachable
+    });
     
     // Simulate feeding process
     setTimeout(() => {
@@ -115,20 +218,31 @@ function simulateOTA() {
     
     if(!progressContainer || !fill || !percentTxt || !btn) return;
 
+    const firmwareFile = document.getElementById('firmware-file');
+    if(!firmwareFile || !firmwareFile.files || firmwareFile.files.length === 0) {
+        alert('Najpierw wybierz plik .bin.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('update', firmwareFile.files[0]);
+
     progressContainer.style.display = 'block';
     btn.disabled = true;
-    
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += Math.floor(Math.random() * 10) + 1;
-        if(progress > 100) progress = 100;
-        
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API_OTA, true);
+
+    xhr.upload.onprogress = function (event) {
+        if(!event.lengthComputable) return;
+        const progress = Math.min(100, Math.round((event.loaded / event.total) * 100));
         fill.style.width = `${progress}%`;
         percentTxt.textContent = `${progress}%`;
-        
-        if(progress >= 100) {
-            clearInterval(interval);
-            btn.textContent = 'Zakończono Pomyślnie!';
+    };
+
+    xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+            btn.textContent = 'Wgrano pakiet OTA';
             btn.style.backgroundColor = 'var(--success-color)';
             
             setTimeout(() => {
@@ -145,7 +259,19 @@ function simulateOTA() {
                 }
             }, 1000);
         }
-    }, 300);
+    };
+
+    xhr.onerror = function () {
+        btn.textContent = 'Błąd sieci OTA';
+        btn.style.backgroundColor = 'var(--danger-color)';
+        alert('Błąd połączenia podczas OTA.');
+    };
+
+    xhr.onloadend = function () {
+        btn.disabled = false;
+    };
+
+    xhr.send(formData);
 }
 
 // Init Event Listeners
@@ -155,6 +281,48 @@ document.addEventListener('DOMContentLoaded', () => {
     
     initNavigation();
     initOTA();
+
+    const currentBtn = document.getElementById('logs-current-btn');
+    const criticalBtn = document.getElementById('logs-critical-btn');
+    const clearBtn = document.getElementById('clear-logs-btn');
+    const deleteCriticalBtn = document.getElementById('delete-critical-btn');
+    const downloadBtn = document.getElementById('download-logs-btn');
+    const searchInput = document.getElementById('logs-search');
+
+    currentBtn?.addEventListener('click', () => {
+        activeLogType = 'normal';
+        renderLogs();
+    });
+    criticalBtn?.addEventListener('click', () => {
+        activeLogType = 'critical';
+        renderLogs();
+    });
+    clearBtn?.addEventListener('click', () => {
+        cachedLogs = { normal: [], critical: [] };
+        renderLogs();
+    });
+    deleteCriticalBtn?.addEventListener('click', async () => {
+        try {
+            await sendAction('clear_critical_logs');
+            await fetchLogs();
+        } catch (_) {}
+    });
+    downloadBtn?.addEventListener('click', () => {
+        const lines = (activeLogType === 'critical' ? cachedLogs.critical : cachedLogs.normal).join('\n');
+        const blob = new Blob([lines], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `akwarium_logs_${Date.now()}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+    searchInput?.addEventListener('input', renderLogs);
+
+    fetchStatus();
+    fetchLogs();
+    setInterval(fetchStatus, 3000);
+    setInterval(fetchLogs, 5000);
 
     // Mock toggle logic for dashboard toggles
     const toggles = document.querySelectorAll('input[type="checkbox"]');
