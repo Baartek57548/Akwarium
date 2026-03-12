@@ -51,14 +51,19 @@ function switchTab(tabId) {
 // Feeder Logic
 function triggerFeed() {
     const modal = document.getElementById('feed-modal');
+    const icon = document.getElementById('modal-icon');
+    const text = document.getElementById('modal-text');
+    const p = document.getElementById('modal-subtext');
+
+    if (!modal || !icon || !text || !p) {
+        console.warn('Brak wymaganych elementow UI dla triggerFeed().');
+        return;
+    }
+
     modal.style.display = 'flex';
     
     // Simulate feeding process
     setTimeout(() => {
-        const icon = document.getElementById('modal-icon');
-        const text = document.getElementById('modal-text');
-        const p = document.getElementById('modal-subtext');
-        
         icon.className = 'fa-solid fa-check-circle fa-2xl';
         icon.style.color = 'var(--success-color)';
         text.textContent = 'Sukces';
@@ -134,7 +139,10 @@ function simulateOTA() {
                 percentTxt.textContent = '0%';
                 btn.textContent = 'Aktualizuj System';
                 btn.style.backgroundColor = '';
-                document.getElementById('firmware-file').value = '';
+                const firmwareFile = document.getElementById('firmware-file');
+                if(firmwareFile) {
+                    firmwareFile.value = '';
+                }
             }, 1000);
         }
     }, 300);
