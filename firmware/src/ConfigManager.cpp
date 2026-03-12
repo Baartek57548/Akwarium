@@ -115,7 +115,11 @@ void ConfigManager::init() {
     }
   }
 
-  preferences.begin(PREF_NAMESPACE, false);
+  if (!preferences.begin(PREF_NAMESPACE, false)) {
+    Serial.println("[CONFIG] BLAD: preferences.begin nie powiodlo sie, ladowanie default.");
+    loadDefaultConfig();
+    return;
+  }
 
   if (!lockConfig(portMAX_DELAY)) {
     Serial.println("[CONFIG] BLAD: timeout lock podczas init(), ladowanie default.");
