@@ -244,11 +244,20 @@ function simulateOTA() {
         if (xhr.status >= 200 && xhr.status < 300) {
             btn.textContent = 'Wgrano pakiet OTA';
             btn.style.backgroundColor = 'var(--success-color)';
-            alert('Aktualizacja przesłana. Urządzenie może uruchomić się ponownie.');
-        } else {
-            btn.textContent = 'Błąd OTA';
-            btn.style.backgroundColor = 'var(--danger-color)';
-            alert(`Błąd OTA (HTTP ${xhr.status}).`);
+            
+            setTimeout(() => {
+                alert('Aktualizacja zakończona pomyślnie. Urządzenie zrestartuje się za chwilę.');
+                // Reset UI
+                progressContainer.style.display = 'none';
+                fill.style.width = '0%';
+                percentTxt.textContent = '0%';
+                btn.textContent = 'Aktualizuj System';
+                btn.style.backgroundColor = '';
+                const firmwareFile = document.getElementById('firmware-file');
+                if(firmwareFile) {
+                    firmwareFile.value = '';
+                }
+            }, 1000);
         }
     };
 
