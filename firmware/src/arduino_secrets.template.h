@@ -4,11 +4,11 @@
 // Create src/arduino_secrets.h with your real credentials to override.
 
 #ifndef SECRET_SSID
-#define SECRET_SSID "Bartolomeo"  //Nazwa sieci Wi-Fi, do której ma się połączyć urządzenie
+#define SECRET_SSID "JakasNazwa"  //Nazwa sieci Wi-Fi, do której ma się połączyć urządzenie
 #endif
 
 #ifndef SECRET_PASS
-#define SECRET_PASS "88888888" //Hasło do sieci Wi-Fi, musi mieć co najmniej 8 znaków dla WPA2
+#define SECRET_PASS "12345678" //Hasło do sieci Wi-Fi, musi mieć co najmniej 8 znaków dla WPA2
 #endif
 
 #ifndef AP_SSID
