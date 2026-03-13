@@ -170,8 +170,8 @@ public sealed class MainViewModel : ObservableObject
 		_scheduleModes =
 		[
 			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.Schedule, "Harmonogram"),
-			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOn, "Zawsze wlaczony"),
-			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOff, "Zawsze wylaczony")
+			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOn, "Zawsze włączony"),
+			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOff, "Zawsze wyłączony")
 		];
 
 		_minuteOptions = BuildMinuteOptions(AquariumValidationProfile.Default.MinuteStep);
