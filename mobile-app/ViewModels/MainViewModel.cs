@@ -170,8 +170,8 @@ public sealed class MainViewModel : ObservableObject
 		_scheduleModes =
 		[
 			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.Schedule, "Harmonogram"),
-			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOn, "Zawsze wlaczony"),
-			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOff, "Zawsze wylaczony")
+			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOn, "Zawsze włączony"),
+			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOff, "Zawsze wyłączony")
 		];
 
 		_minuteOptions = BuildMinuteOptions(AquariumValidationProfile.Default.MinuteStep);
@@ -1718,7 +1718,7 @@ public sealed class MainViewModel : ObservableObject
 		SelectionOption<int>? endHour,
 		SelectionOption<int>? endMinute)
 	{
-		const double timelineWidth = 840d;
+		const double timelineWidth = 1000d;
 
 		if (mode?.Value == AquariumScheduleMode.AlwaysOn)
 		{
@@ -1742,7 +1742,7 @@ public sealed class MainViewModel : ObservableObject
 		SelectionOption<int>? startHour,
 		SelectionOption<int>? startMinute)
 	{
-		const double timelineWidth = 840d;
+		const double timelineWidth = 1000d;
 
 		if (mode?.Value == AquariumScheduleMode.AlwaysOn || mode?.Value == AquariumScheduleMode.AlwaysOff)
 		{
@@ -1758,7 +1758,7 @@ public sealed class MainViewModel : ObservableObject
 		SelectionOption<int>? hour,
 		SelectionOption<int>? minute)
 	{
-		const double timelineWidth = 840d;
+		const double timelineWidth = 1000d;
 		var value = ((hour?.Value ?? 0) * 60) + (minute?.Value ?? 0);
 		var offset = Math.Clamp(value / 1440d, 0d, 1d) * timelineWidth;
 		return $"{offset:0.##},0,0,0";
@@ -1847,11 +1847,13 @@ public sealed class MainViewModel : ObservableObject
 	private static IReadOnlyList<SelectionOption<int>> BuildFeedModes(AquariumIntegerRule rule)
 	{
 		var result = new List<SelectionOption<int>>();
-		for (var value = rule.Min; value <= rule.Max; value++)
+		var min = Math.Max(1, rule.Min);
+		var max = Math.Min(3, rule.Max);
+
+		for (var value = min; value <= max; value++)
 		{
 			var label = value switch
 			{
-				0 => "Wylaczone",
 				1 => "Codziennie",
 				2 => "Co 2 dni",
 				3 => "Co 3 dni",
