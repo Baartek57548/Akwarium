@@ -8,7 +8,7 @@
 // Zawiera najnowsze wersje: index.html, style.css, script.js
 // ==========================================================
 
-const char web_index_html[] PROGMEM = R"WEBASSET(
+const char web_index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="pl">
 <head>
@@ -1875,6 +1875,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-)WEBASSET";
+)rawliteral";
 
 #endif
