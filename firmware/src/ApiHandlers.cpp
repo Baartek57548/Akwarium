@@ -11,6 +11,7 @@
 #include "SystemController.h"
 
 #include <ArduinoJson.h>
+#include <Arduino.h>
 #include <WebServer.h>
 #include <cstdlib>
 
@@ -105,7 +106,7 @@ static String buildStatusJson() {
   JsonObject temperature = doc.createNestedObject("temperature");
   temperature["current"] = isnan(snap.temperature) ? -99.9f : snap.temperature;
   temperature["target"] = cfg.targetTemp;
-  temperature["threshold"] = cfg.targetTemp;
+  temperature["threshold"] = cfg.targetTemp + cfg.tempHysteresis;
   temperature["heaterMode"] = cfg.heaterMode;
   temperature["hysteresis"] = cfg.tempHysteresis;
   temperature["min"] = isnan(snap.minTemp) ? -99.9f : snap.minTemp;
@@ -151,6 +152,8 @@ static String buildStatusJson() {
   JsonObject network = doc.createNestedObject("network");
   network["ip"] = AkwariumWifi::getIP();
   network["apMode"] = AkwariumWifi::getIsAPMode();
+  network["ssid"] = AkwariumWifi::getAPName();
+  network["clients"] = AkwariumWifi::getConnectedClients();
 
   JsonObject system = doc.createNestedObject("system");
   system["firmwareName"] = firmwareInfo.firmwareName;
@@ -167,7 +170,17 @@ static String buildStatusJson() {
   system["otaTransport"] = OtaManager::getActiveTransport();
   system["bleOtaSupported"] = FirmwareInfo::supportsBleOta();
   system["httpOtaSupported"] = FirmwareInfo::supportsHttpOta();
+  system["uptimeSec"] = static_cast<uint32_t>(millis() / 1000UL);
+  system["resetReason"] = SystemController::getLastResetLabel();
   populateValidationJson(system.createNestedObject("validation"));
+
+  JsonObject clock = doc.createNestedObject("clock");
+  clock["hour"] = snap.hour;
+  clock["minute"] = snap.minute;
+  clock["second"] = snap.second;
+  clock["day"] = snap.day;
+  clock["month"] = snap.month;
+  clock["year"] = snap.year;
 
   String json;
   serializeJson(doc, json);
@@ -250,6 +263,22 @@ void setupApiEndpoints() {
     if (action == "clear_critical_logs") {
       LogManager::clearCriticalLogs();
       server.send(200, "text/plain", "OK");
+      return;
+    }
+
+    if (action == "restart_device") {
+      server.send(200, "text/plain", "OK");
+      delay(150);
+      ESP.restart();
+      return;
+    }
+
+    if (action == "factory_reset") {
+      ConfigManager::resetToDefault();
+      LogManager::clearCriticalLogs();
+      server.send(200, "text/plain", "OK");
+      delay(200);
+      ESP.restart();
       return;
     }
 

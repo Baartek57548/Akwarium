@@ -3,7 +3,12 @@
 
 #include <Arduino.h>
 
-const char web_index_html[] PROGMEM = R"rawliteral(
+// ==========================================================
+// WYGENEROWANO AUTOMATYCZNIE - WebAssets.h
+// Zawiera najnowsze wersje: index.html, style.css, script.js
+// ==========================================================
+
+const char web_index_html[] PROGMEM = R"WEBASSET(
 <!DOCTYPE html>
 <html lang="pl">
 <head>
@@ -276,6 +281,56 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                                 <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
                                 <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
                             </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
+                                <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card glass" style="padding: 20px; align-items: center;">
+                        <span style="font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 25px; align-self: flex-start;">Karmnik</span>
+                        
+                        <div style="position: relative; width: 140px; height: 140px; border-radius: 50%; border: 2px solid #8B2E67; display: flex; align-items: center; justify-content: center; background: #1C1120; margin-bottom: 20px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
+                            <button onclick="triggerFeed()" style="width: 110px; height: 110px; border-radius: 50%; background: #32142D; border: none; color: #F472B6; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#4a1e43'" onmouseout="this.style.background='#32142D'">Karm teraz</button>
+                        </div>
+                        
+                        <span style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Codziennie 18:00</span>
+                        <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 13px; padding: 10px 24px; border-radius: 16px; background: rgba(255,255,255,0.03);">Zarzadzaj</button>
+                    </div>
+
+                    <!-- Wiersz 3: Zakres temperatury (Wykres 20 bar) -->
+                    <div class="card glass" style="grid-column: 1 / -1; padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Zakres temperatury</span>
+                            <span style="font-size: 11px; color: var(--text-muted); padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 10px;">Ostatnie 3 godz. (20 odczytów)</span>
+                        </div>
+                        
+                        <div class="temp-chart">
+                            <!-- Histereza i cel -->
+                            <div class="hysteresis-zone" style="height: 30%; bottom: 40%;"></div>
+                            <div class="target-temp-line" style="bottom: 55%;"><span class="target-temp-label">25.0°C Docelowa</span></div>
+                            
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 30%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 35%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 32%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 45%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 42%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 38%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 46%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 55%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 60%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 68%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 64%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 70%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 80%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar hot" style="height: 90%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 75%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar active" style="height: 55%;"></div></div>
                         </div>
                     </div>
 
@@ -1205,6 +1260,7 @@ input:checked + .slider:before {
     left: -50%;
     animation: rotate 6s linear infinite;
 }
+.water-info b { color: var(--accent-cyan); }
 
 .wave2 {
     background: rgba(59, 130, 246, 0.2);
@@ -1578,7 +1634,7 @@ async function fetchStatus() {
     } catch (e) {
         setBackendState(false);
     }
-}
+    .relay-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
 
 async function fetchLogs() {
     try {
@@ -1819,6 +1875,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-)rawliteral";
+)WEBASSET";
 
 #endif

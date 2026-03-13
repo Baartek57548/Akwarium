@@ -94,13 +94,16 @@ void TemperatureController::controlHeater(float currentTemp) {
     return;
   }
 
-  if (heaterState && currentTemp >= targetTemp) {
+  const float disconnectThreshold = targetTemp + hysteresis;
+  const float reconnectThreshold = targetTemp;
+
+  if (heaterState && currentTemp >= disconnectThreshold) {
     if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {
       writeHeaterOutput(false);
       heaterState = false;
       lastSwitchTime = now;
     }
-  } else if (!heaterState && currentTemp <= (targetTemp - hysteresis)) {
+  } else if (!heaterState && currentTemp <= reconnectThreshold) {
     if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {
       writeHeaterOutput(true);
       heaterState = true;
