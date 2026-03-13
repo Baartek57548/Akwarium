@@ -8,6 +8,7 @@
 #include "PowerManager.h"
 #include "ScheduleManager.h"
 #include "SharedState.h"
+#include <Preferences.h>
 #include <driver/gpio.h>
 #include <esp_err.h>
 #include <esp_sleep.h>
@@ -80,6 +81,10 @@ ServoController SystemController::servoController(SERVO_PIN, 90);
 BatteryReader SystemController::batteryReader(BAT_ADC_PIN);
 RTC_DS3231 SystemController::rtc;
 
+// Backup RTC epoch w NVS, aby odzyskać czas nawet przy utracie baterii.
+static Preferences rtcBackupPrefs;
+static uint32_t lastPersistedEpoch = 0;
+
 DateTime getCurrentDateTime() {
   if (SystemController::isRtcReady()) {
     return SystemController::rtc.now();
@@ -89,9 +94,36 @@ DateTime getCurrentDateTime() {
          TimeSpan(static_cast<int32_t>(millis() / 1000UL));
 }
 
+// Przywracanie czasu z kopii w NVS (ostatni zapisany epoch)
+static bool restoreRtcFromBackup() {
+  uint32_t epoch = rtcBackupPrefs.getUInt("lastEpoch", 0);
+  // Akceptujemy zakres mniej więcej 2024-2035, aby uniknąć śmieci
+  if (epoch < 1700000000UL || epoch > 2060000000UL) {
+    return false;
+  }
+  SystemController::rtc.adjust(DateTime(epoch));
+  lastPersistedEpoch = epoch;
+  LogManager::logInfo("RTC przywrócony z kopii w NVS (bez WiFi).");
+  return true;
+}
+
+// Ograniczamy liczbę zapisów do flash – nie częściej niż co godzinę
+static void persistRtcIfNeeded(const DateTime &now) {
+  uint32_t epoch = now.unixtime();
+  if (lastPersistedEpoch != 0 &&
+      (epoch > lastPersistedEpoch ? epoch - lastPersistedEpoch
+                                  : lastPersistedEpoch - epoch) < 3600UL) {
+    return;
+  }
+  rtcBackupPrefs.putUInt("lastEpoch", epoch);
+  lastPersistedEpoch = epoch;
+}
+
 void syncSystemTime(uint32_t epoch) {
   if (SystemController::isRtcReady()) {
     SystemController::rtc.adjust(DateTime(epoch));
+    lastPersistedEpoch = epoch;
+    rtcBackupPrefs.putUInt("lastEpoch", epoch);
   }
 }
 
@@ -128,6 +160,9 @@ const char *SystemController::getLastResetLabel() {
 }
 
 void SystemController::hardwareSetup() {
+  // Backup NVS dla RTC (oddzielny namespace, aby nie kolidowac z Config/Logs)
+  rtcBackupPrefs.begin("RTCBackup", false);
+
   pinMode(LIGHT_PIN, OUTPUT);
   writeManagedOutput(LIGHT_PIN, false, LIGHT_OUTPUT_ACTIVE_HIGH);
   pinMode(PUMP_PIN, OUTPUT);
@@ -152,8 +187,12 @@ void SystemController::hardwareSetup() {
     LogManager::logError("Nie znaleziono modulu RTC (DS3231)!");
   } else if (rtc.lostPower()) {
     rtcReady = true;
-    LogManager::logWarn("RTC zresetowany, przywracanie domyslnego czasu...");
-    rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+    LogManager::logWarn("RTC zresetowany, proba przywrocenia kopii...");
+    if (!restoreRtcFromBackup()) {
+      LogManager::logWarn("Brak kopii czasu w NVS, ustawiam wartosc domyslna (2025-01-01).");
+      rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+      lastPersistedEpoch = 0;
+    }
   } else {
     rtcReady = true;
     // Sprawdz czy czas w RTC jest rozsądny (nie za stary)
@@ -161,6 +200,7 @@ void SystemController::hardwareSetup() {
     if (now.year() < 2024 || now.year() > 2030) {
       LogManager::logWarn("RTC ma niepoprawny czas, przywracanie domyslnego...");
       rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+      lastPersistedEpoch = 0;
     }
   }
 }
@@ -239,6 +279,9 @@ void SystemController::updateDecisions() {
   DateTime now = getCurrentDateTime();
   SharedState::updateTime(now.hour(), now.minute(), now.second(), now.day(),
                           now.month(), now.year());
+  if (rtcReady) {
+    persistRtcIfNeeded(now);
+  }
 
   ScheduleManager::update(now);
 

@@ -266,8 +266,8 @@ static void applyPendingUiChanges() {
     uint8_t day = constrain(localTime.day, 1, 31);
     uint8_t month = constrain(localTime.month, 1, 12);
     uint16_t year = constrain(localTime.year, 2024, 2099);
-    SystemController::rtc.adjust(
-        DateTime(year, month, day, hour, minute, second));
+    DateTime newTime(year, month, day, hour, minute, second);
+    syncSystemTime(static_cast<uint32_t>(newTime.unixtime()));
   }
 }
 
