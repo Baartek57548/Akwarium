@@ -461,7 +461,7 @@
                         <Border Style="{StaticResource PanelCardStyle}" HorizontalOptions="Center" MaximumWidthRequest="1180">
                             <VerticalStackLayout Padding="24" Spacing="18">
                                 <Label FontFamily="OpenSansSemibold" FontSize="24" Text="Grafik Pracy (24h)" TextColor="{StaticResource TextPrimary}" />
-                                <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="0" WidthRequest="1000" HorizontalOptions="Start">
+                                <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="0">
                                     <Label Grid.Column="0" Style="{StaticResource TinyMutedTextStyle}" HorizontalTextAlignment="Start" Text="0" />
                                     <Label Grid.Column="1" Style="{StaticResource TinyMutedTextStyle}" HorizontalTextAlignment="Center" Text="6" />
                                     <Label Grid.Column="2" Style="{StaticResource TinyMutedTextStyle}" HorizontalTextAlignment="Center" Text="12" />
@@ -476,7 +476,7 @@
                                     </Border>
                                     <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="8">
                                         <Label FontFamily="OpenSansSemibold" FontSize="14" Text="Oświetlenie Główne" TextColor="{StaticResource TextPrimary}" />
-                                        <Grid ColumnDefinitions="*" WidthRequest="1000" HorizontalOptions="Start">
+                                        <Grid ColumnDefinitions="*">
                                             <Border HeightRequest="14" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 7" />
                                             <Border HeightRequest="14" Margin="{Binding LightTimelineBarMargin}" WidthRequest="{Binding LightTimelineBarWidth}" BackgroundColor="#F5DE4D" Stroke="Transparent" StrokeShape="RoundRectangle 7" HorizontalOptions="Start" />
                                         </Grid>
@@ -498,7 +498,7 @@
                                     </Border>
                                     <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="8">
                                         <Label FontFamily="OpenSansSemibold" FontSize="14" Text="Napowietrzanie" TextColor="{StaticResource TextPrimary}" />
-                                        <Grid ColumnDefinitions="*" WidthRequest="1000" HorizontalOptions="Start">
+                                        <Grid ColumnDefinitions="*">
                                             <Border HeightRequest="14" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 7" />
                                             <Border HeightRequest="14" Margin="{Binding AerationTimelineBarMargin}" WidthRequest="{Binding AerationTimelineBarWidth}" BackgroundColor="#F8FAFC" Stroke="Transparent" StrokeShape="RoundRectangle 7" HorizontalOptions="Start" />
                                         </Grid>
@@ -520,7 +520,7 @@
                                     </Border>
                                     <VerticalStackLayout Grid.Row="2" Grid.Column="1" Spacing="8">
                                         <Label FontFamily="OpenSansSemibold" FontSize="14" Text="Filtracja" TextColor="{StaticResource TextPrimary}" />
-                                        <Grid ColumnDefinitions="*" WidthRequest="1000" HorizontalOptions="Start">
+                                        <Grid ColumnDefinitions="*">
                                             <Border HeightRequest="14" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 7" />
                                             <Border HeightRequest="14" Margin="{Binding FilterTimelineBarMargin}" WidthRequest="{Binding FilterTimelineBarWidth}" BackgroundColor="#4F87F7" Stroke="Transparent" StrokeShape="RoundRectangle 7" HorizontalOptions="Start" />
                                         </Grid>
@@ -542,11 +542,11 @@
                                     </Border>
                                     <VerticalStackLayout Grid.Row="3" Grid.Column="1" Spacing="8">
                                         <Label FontFamily="OpenSansSemibold" FontSize="14" Text="Karmienie (Automatyczne)" TextColor="{StaticResource TextPrimary}" />
-                                        <Grid ColumnDefinitions="*" WidthRequest="1000" HorizontalOptions="Start">
+                                        <Grid ColumnDefinitions="*">
                                             <Border HeightRequest="14" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 7" />
                                             <Border Margin="{Binding FeedTimelineMarkerMargin}" WidthRequest="14" HeightRequest="14" BackgroundColor="{StaticResource AccentCyan}" Stroke="Transparent" StrokeShape="RoundRectangle 7" HorizontalOptions="Start" />
                                         </Grid>
-                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8" WidthRequest="1000" HorizontalOptions="Start">
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                             <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedFeedHour}" TextColor="{StaticResource TextPrimary}" />
                                             <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedFeedMinute}" TextColor="{StaticResource TextPrimary}" />
                                         </Grid>
