@@ -336,59 +336,59 @@
                 <div class="timeline-container glass p-4">
                     <h3 class="mh-2 mb-4">Grafik Pracy (24h)</h3>
                     
-                    <div class="schedule-item">
+                    <div class="schedule-item" data-schedule-kind="range">
                         <div class="schedule-icon"><i class="fa-regular fa-lightbulb" style="color: var(--accent-yellow);"></i></div>
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Oświetlenie Główne</div>
-                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
-                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
-                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączony</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączony</option>
                                 </select>
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
-                                <div class="schedule-bar" style="left: 41.6%; width: 47.9%; background: var(--accent-yellow);"></div>
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 41.6%; transform: translateX(-50%); width: 75px;" value="10:00">
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 89.5%; transform: translateX(-50%); width: 75px;" value="21:30">
+                                <div class="schedule-bar" style="background: var(--accent-yellow);"></div>
+                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="21:30">
                             </div>
                         </div>
                     </div>
 
-                    <div class="schedule-item mt-4">
+                    <div class="schedule-item mt-4" data-schedule-kind="range">
                         <div class="schedule-icon"><i class="fa-solid fa-wind" style="color: var(--accent-white);"></i></div>
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Napowietrzanie</div>
-                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
-                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
-                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączony</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączony</option>
                                 </select>
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
-                                <div class="schedule-bar" style="left: 41.6%; width: 37.5%; background: var(--accent-white);"></div>
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 41.6%; transform: translateX(-50%); width: 75px;" value="10:00">
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 79.1%; transform: translateX(-50%); width: 75px;" value="19:00">
+                                <div class="schedule-bar" style="background: var(--accent-white);"></div>
+                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="19:00">
                             </div>
                         </div>
                     </div>
 
-                    <div class="schedule-item mt-4">
+                    <div class="schedule-item mt-4" data-schedule-kind="range">
                         <div class="schedule-icon"><i class="fa-solid fa-filter" style="color: var(--accent-blue);"></i></div>
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Filtracja</div>
-                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
-                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
-                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączony</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączony</option>
                                 </select>
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
-                                <div class="schedule-bar" style="left: 43.7%; width: 41.6%; background: var(--accent-blue);"></div>
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 43.7%; transform: translateX(-50%); width: 75px;" value="10:30">
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 85.3%; transform: translateX(-50%); width: 75px;" value="20:30">
+                                <div class="schedule-bar" style="background: var(--accent-blue);"></div>
+                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:30">
+                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="20:30">
                             </div>
                         </div>
                     </div>
@@ -407,7 +407,7 @@
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
                                 <div class="schedule-point" style="left: 75%; background: var(--accent-cyan);"></div>
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 75%; transform: translateX(-50%); width: 75px;" value="18:00">
+                                <input type="time" class="time-pill schedule-time-point" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="18:00">
                             </div>
                         </div>
                     </div>

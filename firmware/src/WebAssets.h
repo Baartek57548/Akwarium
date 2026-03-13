@@ -281,56 +281,6 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                                 <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
                                 <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="card glass" style="padding: 20px; align-items: center;">
-                        <span style="font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 25px; align-self: flex-start;">Karmnik</span>
-                        
-                        <div style="position: relative; width: 140px; height: 140px; border-radius: 50%; border: 2px solid #8B2E67; display: flex; align-items: center; justify-content: center; background: #1C1120; margin-bottom: 20px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
-                            <button onclick="triggerFeed()" style="width: 110px; height: 110px; border-radius: 50%; background: #32142D; border: none; color: #F472B6; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#4a1e43'" onmouseout="this.style.background='#32142D'">Karm teraz</button>
-                        </div>
-                        
-                        <span style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Codziennie 18:00</span>
-                        <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 13px; padding: 10px 24px; border-radius: 16px; background: rgba(255,255,255,0.03);">Zarzadzaj</button>
-                    </div>
-
-                    <!-- Wiersz 3: Zakres temperatury (Wykres 20 bar) -->
-                    <div class="card glass" style="grid-column: 1 / -1; padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Zakres temperatury</span>
-                            <span style="font-size: 11px; color: var(--text-muted); padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 10px;">Ostatnie 3 godz. (20 odczytów)</span>
-                        </div>
-                        
-                        <div class="temp-chart">
-                            <!-- Histereza i cel -->
-                            <div class="hysteresis-zone" style="height: 30%; bottom: 40%;"></div>
-                            <div class="target-temp-line" style="bottom: 55%;"><span class="target-temp-label">25.0°C Docelowa</span></div>
-                            
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 30%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 35%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 32%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 45%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 42%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 38%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 46%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 55%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 60%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 68%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 64%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 70%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 80%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar hot" style="height: 90%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 75%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar active" style="height: 55%;"></div></div>
                         </div>
                     </div>
 
@@ -397,59 +347,59 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                 <div class="timeline-container glass p-4">
                     <h3 class="mh-2 mb-4">Grafik Pracy (24h)</h3>
                     
-                    <div class="schedule-item">
+                    <div class="schedule-item" data-schedule-kind="range">
                         <div class="schedule-icon"><i class="fa-regular fa-lightbulb" style="color: var(--accent-yellow);"></i></div>
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Oświetlenie Główne</div>
-                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
-                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
-                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączony</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączony</option>
                                 </select>
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
-                                <div class="schedule-bar" style="left: 41.6%; width: 47.9%; background: var(--accent-yellow);"></div>
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 41.6%; transform: translateX(-50%); width: 75px;" value="10:00">
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 89.5%; transform: translateX(-50%); width: 75px;" value="21:30">
+                                <div class="schedule-bar" style="background: var(--accent-yellow);"></div>
+                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="21:30">
                             </div>
                         </div>
                     </div>
 
-                    <div class="schedule-item mt-4">
+                    <div class="schedule-item mt-4" data-schedule-kind="range">
                         <div class="schedule-icon"><i class="fa-solid fa-wind" style="color: var(--accent-white);"></i></div>
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Napowietrzanie</div>
-                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
-                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
-                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączony</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączony</option>
                                 </select>
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
-                                <div class="schedule-bar" style="left: 41.6%; width: 37.5%; background: var(--accent-white);"></div>
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 41.6%; transform: translateX(-50%); width: 75px;" value="10:00">
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 79.1%; transform: translateX(-50%); width: 75px;" value="19:00">
+                                <div class="schedule-bar" style="background: var(--accent-white);"></div>
+                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="19:00">
                             </div>
                         </div>
                     </div>
 
-                    <div class="schedule-item mt-4">
+                    <div class="schedule-item mt-4" data-schedule-kind="range">
                         <div class="schedule-icon"><i class="fa-solid fa-filter" style="color: var(--accent-blue);"></i></div>
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Filtracja</div>
-                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
-                                    <option value="zawsze_wlaczone">Zawsze włączone</option>
-                                    <option value="zawsze_wylaczone">Zawsze wyłączone</option>
+                                    <option value="zawsze_wlaczone">Zawsze włączony</option>
+                                    <option value="zawsze_wylaczone">Zawsze wyłączony</option>
                                 </select>
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
-                                <div class="schedule-bar" style="left: 43.7%; width: 41.6%; background: var(--accent-blue);"></div>
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 43.7%; transform: translateX(-50%); width: 75px;" value="10:30">
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 85.3%; transform: translateX(-50%); width: 75px;" value="20:30">
+                                <div class="schedule-bar" style="background: var(--accent-blue);"></div>
+                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:30">
+                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="20:30">
                             </div>
                         </div>
                     </div>
@@ -468,7 +418,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
                                 <div class="schedule-point" style="left: 75%; background: var(--accent-cyan);"></div>
-                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 75%; transform: translateX(-50%); width: 75px;" value="18:00">
+                                <input type="time" class="time-pill schedule-time-point" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="18:00">
                             </div>
                         </div>
                     </div>
@@ -1634,7 +1584,7 @@ async function fetchStatus() {
     } catch (e) {
         setBackendState(false);
     }
-    .relay-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+}
 
 async function fetchLogs() {
     try {
@@ -1659,6 +1609,82 @@ async function sendAction(action, payload = {}) {
     if (!response.ok) {
         throw new Error(await response.text());
     }
+}
+
+function timeToMinutes(time) {
+    const [hours, minutes] = (time || '00:00').split(':').map(Number);
+    return ((Number.isFinite(hours) ? hours : 0) * 60) + (Number.isFinite(minutes) ? minutes : 0);
+}
+
+function minutesToPercent(totalMinutes) {
+    return Math.max(0, Math.min(100, (totalMinutes / (24 * 60)) * 100));
+}
+
+function updateRangeScheduleItem(item) {
+    const modeSelect = item.querySelector('.schedule-mode-select');
+    const startInput = item.querySelector('.schedule-time-start');
+    const endInput = item.querySelector('.schedule-time-end');
+    const bar = item.querySelector('.schedule-bar');
+    if (!modeSelect || !startInput || !endInput || !bar) return;
+
+    const mode = modeSelect.value;
+    const startMinutes = timeToMinutes(startInput.value);
+    let endMinutes = timeToMinutes(endInput.value);
+    if (endMinutes < startMinutes) {
+        endMinutes = startMinutes;
+        endInput.value = startInput.value;
+    }
+
+    startInput.disabled = mode !== 'harmonogram';
+    endInput.disabled = mode !== 'harmonogram';
+
+    const startPct = minutesToPercent(startMinutes);
+    let endPct = minutesToPercent(endMinutes);
+
+    if (mode === 'zawsze_wlaczone') {
+        endPct = 100;
+        bar.style.left = '0%';
+        bar.style.width = '100%';
+    } else if (mode === 'zawsze_wylaczone') {
+        bar.style.left = '0%';
+        bar.style.width = '0%';
+    } else {
+        bar.style.left = `${startPct}%`;
+        bar.style.width = `${Math.max(0, endPct - startPct)}%`;
+    }
+
+    startInput.style.left = `${startPct}%`;
+    endInput.style.left = `${endPct}%`;
+}
+
+function updatePointScheduleItem(item) {
+    const pointInput = item.querySelector('.schedule-time-point');
+    const point = item.querySelector('.schedule-point');
+    if (!pointInput || !point) return;
+
+    const pointPct = minutesToPercent(timeToMinutes(pointInput.value));
+    point.style.left = `${pointPct}%`;
+    pointInput.style.left = `${pointPct}%`;
+}
+
+function initScheduleTimeline() {
+    const scheduleItems = document.querySelectorAll('#harmonogramy .schedule-item');
+    scheduleItems.forEach(item => {
+        const kind = item.getAttribute('data-schedule-kind') || 'point';
+        if (kind === 'range') {
+            const modeSelect = item.querySelector('.schedule-mode-select');
+            const startInput = item.querySelector('.schedule-time-start');
+            const endInput = item.querySelector('.schedule-time-end');
+            modeSelect?.addEventListener('change', () => updateRangeScheduleItem(item));
+            startInput?.addEventListener('input', () => updateRangeScheduleItem(item));
+            endInput?.addEventListener('input', () => updateRangeScheduleItem(item));
+            updateRangeScheduleItem(item);
+        } else {
+            const pointInput = item.querySelector('.schedule-time-point');
+            pointInput?.addEventListener('input', () => updatePointScheduleItem(item));
+            updatePointScheduleItem(item);
+        }
+    });
 }
 
 // Tab Switching Logic
@@ -1795,11 +1821,20 @@ function simulateOTA() {
         if (xhr.status >= 200 && xhr.status < 300) {
             btn.textContent = 'Wgrano pakiet OTA';
             btn.style.backgroundColor = 'var(--success-color)';
-            alert('Aktualizacja przesłana. Urządzenie może uruchomić się ponownie.');
-        } else {
-            btn.textContent = 'Błąd OTA';
-            btn.style.backgroundColor = 'var(--danger-color)';
-            alert(`Błąd OTA (HTTP ${xhr.status}).`);
+            
+            setTimeout(() => {
+                alert('Aktualizacja zakończona pomyślnie. Urządzenie zrestartuje się za chwilę.');
+                // Reset UI
+                progressContainer.style.display = 'none';
+                fill.style.width = '0%';
+                percentTxt.textContent = '0%';
+                btn.textContent = 'Aktualizuj System';
+                btn.style.backgroundColor = '';
+                const firmwareFile = document.getElementById('firmware-file');
+                if(firmwareFile) {
+                    firmwareFile.value = '';
+                }
+            }, 1000);
         }
     };
 
@@ -1823,6 +1858,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     initNavigation();
     initOTA();
+    initScheduleTimeline();
 
     const currentBtn = document.getElementById('logs-current-btn');
     const criticalBtn = document.getElementById('logs-critical-btn');
