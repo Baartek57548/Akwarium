@@ -347,26 +347,60 @@
                                         <Label FontSize="11" HorizontalTextAlignment="End" Text="{Binding ConnectionStatusBadgeText}" TextColor="{StaticResource TextSecondary}" />
                                     </VerticalStackLayout>
                                 </Border>
-                                <Button BackgroundColor="#0B2434" BorderColor="#1A5E78" BorderWidth="1" Command="{Binding RefreshStatusCommand}" Style="{StaticResource FluentButtonStyle}" Text="Odswiez" TextColor="{StaticResource AccentCyan}" />
                             </HorizontalStackLayout>
                         </Grid>
 
-                        <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="14">
                             <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="6"><Label Style="{StaticResource TinyMutedTextStyle}" Text="TEMPERATURA" /><Label Style="{StaticResource MetricValueStyle}" Text="{Binding CurrentStatus.TemperatureText}" /><Label Style="{StaticResource MutedTextStyle}" Text="{Binding TemperatureSummaryText}" /></VerticalStackLayout></Border>
                             <Border Grid.Column="1" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="6"><Label Style="{StaticResource TinyMutedTextStyle}" Text="BATERIA" /><Label Style="{StaticResource MetricValueStyle}" Text="{Binding CurrentStatus.BatteryPercent, StringFormat='{}{0}%'}" /><ProgressBar BackgroundColor="#16263B" HeightRequest="10" Progress="{Binding BatteryProgress}" ProgressColor="{Binding BatteryFillColor}" /></VerticalStackLayout></Border>
                             <Border Grid.Column="2" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="6"><Label Style="{StaticResource TinyMutedTextStyle}" Text="SIEC" /><Label Style="{StaticResource MetricValueStyle}" FontSize="22" Text="{Binding ConnectionStatusBadgeText}" /><Label Style="{StaticResource MutedTextStyle}" Text="{Binding NetworkSummaryText}" /></VerticalStackLayout></Border>
-                            <Border Grid.Column="3" Style="{StaticResource PanelCardStyle}"><VerticalStackLayout Padding="16" Spacing="6"><Label Style="{StaticResource TinyMutedTextStyle}" Text="KONTROLER" /><Label Style="{StaticResource MetricValueStyle}" FontSize="22" Text="{Binding CurrentControllerName}" /><Label Style="{StaticResource TinyMutedTextStyle}" Text="{Binding CurrentFirmwareVersionText}" /></VerticalStackLayout></Border>
                         </Grid>
 
                         <Grid ColumnDefinitions="1.1*,1*,0.8*" ColumnSpacing="14">
                             <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}">
                                 <VerticalStackLayout Padding="18" Spacing="12">
-                                    <Grid ColumnDefinitions="*,Auto"><Label Style="{StaticResource SectionTitleStyle}" Text="Przekazniki" /><Label Grid.Column="1" FontSize="11" Text="{Binding RelayActiveCount, StringFormat='{}{0} / 4'}" TextColor="{StaticResource TextMuted}" /></Grid>
+                                    <Grid ColumnDefinitions="*,Auto"><Label Style="{StaticResource SectionTitleStyle}" Text="Przekazniki" /><Border Grid.Column="1" Padding="10,4" BackgroundColor="#1B2437" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 12"><Label FontFamily="OpenSansSemibold" FontSize="11" Text="{Binding RelayActiveCount, StringFormat='{}{0} / 4 aktywnych'}" TextColor="{StaticResource TextSecondary}" /></Border></Grid>
                                     <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
-                                        <Border Style="{StaticResource SubCardStyle}"><VerticalStackLayout Padding="12" Spacing="4"><Label FontFamily="OpenSansSemibold" FontSize="13" Text="Swiatlo" TextColor="{StaticResource TextPrimary}" /><Label FontSize="11" Text="{Binding CurrentStatus.LightText}" TextColor="{StaticResource TextSecondary}" /></VerticalStackLayout></Border>
-                                        <Border Grid.Column="1" Style="{StaticResource SubCardStyle}"><VerticalStackLayout Padding="12" Spacing="4"><Label FontFamily="OpenSansSemibold" FontSize="13" Text="Filtr" TextColor="{StaticResource TextPrimary}" /><Label FontSize="11" Text="{Binding CurrentStatus.FilterText}" TextColor="{StaticResource TextSecondary}" /></VerticalStackLayout></Border>
-                                        <Border Grid.Row="1" Style="{StaticResource SubCardStyle}"><VerticalStackLayout Padding="12" Spacing="4"><Label FontFamily="OpenSansSemibold" FontSize="13" Text="Grzalka" TextColor="{StaticResource TextPrimary}" /><Label FontSize="11" Text="{Binding CurrentStatus.HeaterText}" TextColor="{StaticResource TextSecondary}" /></VerticalStackLayout></Border>
-                                        <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource SubCardStyle}"><VerticalStackLayout Padding="12" Spacing="4"><Label FontFamily="OpenSansSemibold" FontSize="13" Text="Napowietrzanie" TextColor="{StaticResource TextPrimary}" /><Label FontSize="11" Text="{Binding ServoModeText}" TextColor="{StaticResource TextSecondary}" /></VerticalStackLayout></Border>
+                                        <Border Style="{StaticResource SubCardStyle}" BackgroundColor="#142333" Stroke="#4A4320">
+                                            <VerticalStackLayout Padding="12" Spacing="8">
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                    <Border WidthRequest="34" HeightRequest="34" BackgroundColor="#363012" Stroke="Transparent" StrokeShape="RoundRectangle 10"><Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE793;" TextColor="{StaticResource AccentYellow}" /></Border>
+                                                    <Label Grid.Column="1" HorizontalOptions="End" BackgroundColor="#152234" Padding="10,2" FontFamily="OpenSansSemibold" FontSize="11" Text="{Binding CurrentStatus.LightText}" TextColor="{StaticResource TextPrimary}" />
+                                                </Grid>
+                                                <Label FontFamily="OpenSansSemibold" FontSize="13" Text="Swiatlo" TextColor="{StaticResource TextPrimary}" />
+                                                <Label FontSize="11" Text="Wyl. harmonogram" TextColor="{StaticResource TextSecondary}" />
+                                            </VerticalStackLayout>
+                                        </Border>
+                                        <Border Grid.Column="1" Style="{StaticResource SubCardStyle}" BackgroundColor="#10293A" Stroke="#1A5E78">
+                                            <VerticalStackLayout Padding="12" Spacing="8">
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                    <Border WidthRequest="34" HeightRequest="34" BackgroundColor="#0B3A4E" Stroke="Transparent" StrokeShape="RoundRectangle 10"><Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE71C;" TextColor="{StaticResource AccentCyan}" /></Border>
+                                                    <Label Grid.Column="1" HorizontalOptions="End" BackgroundColor="#0B3A4E" Padding="10,2" FontFamily="OpenSansSemibold" FontSize="11" Text="{Binding CurrentStatus.FilterText}" TextColor="{StaticResource AccentCyan}" />
+                                                </Grid>
+                                                <Label FontFamily="OpenSansSemibold" FontSize="13" Text="Filtr" TextColor="{StaticResource TextPrimary}" />
+                                                <Label FontSize="11" Text="{Binding FilterScheduleSummaryText}" TextColor="{StaticResource AccentCyan}" />
+                                            </VerticalStackLayout>
+                                        </Border>
+                                        <Border Grid.Row="1" Style="{StaticResource SubCardStyle}" BackgroundColor="#2A1D12" Stroke="#6B421C">
+                                            <VerticalStackLayout Padding="12" Spacing="8">
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                    <Border WidthRequest="34" HeightRequest="34" BackgroundColor="#3A2716" Stroke="Transparent" StrokeShape="RoundRectangle 10"><Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE9CA;" TextColor="{StaticResource AccentOrange}" /></Border>
+                                                    <Label Grid.Column="1" HorizontalOptions="End" BackgroundColor="#352514" Padding="10,2" FontFamily="OpenSansSemibold" FontSize="11" Text="{Binding CurrentStatus.HeaterText}" TextColor="{StaticResource AccentOrange}" />
+                                                </Grid>
+                                                <Label FontFamily="OpenSansSemibold" FontSize="13" Text="Grzalka" TextColor="{StaticResource TextPrimary}" />
+                                                <Label FontSize="11" Text="Temp. OK - czeka" TextColor="{StaticResource TextSecondary}" />
+                                            </VerticalStackLayout>
+                                        </Border>
+                                        <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource SubCardStyle}" BackgroundColor="#112E2C" Stroke="#177568">
+                                            <VerticalStackLayout Padding="12" Spacing="8">
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                    <Border WidthRequest="34" HeightRequest="34" BackgroundColor="#0C3A36" Stroke="Transparent" StrokeShape="RoundRectangle 10"><Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="16" Text="&#xE753;" TextColor="{StaticResource AccentGreen}" /></Border>
+                                                    <Label Grid.Column="1" HorizontalOptions="End" BackgroundColor="#0D3C3A" Padding="10,2" FontFamily="OpenSansSemibold" FontSize="11" Text="{Binding ServoModeText}" TextColor="{StaticResource AccentGreen}" />
+                                                </Grid>
+                                                <Label FontFamily="OpenSansSemibold" FontSize="13" Text="Napowietrzanie" TextColor="{StaticResource TextPrimary}" />
+                                                <Label FontSize="11" Text="{Binding AerationScheduleSummaryText}" TextColor="{StaticResource AccentGreen}" />
+                                            </VerticalStackLayout>
+                                        </Border>
                                     </Grid>
                                 </VerticalStackLayout>
                             </Border>
@@ -395,32 +429,40 @@
                             </Border>
                         </Grid>
 
-                        <Grid ColumnDefinitions="1.1*,0.9*" ColumnSpacing="14">
-                            <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}">
+                        <Grid ColumnDefinitions="*" ColumnSpacing="14">
+                            <Border Style="{StaticResource PanelCardStyle}">
                                 <VerticalStackLayout Padding="18" Spacing="10">
-                                    <Label Style="{StaticResource SectionTitleStyle}" Text="Zakres temperatury" />
-                                    <Label Style="{StaticResource TinyMutedTextStyle}" Text="{Binding MinTemperatureTimeText}" />
-                                    <ProgressBar BackgroundColor="#14263B" HeightRequest="10" Progress="{Binding MinimumTemperatureProgress}" ProgressColor="{StaticResource AccentBlue}" />
-                                    <ProgressBar BackgroundColor="#14263B" HeightRequest="10" Progress="{Binding TemperatureRangeProgress}" ProgressColor="{StaticResource AccentCyan}" />
-                                    <ProgressBar BackgroundColor="#14263B" HeightRequest="10" Progress="{Binding TargetTemperatureProgress}" ProgressColor="{StaticResource AccentPurple}" />
-                                </VerticalStackLayout>
-                            </Border>
-                            <Border Grid.Column="1" Style="{StaticResource PanelCardStyle}">
-                                <VerticalStackLayout Padding="18" Spacing="10">
-                                    <Label Style="{StaticResource SectionTitleStyle}" Text="Ostatnie logi" />
-                                    <CollectionView HeightRequest="170" ItemsSource="{Binding RecentLogs}" SelectionMode="None">
-                                        <CollectionView.ItemTemplate>
-                                            <DataTemplate x:DataType="viewModels:ActivityLogEntry">
-                                                <Border Margin="0,0,0,8" Padding="10" BackgroundColor="#0C1727" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 12">
-                                                    <Grid ColumnDefinitions="56,70,*" ColumnSpacing="10">
-                                                        <Label FontFamily="OpenSansSemibold" FontSize="10" Text="{Binding LevelText}" TextColor="{Binding LevelAccentColor}" />
-                                                        <Label Grid.Column="1" FontSize="11" Text="{Binding Timestamp.LocalDateTime, StringFormat='{}{0:HH:mm:ss}'}" TextColor="{StaticResource TextMuted}" />
-                                                        <Label Grid.Column="2" FontSize="12" LineBreakMode="TailTruncation" Text="{Binding Message}" TextColor="{StaticResource TextPrimary}" />
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </CollectionView.ItemTemplate>
-                                    </CollectionView>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Label Style="{StaticResource SectionTitleStyle}" Text="Zakres temperatury" />
+                                        <Border Grid.Column="1" Padding="10,4" BackgroundColor="#13243A" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 12"><Label FontSize="12" Text="Ostatnie 3 godz. (20 odczytow)" TextColor="{StaticResource TextSecondary}" /></Border>
+                                    </Grid>
+                                    <BoxView HeightRequest="1" Color="#1B3A5B" />
+                                    <Grid ColumnDefinitions="*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*" ColumnSpacing="4" HeightRequest="88" VerticalOptions="End">
+                                        <Border Grid.Column="0" HeightRequest="38" VerticalOptions="End" BackgroundColor="#5D44B3" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="1" HeightRequest="34" VerticalOptions="End" BackgroundColor="#5B42AF" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="2" HeightRequest="36" VerticalOptions="End" BackgroundColor="#5E46B8" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="3" HeightRequest="44" VerticalOptions="End" BackgroundColor="#614ABF" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="4" HeightRequest="42" VerticalOptions="End" BackgroundColor="#5E45B6" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="5" HeightRequest="43" VerticalOptions="End" BackgroundColor="#5F47BA" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="6" HeightRequest="45" VerticalOptions="End" BackgroundColor="#624CC4" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="7" HeightRequest="42" VerticalOptions="End" BackgroundColor="#5E45B6" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="8" HeightRequest="48" VerticalOptions="End" BackgroundColor="#6550C8" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="9" HeightRequest="46" VerticalOptions="End" BackgroundColor="#634DC4" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="10" HeightRequest="52" VerticalOptions="End" BackgroundColor="#6B58CC" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="11" HeightRequest="56" VerticalOptions="End" BackgroundColor="#6E5BD0" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="12" HeightRequest="58" VerticalOptions="End" BackgroundColor="#735FD5" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="13" HeightRequest="54" VerticalOptions="End" BackgroundColor="#6D5AD0" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="14" HeightRequest="55" VerticalOptions="End" BackgroundColor="#705DD3" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="15" HeightRequest="64" VerticalOptions="End" BackgroundColor="#7764DA" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="16" HeightRequest="72" VerticalOptions="End" BackgroundColor="#D9843A" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="17" HeightRequest="60" VerticalOptions="End" BackgroundColor="#755FD5" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="18" HeightRequest="56" VerticalOptions="End" BackgroundColor="#6D59CE" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                        <Border Grid.Column="19" HeightRequest="70" VerticalOptions="End" BackgroundColor="#33C4DA" Stroke="Transparent" StrokeShape="RoundRectangle 6" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                        <Label FontSize="12" Text="-190 min" TextColor="{StaticResource TextSecondary}" />
+                                        <Label Grid.Column="1" FontSize="12" HorizontalTextAlignment="End" Text="Teraz" TextColor="{StaticResource TextSecondary}" />
+                                    </Grid>
                                 </VerticalStackLayout>
                             </Border>
                         </Grid>
