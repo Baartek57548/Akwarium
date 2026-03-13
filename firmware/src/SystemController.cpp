@@ -200,7 +200,6 @@ void SystemController::hardwareSetup() {
     if (now.year() < 2024 || now.year() > 2030) {
       LogManager::logWarn("RTC ma niepoprawny czas, przywracanie domyslnego...");
       rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
-      lastPersistedEpoch = 0;
     }
   }
 }

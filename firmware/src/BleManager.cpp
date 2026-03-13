@@ -82,6 +82,7 @@ static const size_t BLE_OTA_RECOMMENDED_DATA_CHUNK_BYTES = 160;
 static unsigned long lastCommandAtMs = 0;
 static unsigned long lastSettingsAtMs = 0;
 static portMUX_TYPE bleStateMux = portMUX_INITIALIZER_UNLOCKED;
+static int failedAuthCount = 0;
 
 // --- Deferred BLE command queue (flag-based) ---
 // Komendy BLE nie moga byc wykonywane bezposrednio w callbacku BLE,
@@ -167,6 +168,33 @@ static void setBlePostAuthSyncPending(bool pending) {
   portEXIT_CRITICAL(&bleStateMux);
 }
 
+static void scheduleResumeAdvertising(unsigned long resumeAtMs) {
+  portENTER_CRITICAL(&bleStateMux);
+  resumeAdvertisingPending = true;
+  resumeAdvertisingAtMs = resumeAtMs;
+  portEXIT_CRITICAL(&bleStateMux);
+}
+
+static void clearResumeAdvertisingSchedule() {
+  portENTER_CRITICAL(&bleStateMux);
+  resumeAdvertisingPending = false;
+  resumeAdvertisingAtMs = 0;
+  portEXIT_CRITICAL(&bleStateMux);
+}
+
+static bool shouldResumeAdvertisingNow(unsigned long nowMs) {
+  bool shouldResume = false;
+  portENTER_CRITICAL(&bleStateMux);
+  if (resumeAdvertisingPending && !deviceConnected &&
+      static_cast<long>(nowMs - resumeAdvertisingAtMs) >= 0) {
+    resumeAdvertisingPending = false;
+    resumeAdvertisingAtMs = 0;
+    shouldResume = true;
+  }
+  portEXIT_CRITICAL(&bleStateMux);
+  return shouldResume;
+}
+
 static bool isBlePostAuthSyncPending() {
   portENTER_CRITICAL(&bleStateMux);
   const bool pending = blePostAuthSyncPending;
@@ -194,7 +222,7 @@ static void startAdvertisingNow() {
 
   pAdvertising->start();
   setBleAdvertisingActive(true);
-  resumeAdvertisingPending = false;
+  clearResumeAdvertisingSchedule();
   lastNotifyTime = 0;
   refreshConnectionState();
   Serial.println("[BLE] Advertising wlaczony.");
@@ -226,8 +254,7 @@ static void stopAdvertisingNow() {
   setBleAdvertisingActive(false);
   setBleAuthenticated(false);
   setBlePostAuthSyncPending(false);
-  resumeAdvertisingPending = false;
-  resumeAdvertisingAtMs = 0;
+  clearResumeAdvertisingSchedule();
   cacheConnectionCount(0);
   lastNotifyTime = 0;
   Serial.println("[BLE] Advertising wylaczony.");
@@ -535,7 +562,6 @@ class MySecurityCallbacks : public BLESecurityCallbacks {
       Serial.println("[BLE] Usunięto bond po nieudanej autoryzacji.");
       
       // Dodatkowo czyscimy wszystkie bondy przy powtarzających się problemach
-      static int failedAuthCount = 0;
       failedAuthCount++;
       if (failedAuthCount > 2) {
         Serial.println("[BLE] Wiele nieudanych autoryzacji, czyszczenie wszystkich bondów...");
@@ -548,7 +574,6 @@ class MySecurityCallbacks : public BLESecurityCallbacks {
       Serial.println("[BLE] Autoryzacja zakonczona sukcesem (bonded). ");
       cleanupExcessBonds(4);
       // Reset licznika po udanej autoryzacji
-      static int failedAuthCount = 0;
       failedAuthCount = 0;
     }
   }
@@ -560,7 +585,7 @@ private:
     cacheConnectionCount(server ? server->getConnectedCount() : 1U);
     setBleAuthenticated(false);
     setBlePostAuthSyncPending(false);
-    resumeAdvertisingPending = false;
+    clearResumeAdvertisingSchedule();
     lastNotifyTime = 0;
 
     uint32_t count = server ? server->getConnectedCount() : 1;
@@ -577,8 +602,7 @@ private:
                   static_cast<unsigned long>(count));
 
     if (bleAdvertising && !deviceConnected && getBleAdvertisingDesired()) {
-      resumeAdvertisingPending = true;
-      resumeAdvertisingAtMs = millis() + RESUME_ADVERTISING_DELAY_MS;
+      scheduleResumeAdvertising(millis() + RESUME_ADVERTISING_DELAY_MS);
       Serial.println("[BLE] Planuję wznowienie advertisingu za " + String(RESUME_ADVERTISING_DELAY_MS) + "ms");
     }
   }
@@ -1398,8 +1422,7 @@ void BleManager::init() {
   setBlePostAuthSyncPending(false);
   cacheConnectionCount(0);
   lastNotifyTime = 0;
-  resumeAdvertisingPending = false;
-  resumeAdvertisingAtMs = 0;
+  clearResumeAdvertisingSchedule();
   clearBleOtaSessionState(true);
   setOtaLastState("info", "ready");
   Serial.println(
@@ -1511,13 +1534,11 @@ void BleManager::update() {
     publishResult("ack", "connected");
   }
 
-  if (resumeAdvertisingPending && !deviceConnected &&
-      static_cast<long>(millis() - resumeAdvertisingAtMs) >= 0) {
+  if (shouldResumeAdvertisingNow(millis())) {
     if (pServer) {
       pServer->startAdvertising();
       Serial.println("[BLE] Wznowiono advertising po rozlaczeniu");
     }
-    resumeAdvertisingPending = false;
   }
 
   if (deviceConnected && isBleAuthenticated() &&

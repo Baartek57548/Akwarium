@@ -22,15 +22,14 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
             background: rgba(11, 19, 36, 0.8);
             border: 1px solid rgba(255, 255, 255, 0.15);
             color: #f8fafc;
-            border-radius: 14px;
-            padding: 7px 12px;
-            font-size: 14px;
+            border-radius: 12px;
+            padding: 4px 6px;
+            font-size: 11px;
             cursor: pointer;
             font-family: inherit;
             outline: none;
             transition: background 0.2s, border-color 0.2s;
             text-align: center;
-            min-width: 112px;
         }
         input[type="time"].time-pill:hover {
             background: rgba(0, 0, 0, 0.9);
@@ -39,10 +38,10 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
         input[type="time"].time-pill::-webkit-calendar-picker-indicator {
             filter: invert(0.6) sepia(1) saturate(5) hue-rotate(175deg);
             cursor: pointer;
-            width: 14px;
-            height: 14px;
+            width: 12px;
+            height: 12px;
             padding: 0;
-            margin-left: 4px;
+            margin-left: 2px;
         }
         
         /* Temp Chart Styles */
@@ -129,43 +128,6 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
             70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
         }
-
-        /* Mobile schedule overflow fix */
-        @media (max-width: 768px) {
-            .timeline-container {
-                max-width: 100% !important;
-                padding: 16px !important;
-                overflow: hidden;
-            }
-            .schedule-bar-container {
-                margin-bottom: 40px !important;
-                overflow: visible;
-            }
-            /* Clamp time pills so they never overflow outside the container */
-            input[type="time"].time-pill {
-                max-width: 90px !important;
-                font-size: 12px !important;
-                padding: 5px 8px !important;
-                width: 90px !important;
-            }
-            .schedule-item {
-                gap: 10px;
-            }
-            /* Fix: make select dropdowns smaller on mobile */
-            .schedule-details select.form-control {
-                font-size: 11px;
-                padding: 3px 6px;
-                max-width: 130px;
-            }
-            /* Ensure dashboard grid stretches full width on mobile */
-            #dashboard .dashboard-grid {
-                grid-template-columns: 1fr !important;
-            }
-            /* Relay cards stack nicely */
-            #dashboard .dashboard-grid > div:nth-child(4) > div:last-child {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -210,31 +172,25 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
             </div>
         </nav>
 
-        <!-- Mobile Sidebar Overlay -->
-        <div class="mobile-overlay" id="mobile-overlay" onclick="closeMobileNav()"></div>
-
         <!-- Main Content -->
         <main class="main-content">
             <!-- Topbar -->
             <header class="topbar">
-                <button class="hamburger-btn" id="hamburger-btn" onclick="toggleMobileNav()" aria-label="Menu">
-                    <i class="fa-solid fa-bars"></i>
-                </button>
-                <div class="topbar-left" style="display: flex; gap: 10px; align-items: center;">
+                <div style="display: flex; gap: 10px; align-items: center;">
                     <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 1px; margin-right: 5px;">AKTYWNE SIECI:</span>
-                    <div class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
+                    <div id="ap-badge" class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
                         <span class="pulse-dot" style="width: 8px; height: 8px;"></span>
                         Access Point (AP)
                     </div>
-                    <div class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
+                    <div id="sta-badge" class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
                         <span class="pulse-dot" style="width: 8px; height: 8px;"></span>
                         Station (STA)
                     </div>
-                    <div class="status-badge" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.3); color: var(--accent-cyan); padding: 6px 14px; font-size: 13px;">
+                    <div id="ble-badge" class="status-badge" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.3); color: var(--accent-cyan); padding: 6px 14px; font-size: 13px;">
                         <span class="pulse-dot-cyan"></span>
                         Bluetooth (BLE)
                     </div>
-                </div><!-- end topbar-left -->
+                </div>
                 
                 <div class="topbar-widgets">
                     <div class="info-pill" title="Bateria RTC (DS3231)">
@@ -277,65 +233,29 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                         <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">STA -</div>
                     </div>
 
+                    <!-- Wiersz 2: Przekazniki, Harmonogram dzisiaj, Karmnik -->
                     <div class="card glass" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Przekaźniki</span>
-                            <span style="font-size: 11px; color: var(--text-muted); background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 20px;">1 / 4 aktywnych</span>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Przekazniki</span>
+                            <span style="font-size: 11px; color: var(--text-muted);">1 / 4</span>
                         </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-
-                            <!-- Swiatlo - OFF -->
-                            <div style="background: rgba(250, 204, 21, 0.04); border: 1px solid rgba(250, 204, 21, 0.15); border-radius: 18px; padding: 16px; position: relative; overflow: hidden; cursor: pointer; transition: 0.3s;" onmouseover="this.style.background='rgba(250,204,21,0.08)'" onmouseout="this.style.background='rgba(250,204,21,0.04)'">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
-                                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(250, 204, 21, 0.1); display: flex; align-items: center; justify-content: center;">
-                                        <i class="fa-solid fa-lightbulb" style="color: rgba(250,204,21,0.5); font-size: 16px;"></i>
-                                    </div>
-                                    <span style="font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--text-muted); padding: 3px 8px; border-radius: 8px; background: rgba(255,255,255,0.05);">OFF</span>
-                                </div>
-                                <div style="font-size: 13px; font-weight: 600; color: var(--text-main);">Światło</div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">Wył. harmonogram</div>
-                                <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: rgba(250,204,21,0.2); border-radius: 0 0 18px 18px;"></div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
+                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Swiatlo</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Off</div>
                             </div>
-
-                            <!-- Filtr - ON -->
-                            <div style="background: rgba(6, 182, 212, 0.07); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 18px; padding: 16px; position: relative; overflow: hidden; cursor: pointer; transition: 0.3s; box-shadow: 0 0 18px rgba(6,182,212,0.1);" onmouseover="this.style.background='rgba(6,182,212,0.12)'" onmouseout="this.style.background='rgba(6,182,212,0.07)'">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
-                                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(6, 182, 212, 0.15); display: flex; align-items: center; justify-content: center;">
-                                        <i class="fa-solid fa-filter" style="color: var(--accent-cyan); font-size: 16px;"></i>
-                                    </div>
-                                    <span style="font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--accent-cyan); padding: 3px 8px; border-radius: 8px; background: rgba(6,182,212,0.15);">ON</span>
-                                </div>
-                                <div style="font-size: 13px; font-weight: 600; color: var(--text-main);">Filtr</div>
-                                <div style="font-size: 11px; color: var(--accent-cyan); margin-top: 3px;">Aktywny · 10:30–20:30</div>
-                                <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent-cyan), transparent); border-radius: 0 0 18px 18px;"></div>
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
+                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Filtr</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Off</div>
                             </div>
-
-                            <!-- Grzalka - Standby -->
-                            <div style="background: rgba(251, 146, 60, 0.04); border: 1px solid rgba(251, 146, 60, 0.15); border-radius: 18px; padding: 16px; position: relative; overflow: hidden; cursor: pointer; transition: 0.3s;" onmouseover="this.style.background='rgba(251,146,60,0.08)'" onmouseout="this.style.background='rgba(251,146,60,0.04)'">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
-                                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(251, 146, 60, 0.1); display: flex; align-items: center; justify-content: center;">
-                                        <i class="fa-solid fa-fire" style="color: rgba(251,146,60,0.6); font-size: 16px;"></i>
-                                    </div>
-                                    <span style="font-size: 10px; font-weight: 700; letter-spacing: 1px; color: rgba(251,146,60,0.7); padding: 3px 8px; border-radius: 8px; background: rgba(251,146,60,0.1);">STANDBY</span>
-                                </div>
-                                <div style="font-size: 13px; font-weight: 600; color: var(--text-main);">Grzałka</div>
-                                <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">Temp. OK · czeka</div>
-                                <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: rgba(251,146,60,0.2); border-radius: 0 0 18px 18px;"></div>
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
+                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Grzalka</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Standby</div>
                             </div>
-
-                            <!-- Napowietrzanie - ON -->
-                            <div style="background: rgba(16, 185, 129, 0.07); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 18px; padding: 16px; position: relative; overflow: hidden; cursor: pointer; transition: 0.3s; box-shadow: 0 0 18px rgba(16,185,129,0.08);" onmouseover="this.style.background='rgba(16,185,129,0.12)'" onmouseout="this.style.background='rgba(16,185,129,0.07)'">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
-                                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center;">
-                                        <i class="fa-solid fa-wind" style="color: var(--success-color); font-size: 16px;"></i>
-                                    </div>
-                                    <span style="font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--success-color); padding: 3px 8px; border-radius: 8px; background: rgba(16,185,129,0.15);">ON</span>
-                                </div>
-                                <div style="font-size: 13px; font-weight: 600; color: var(--text-main);">Napowietrzanie</div>
-                                <div style="font-size: 11px; color: var(--success-color); margin-top: 3px;">Aktywny · 10:00–19:00</div>
-                                <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--success-color), transparent); border-radius: 0 0 18px 18px;"></div>
+                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
+                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Napowietrzanie</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">Open</div>
                             </div>
-
                         </div>
                     </div>
 
@@ -361,6 +281,56 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                                 <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
                                 <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
                             </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
+                                <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card glass" style="padding: 20px; align-items: center;">
+                        <span style="font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 25px; align-self: flex-start;">Karmnik</span>
+                        
+                        <div style="position: relative; width: 140px; height: 140px; border-radius: 50%; border: 2px solid #8B2E67; display: flex; align-items: center; justify-content: center; background: #1C1120; margin-bottom: 20px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
+                            <button onclick="triggerFeed()" style="width: 110px; height: 110px; border-radius: 50%; background: #32142D; border: none; color: #F472B6; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#4a1e43'" onmouseout="this.style.background='#32142D'">Karm teraz</button>
+                        </div>
+                        
+                        <span style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Codziennie 18:00</span>
+                        <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 13px; padding: 10px 24px; border-radius: 16px; background: rgba(255,255,255,0.03);">Zarzadzaj</button>
+                    </div>
+
+                    <!-- Wiersz 3: Zakres temperatury (Wykres 20 bar) -->
+                    <div class="card glass" style="grid-column: 1 / -1; padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Zakres temperatury</span>
+                            <span style="font-size: 11px; color: var(--text-muted); padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 10px;">Ostatnie 3 godz. (20 odczytów)</span>
+                        </div>
+                        
+                        <div class="temp-chart">
+                            <!-- Histereza i cel -->
+                            <div class="hysteresis-zone" style="height: 30%; bottom: 40%;"></div>
+                            <div class="target-temp-line" style="bottom: 55%;"><span class="target-temp-label">25.0°C Docelowa</span></div>
+                            
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 30%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 35%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 32%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 45%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 42%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 38%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 46%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 55%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 60%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 68%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 64%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 70%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 80%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar hot" style="height: 90%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 75%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
+                            <div class="temp-bar-wrap"><div class="temp-bar active" style="height: 55%;"></div></div>
                         </div>
                     </div>
 
@@ -426,20 +396,11 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                 
                 <div class="timeline-container glass p-4">
                     <h3 class="mh-2 mb-4">Grafik Pracy (24h)</h3>
-
-                    <!-- Time axis 0-24h -->
-                    <div class="time-axis">
-                        <span>0</span>
-                        <span>6</span>
-                        <span>12</span>
-                        <span>18</span>
-                        <span>24</span>
-                    </div>
                     
                     <div class="schedule-item">
                         <div class="schedule-icon"><i class="fa-regular fa-lightbulb" style="color: var(--accent-yellow);"></i></div>
                         <div class="schedule-details">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Oświetlenie Główne</div>
                                 <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
@@ -447,10 +408,10 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                                     <option value="zawsze_wylaczone">Zawsze wyłączone</option>
                                 </select>
                             </div>
-                            <div class="schedule-bar-container" data-start="10:00" data-end="21:30">
-                                <div class="schedule-bar" style="background: var(--accent-yellow);"></div>
-                                <input type="time" class="time-pill start-pill" style="position: absolute; top: 26px; transform: translateX(-50%);" value="10:00">
-                                <input type="time" class="time-pill end-pill" style="position: absolute; top: 26px; transform: translateX(-50%);" value="21:30">
+                            <div class="schedule-bar-container" style="margin-bottom: 30px;">
+                                <div class="schedule-bar" style="left: 41.6%; width: 47.9%; background: var(--accent-yellow);"></div>
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 41.6%; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 89.5%; transform: translateX(-50%); width: 75px;" value="21:30">
                             </div>
                         </div>
                     </div>
@@ -458,7 +419,7 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                     <div class="schedule-item mt-4">
                         <div class="schedule-icon"><i class="fa-solid fa-wind" style="color: var(--accent-white);"></i></div>
                         <div class="schedule-details">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Napowietrzanie</div>
                                 <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
@@ -466,10 +427,10 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                                     <option value="zawsze_wylaczone">Zawsze wyłączone</option>
                                 </select>
                             </div>
-                            <div class="schedule-bar-container" data-start="10:00" data-end="19:00">
-                                <div class="schedule-bar" style="background: var(--accent-white);"></div>
-                                <input type="time" class="time-pill start-pill" style="position: absolute; top: 26px; transform: translateX(-50%);" value="10:00">
-                                <input type="time" class="time-pill end-pill" style="position: absolute; top: 26px; transform: translateX(-50%);" value="19:00">
+                            <div class="schedule-bar-container" style="margin-bottom: 30px;">
+                                <div class="schedule-bar" style="left: 41.6%; width: 37.5%; background: var(--accent-white);"></div>
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 41.6%; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 79.1%; transform: translateX(-50%); width: 75px;" value="19:00">
                             </div>
                         </div>
                     </div>
@@ -477,7 +438,7 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                     <div class="schedule-item mt-4">
                         <div class="schedule-icon"><i class="fa-solid fa-filter" style="color: var(--accent-blue);"></i></div>
                         <div class="schedule-details">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Filtracja</div>
                                 <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
@@ -485,10 +446,10 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                                     <option value="zawsze_wylaczone">Zawsze wyłączone</option>
                                 </select>
                             </div>
-                            <div class="schedule-bar-container" data-start="10:30" data-end="20:30">
-                                <div class="schedule-bar" style="background: var(--accent-blue);"></div>
-                                <input type="time" class="time-pill start-pill" style="position: absolute; top: 26px; transform: translateX(-50%);" value="10:30">
-                                <input type="time" class="time-pill end-pill" style="position: absolute; top: 26px; transform: translateX(-50%);" value="20:30">
+                            <div class="schedule-bar-container" style="margin-bottom: 30px;">
+                                <div class="schedule-bar" style="left: 43.7%; width: 41.6%; background: var(--accent-blue);"></div>
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 43.7%; transform: translateX(-50%); width: 75px;" value="10:30">
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 85.3%; transform: translateX(-50%); width: 75px;" value="20:30">
                             </div>
                         </div>
                     </div>
@@ -496,7 +457,7 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                     <div class="schedule-item mt-4">
                         <div class="schedule-icon"><i class="fa-solid fa-fish" style="color: var(--accent-cyan);"></i></div>
                         <div class="schedule-details">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Karmienie (Automatyczne)</div>
                                 <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="wylaczone">Wyłączone</option>
@@ -505,21 +466,13 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                                     <option value="co_3_dni">Co 3 dni</option>
                                 </select>
                             </div>
-                            <div class="schedule-bar-container" data-start="18:00" data-point="true">
-                                <div class="schedule-point" style="background: var(--accent-cyan);"></div>
-                                <input type="time" class="time-pill start-pill" style="position: absolute; top: 26px; transform: translateX(-50%);" value="18:00">
+                            <div class="schedule-bar-container" style="margin-bottom: 30px;">
+                                <div class="schedule-point" style="left: 75%; background: var(--accent-cyan);"></div>
+                                <input type="time" class="time-pill" style="position: absolute; top: 16px; left: 75%; transform: translateX(-50%); width: 75px;" value="18:00">
                             </div>
                         </div>
                     </div>
-
-                    <!-- Save button -->
-                    <div style="margin-top: 32px; display: flex; justify-content: flex-end; align-items: center; gap: 16px; padding-top: 20px; border-top: 1px solid var(--glass-border);">
-                        <span style="font-size: 12px; color: var(--text-muted);">Ostatni zapis: dzisiaj 18:00</span>
-                        <button class="btn" onclick="saveSchedules()" style="background: rgba(34, 211, 238, 0.08); border: 1px solid rgba(34, 211, 238, 0.25); color: var(--accent-cyan); padding: 10px 28px; border-radius: 14px; font-size: 13px; font-weight: 600; letter-spacing: 0.5px; cursor: pointer; transition: 0.25s; display: flex; align-items: center; gap: 8px;" onmouseover="this.style.background='rgba(34,211,238,0.15)'; this.style.borderColor='rgba(34,211,238,0.5)';" onmouseout="this.style.background='rgba(34,211,238,0.08)'; this.style.borderColor='rgba(34,211,238,0.25)';">
-                            <i class="fa-solid fa-floppy-disk"></i> Zapisz Harmonogramy
-                        </button>
-                    </div>
-                </div><!-- end timeline-container -->
+                </div>
             </section>
 
             <!-- Logi View -->
@@ -530,36 +483,36 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
                         <p>Biezace logi aplikacji, komendy i wpisy krytyczne.</p>
                     </div>
                     <div style="display: flex; gap: 15px;">
-                        <button class="btn btn-secondary" style="border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1);">Wyczysc widok</button>
-                        <button class="btn btn-primary" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.15)'">Usun krytyczne</button>
+                        <button id="clear-logs-btn" class="btn btn-secondary" style="border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1);">Wyczysc widok</button>
+                        <button id="delete-critical-btn" class="btn btn-primary" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.15)'">Usun krytyczne</button>
                     </div>
                 </div>
                 
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px;">
                     <div class="card glass" style="padding: 20px; border-radius: 16px;">
                         <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; letter-spacing: 1px;">INFO</div>
-                        <div style="font-size: 28px; font-weight: 600; color: var(--accent-cyan);">2</div>
+                        <div id="info-count" style="font-size: 28px; font-weight: 600; color: var(--accent-cyan);">2</div>
                     </div>
                     <div class="card glass" style="padding: 20px; border-radius: 16px;">
                         <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; letter-spacing: 1px;">KRYTYCZNYCH</div>
-                        <div style="font-size: 28px; font-weight: 600; color: #ef4444;">0</div>
+                        <div id="critical-count" style="font-size: 28px; font-weight: 600; color: #ef4444;">0</div>
                     </div>
                 </div>
             
                 <div class="card glass" style="padding: 20px; border-radius: 16px; min-height: 500px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                         <div style="display: flex; gap: 10px; align-items: center;">
-                            <button class="btn btn-secondary active" style="padding: 8px 16px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.4); color: var(--accent-cyan); font-size: 13px; font-weight: 600; background: rgba(6, 182, 212, 0.1);">Biezace</button>
-                            <button class="btn btn-secondary" style="padding: 8px 16px; border-radius: 12px; border: 1px solid transparent; color: var(--text-main); font-size: 13px; font-weight: 600; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.color='#ef4444';" onmouseout="this.style.background='transparent'; this.style.color='var(--text-main)';">Krytyczne</button>
-                            <span style="font-size: 13px; color: var(--text-muted); margin-left: 10px;">Brak odpowiedzi sterownika.</span>
+                            <button id="logs-current-btn" class="btn btn-secondary active" style="padding: 8px 16px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.4); color: var(--accent-cyan); font-size: 13px; font-weight: 600; background: rgba(6, 182, 212, 0.1);">Biezace</button>
+                            <button id="logs-critical-btn" class="btn btn-secondary" style="padding: 8px 16px; border-radius: 12px; border: 1px solid transparent; color: var(--text-main); font-size: 13px; font-weight: 600; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.color='#ef4444';" onmouseout="this.style.background='transparent'; this.style.color='var(--text-main)';">Krytyczne</button>
+                            <span id="logs-status" style="font-size: 13px; color: var(--text-muted); margin-left: 10px;">Brak odpowiedzi sterownika.</span>
                         </div>
                         <div style="display: flex; gap: 10px; align-items: center;">
-                            <input type="text" id="log-search" placeholder="Szukaj..." style="background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 8px; padding: 10px 16px; color: var(--text-main); font-size: 13px; width: 250px; outline: none;">
-                            <button class="btn btn-secondary" onclick="exportLogsCSV()" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.03);" title="Pobierz logi jako CSV"><i class="fa-solid fa-download" style="color: var(--accent-cyan);"></i></button>
+                            <input id="logs-search" type="text" placeholder="Szukaj..." style="background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 8px; padding: 10px 16px; color: var(--text-main); font-size: 13px; width: 250px; outline: none;">
+                            <button id="download-logs-btn" class="btn btn-secondary" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.03);" title="Pobierz logi"><i class="fa-solid fa-download" style="color: var(--accent-cyan);"></i></button>
                         </div>
                     </div>
             
-                    <div id="log-entries" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div id="logs-list" style="display: flex; flex-direction: column; gap: 10px;">
                         <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 14px 20px; display: flex; align-items: center; font-size: 13px;">
                             <span style="color: var(--accent-cyan); font-weight: 600; width: 80px;">INFO</span>
                             <span style="color: var(--text-muted); width: 100px;">17:54:08</span>
@@ -751,74 +704,13 @@ const char web_index_html[] PROGMEM = R"WEBASSET(
         </div>
     </div>
 
-    <!-- Mobile Bottom Navigation -->
-    <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
-        <a href="#" class="mob-nav-item active" data-target="dashboard">
-            <i class="fa-solid fa-gauge-high"></i>
-            <span>Dashboard</span>
-        </a>
-        <a href="#" class="mob-nav-item" data-target="harmonogramy">
-            <i class="fa-solid fa-calendar-days"></i>
-            <span>Harmonogramy</span>
-        </a>
-        <a href="#" class="mob-nav-item" data-target="logi">
-            <i class="fa-solid fa-terminal"></i>
-            <span>Logi</span>
-        </a>
-        <a href="#" class="mob-nav-item" data-target="ustawienia">
-            <i class="fa-solid fa-gear"></i>
-            <span>Ustawienia</span>
-        </a>
-        <a href="#" class="mob-nav-item" data-target="ota">
-            <i class="fa-solid fa-cloud-arrow-up"></i>
-            <span>OTA</span>
-        </a>
-    </nav>
-
     <script src="script.js"></script>
-    <script>
-        function toggleMobileNav() {
-            const sidebar = document.querySelector('.sidebar');
-            const overlay = document.getElementById('mobile-overlay');
-            sidebar.classList.toggle('mobile-open');
-            overlay.classList.toggle('active');
-        }
-        function closeMobileNav() {
-            const sidebar = document.querySelector('.sidebar');
-            const overlay = document.getElementById('mobile-overlay');
-            sidebar.classList.remove('mobile-open');
-            overlay.classList.remove('active');
-        }
-        // Sync mobile bottom nav with sidebar nav
-        document.querySelectorAll('.mob-nav-item').forEach(item => {
-            item.addEventListener('click', function(e) {
-                e.preventDefault();
-                const target = this.dataset.target;
-                // Trigger the main nav click logic
-                const mainNavItem = document.querySelector(`.nav-item[data-target="${target}"]`);
-                if (mainNavItem) mainNavItem.click();
-                // Update mobile nav active state
-                document.querySelectorAll('.mob-nav-item').forEach(i => i.classList.remove('active'));
-                this.classList.add('active');
-            });
-        });
-        // Keep bottom nav in sync when sidebar links are clicked
-        document.querySelectorAll('.nav-item[data-target]').forEach(item => {
-            item.addEventListener('click', function() {
-                const target = this.dataset.target;
-                document.querySelectorAll('.mob-nav-item').forEach(i => {
-                    i.classList.toggle('active', i.dataset.target === target);
-                });
-                closeMobileNav();
-            });
-        });
-    </script>
 </body>
 </html>
 
-)WEBASSET";
+)rawliteral";
 
-const char web_style_css[] PROGMEM = R"WEBASSET(
+const char web_style_css[] PROGMEM = R"rawliteral(
 :root {
     /* Color Palette */
     --bg-dark: #030712;
@@ -1368,6 +1260,7 @@ input:checked + .slider:before {
     left: -50%;
     animation: rotate 6s linear infinite;
 }
+.water-info b { color: var(--accent-cyan); }
 
 .wave2 {
     background: rgba(59, 130, 246, 0.2);
@@ -1516,100 +1409,73 @@ input:checked + .slider:before {
 
 /* Timeline Container (Harmonogramy) */
 .timeline-container {
-    max-width: 100%;
+    max-width: 800px;
 }
-.p-4 { padding: 36px; }
-.mh-2 { font-size: 22px; font-weight: 700; letter-spacing: 0.3px; }
+.p-4 { padding: 24px; }
+.mh-2 { font-size: 18px; font-weight: 600; }
 
 .schedule-item {
     display: flex;
-    gap: 24px;
+    gap: 16px;
     align-items: center;
 }
 .schedule-icon {
-    width: 56px;
-    height: 56px;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255,255,255,0.06);
-    border-radius: 16px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50%;
     border: 1px solid var(--glass-border);
-    font-size: 24px;
-    flex-shrink: 0;
+    font-size: 18px;
 }
 .schedule-details {
     flex: 1;
 }
 .schedule-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 12px;
-    color: var(--text-main);
-}
-
-/* Time axis 0-24h */
-.time-axis {
-    display: flex;
-    justify-content: space-between;
-    padding: 0 0 8px 0;
-    margin-bottom: 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-.time-axis span {
-    font-size: 11px;
-    color: var(--text-muted);
-    opacity: 0.6;
+    font-size: 14px;
     font-weight: 500;
-    font-family: 'Consolas', 'Courier New', monospace;
-    min-width: 20px;
-    text-align: center;
+    margin-bottom: 8px;
 }
-
-/* Schedule bar container — margin-bottom set by JS */
 .schedule-bar-container {
-    height: 20px;
+    height: 8px;
     background: rgba(0,0,0,0.3);
-    border-radius: 10px;
+    border-radius: 4px;
     position: relative;
-    /* Subtle grid lines every 25% (6h intervals) */
-    background-image:
-        linear-gradient(90deg,
-            rgba(255,255,255,0.08) 1px, transparent 1px);
-    background-size: 25% 100%;
-    background-position: 0 0;
+    margin-bottom: 8px;
 }
 .schedule-bar {
     position: absolute;
     height: 100%;
-    border-radius: 10px;
-    box-shadow: 0 0 18px rgba(255,255,255,0.3);
+    border-radius: 4px;
+    box-shadow: 0 0 10px rgba(255,255,255,0.2);
 }
 .schedule-point {
     position: absolute;
-    width: 20px;
-    height: 20px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    box-shadow: 0 0 14px rgba(6, 182, 212, 0.6);
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
 }
 .schedule-times {
     display: flex;
     justify-content: space-between;
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-muted);
 }
 .schedule-times.point-time {
     position: relative;
-    height: 14px;
+    height: 12px;
 }
 .schedule-times.point-time span {
     position: absolute;
     transform: translateX(-50%);
 }
 
-.mt-4 { margin-top: 36px; }
+.mt-4 { margin-top: 24px; }
 
 /* Terminal Layout (Logi) */
 .terminal {
@@ -1679,297 +1545,19 @@ input:checked + .slider:before {
 
 [data-target] { cursor: pointer; }
 
-/* =============================================
-   HAMBURGER BUTTON (hidden on desktop)
-   ============================================= */
-.hamburger-btn {
-    display: none;
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    color: var(--text-main);
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    font-size: 16px;
-    cursor: pointer;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.2s;
-    flex-shrink: 0;
-}
-.hamburger-btn:hover { background: rgba(255,255,255,0.1); }
 
-/* Mobile dim overlay */
-.mobile-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.6);
-    backdrop-filter: blur(4px);
-    z-index: 99;
-}
-.mobile-overlay.active { display: block; }
+)rawliteral";
 
-/* =============================================
-   MOBILE BOTTOM NAVIGATION
-   ============================================= */
-.mobile-bottom-nav {
-    display: none;
-}
+const char web_script_js[] PROGMEM = R"rawliteral(
+const API_STATUS = '/api/status';
+const API_ACTION = '/api/action';
+const API_LOGS = '/api/logs';
+const API_OTA = '/update';
 
-/* =============================================
-   RESPONSIVE BREAKPOINTS
-   ============================================= */
+let backendConnected = false;
+let activeLogType = 'normal';
+let cachedLogs = { normal: [], critical: [] };
 
-/* Tablet: ≤1024px */
-@media (max-width: 1024px) {
-    :root { --sidebar-width: 240px; }
-    .main-content { padding: 24px 28px; }
-    .dashboard-grid { grid-template-columns: 1fr 1fr; }
-    .card.span-2 { grid-column: span 2; }
-}
-
-/* Mobile: ≤768px */
-@media (max-width: 768px) {
-    /* Sidebar becomes a slide-in drawer */
-    .sidebar {
-        transform: translateX(-100%);
-        transition: transform 0.3s ease;
-        z-index: 200;
-        width: 280px;
-    }
-    .sidebar.mobile-open {
-        transform: translateX(0);
-    }
-
-    /* Hamburger visible */
-    .hamburger-btn {
-        display: flex;
-    }
-
-    /* Main content full width */
-    .main-content {
-        margin-left: 0;
-        padding: 16px;
-        padding-bottom: 90px; /* Space for bottom nav */
-    }
-
-    /* Topbar compact */
-    .topbar {
-        gap: 10px;
-        margin-bottom: 20px;
-        flex-wrap: nowrap;
-    }
-    .topbar-left {
-        display: none !important; /* Hide network badges on mobile */
-    }
-    .topbar-widgets {
-        margin-left: auto;
-        gap: 8px;
-    }
-    .info-pill {
-        padding: 6px 10px;
-        font-size: 12px;
-    }
-    .time-widget #current-time { font-size: 16px; }
-    .time-widget #current-date { font-size: 11px; }
-
-    /* Single column grid */
-    .dashboard-grid {
-        grid-template-columns: 1fr;
-        gap: 16px;
-    }
-    .card.span-2 { grid-column: span 1; }
-
-    /* Smaller cards */
-    .card { border-radius: 16px; }
-    .card-header { padding: 16px 16px 0; }
-    .card-body { padding: 16px; }
-
-    /* Stats row single line */
-    .stats-row {
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    /* Temperature chart shorter */
-    .temp-chart { height: 80px; }
-
-    /* Grid 2 col → 1 col on mobile */
-    .grid-2-col {
-        grid-template-columns: 1fr;
-        gap: 10px;
-    }
-
-    /* View header compact */
-    .view-header h2 { font-size: 20px; }
-
-    /* Bottom nav visible */
-    .mobile-bottom-nav {
-        display: flex;
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        height: 72px;
-        background: rgba(8, 12, 28, 0.92);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border-top: 1px solid var(--glass-border);
-        z-index: 150;
-        align-items: stretch;
-    }
-    .mob-nav-item {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 4px;
-        color: var(--text-muted);
-        text-decoration: none;
-        font-size: 10px;
-        font-weight: 500;
-        padding: 8px 4px;
-        transition: color 0.2s, background 0.2s;
-        border-radius: 0;
-    }
-    .mob-nav-item i {
-        font-size: 18px;
-        transition: transform 0.2s;
-    }
-    .mob-nav-item:hover,
-    .mob-nav-item.active {
-        color: var(--accent-cyan);
-        background: rgba(34, 211, 238, 0.05);
-    }
-    .mob-nav-item.active i {
-        transform: translateY(-2px);
-        filter: drop-shadow(0 0 6px var(--accent-cyan));
-    }
-
-    /* Relay grid 1 col */
-    .relay-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-
-    /* Timeline container full-width on mobile */
-    .timeline-container {
-        border-radius: 12px;
-        margin-left: -16px;
-        margin-right: -16px;
-        width: calc(100% + 32px);
-    }
-    .timeline-container.p-4 {
-        padding: 20px 16px;
-    }
-
-    /* Schedule items stack vertically on mobile */
-    .schedule-item {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 10px;
-    }
-    .schedule-icon { align-self: flex-start; }
-    .schedule-details {
-        width: 100%;
-    }
-
-    /* Switch to static time pills below bar */
-    .schedule-bar-container { overflow: visible; }
-
-    /* Terminal responsive */
-    .terminal {
-        max-width: 100%;
-        border-radius: 16px;
-    }
-    .terminal-header {
-        padding: 10px 12px;
-    }
-    .terminal-dots span {
-        width: 10px;
-        height: 10px;
-    }
-    .terminal-title {
-        font-size: 12px;
-    }
-    .terminal-body {
-        height: 300px;
-        padding: 12px;
-        font-size: 12px;
-        line-height: 1.5;
-    }
-    .log-line {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 2px 6px;
-        padding: 6px 0;
-        border-bottom: 1px solid rgba(255,255,255,0.04);
-        margin-bottom: 0;
-    }
-    .log-line:last-child {
-        border-bottom: none;
-    }
-    .log-time {
-        font-size: 11px;
-    }
-    .log-info, .log-warn, .log-success, .log-error {
-        font-size: 11px;
-        font-weight: 600;
-    }
-    .log-msg {
-        flex-basis: 100%;
-        font-size: 12px;
-        padding-left: 4px;
-        word-break: break-word;
-    }
-
-    /* OTA form compact */
-    .file-upload-wrapper { margin-top: 12px; }
-}
-
-/* Small phones: ≤480px */
-@media (max-width: 480px) {
-    .main-content { padding: 12px; padding-bottom: 85px; }
-    .card-body { padding: 12px; }
-
-    /* Status badges in sidebar - icon only spacing */
-    .status-badge { padding: 5px 10px; font-size: 12px; }
-
-    /* Feeder circle smaller */
-    .feed-btn {
-        width: 100px;
-        height: 100px;
-        font-size: 13px;
-    }
-    .relay-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
-
-    /* Terminal even more compact on small phones */
-    .terminal {
-        border-radius: 12px;
-    }
-    .terminal-header {
-        padding: 8px 10px;
-    }
-    .terminal-body {
-        height: 260px;
-        padding: 10px;
-        font-size: 11px;
-    }
-    .log-time {
-        font-size: 10px;
-    }
-    .log-info, .log-warn, .log-success, .log-error {
-        font-size: 10px;
-    }
-    .log-msg {
-        font-size: 11px;
-    }
-}
-
-)WEBASSET";
-
-const char web_script_js[] PROGMEM = R"WEBASSET(
 // Clock Logic
 function updateClock() {
     const now = new Date();
@@ -1980,6 +1568,96 @@ function updateClock() {
     if (timeEl && dateEl) {
         timeEl.textContent = now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         dateEl.textContent = now.toLocaleDateString('pl-PL', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+}
+
+function setBackendState(isConnected) {
+    backendConnected = isConnected;
+    const statusEl = document.getElementById('logs-status');
+    if (statusEl) {
+        statusEl.textContent = isConnected ? 'Połączono z backendem ESP32.' : 'Brak odpowiedzi sterownika.';
+    }
+}
+
+function createLogRow(level, text) {
+    return `
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 14px 20px; display: flex; align-items: center; font-size: 13px;">
+            <span style="color: ${level === 'CRITICAL' ? '#ef4444' : 'var(--accent-cyan)'}; font-weight: 600; width: 80px;">${level}</span>
+            <span style="color: var(--text-muted); width: 100px;">${new Date().toLocaleTimeString('pl-PL')}</span>
+            <span style="color: var(--text-main);">${text}</span>
+        </div>`;
+}
+
+function renderLogs() {
+    const list = document.getElementById('logs-list');
+    const infoCount = document.getElementById('info-count');
+    const criticalCount = document.getElementById('critical-count');
+    const searchInput = document.getElementById('logs-search');
+    if (!list) return;
+
+    const query = (searchInput?.value || '').trim().toLowerCase();
+    const source = activeLogType === 'critical' ? cachedLogs.critical : cachedLogs.normal;
+    const filtered = source.filter(item => item.toLowerCase().includes(query));
+
+    if (infoCount) infoCount.textContent = String(cachedLogs.normal.length);
+    if (criticalCount) criticalCount.textContent = String(cachedLogs.critical.length);
+
+    if (filtered.length === 0) {
+        list.innerHTML = createLogRow('INFO', 'Brak logów dla wybranego filtra.');
+        return;
+    }
+
+    list.innerHTML = filtered
+        .map(item => createLogRow(activeLogType === 'critical' ? 'CRITICAL' : 'INFO', item))
+        .join('');
+}
+
+async function fetchStatus() {
+    try {
+        const response = await fetch(API_STATUS, { cache: 'no-store' });
+        if (!response.ok) throw new Error('status http');
+        const data = await response.json();
+        setBackendState(true);
+
+        const apBadge = document.getElementById('ap-badge');
+        const staBadge = document.getElementById('sta-badge');
+        if (apBadge && staBadge && data.network) {
+            const apMode = !!data.network.apMode;
+            apBadge.style.opacity = apMode ? '1' : '0.45';
+            staBadge.style.opacity = apMode ? '0.45' : '1';
+        }
+
+        const rtcBattery = document.getElementById('rtc-battery');
+        if (rtcBattery && data.battery?.voltage !== undefined) {
+            rtcBattery.textContent = `${Number(data.battery.voltage).toFixed(2)}V`;
+        }
+    } catch (e) {
+        setBackendState(false);
+    }
+    .relay-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+
+async function fetchLogs() {
+    try {
+        const response = await fetch(API_LOGS, { cache: 'no-store' });
+        if (!response.ok) throw new Error('logs http');
+        const logs = await response.json();
+        cachedLogs.normal = Array.isArray(logs.normal) ? logs.normal : [];
+        cachedLogs.critical = Array.isArray(logs.critical) ? logs.critical : [];
+        renderLogs();
+    } catch (e) {
+        // keep last logs
+    }
+}
+
+async function sendAction(action, payload = {}) {
+    const params = new URLSearchParams({ action, ...payload });
+    const response = await fetch(API_ACTION, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+    });
+    if (!response.ok) {
+        throw new Error(await response.text());
     }
 }
 
@@ -2023,14 +1701,23 @@ function switchTab(tabId) {
 // Feeder Logic
 function triggerFeed() {
     const modal = document.getElementById('feed-modal');
+    const icon = document.getElementById('modal-icon');
+    const text = document.getElementById('modal-text');
+    const p = document.getElementById('modal-subtext');
+
+    if (!modal || !icon || !text || !p) {
+        console.warn('Brak wymaganych elementow UI dla triggerFeed().');
+        return;
+    }
+
     modal.style.display = 'flex';
+
+    sendAction('feed_now').catch(() => {
+        // fallback only to local animation if backend not reachable
+    });
     
     // Simulate feeding process
     setTimeout(() => {
-        const icon = document.getElementById('modal-icon');
-        const text = document.getElementById('modal-text');
-        const p = document.getElementById('modal-subtext');
-        
         icon.className = 'fa-solid fa-check-circle fa-2xl';
         icon.style.color = 'var(--success-color)';
         text.textContent = 'Sukces';
@@ -2082,34 +1769,51 @@ function simulateOTA() {
     
     if(!progressContainer || !fill || !percentTxt || !btn) return;
 
+    const firmwareFile = document.getElementById('firmware-file');
+    if(!firmwareFile || !firmwareFile.files || firmwareFile.files.length === 0) {
+        alert('Najpierw wybierz plik .bin.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('update', firmwareFile.files[0]);
+
     progressContainer.style.display = 'block';
     btn.disabled = true;
-    
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += Math.floor(Math.random() * 10) + 1;
-        if(progress > 100) progress = 100;
-        
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API_OTA, true);
+
+    xhr.upload.onprogress = function (event) {
+        if(!event.lengthComputable) return;
+        const progress = Math.min(100, Math.round((event.loaded / event.total) * 100));
         fill.style.width = `${progress}%`;
         percentTxt.textContent = `${progress}%`;
-        
-        if(progress >= 100) {
-            clearInterval(interval);
-            btn.textContent = 'Zakończono Pomyślnie!';
+    };
+
+    xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+            btn.textContent = 'Wgrano pakiet OTA';
             btn.style.backgroundColor = 'var(--success-color)';
-            
-            setTimeout(() => {
-                alert('Aktualizacja zakończona pomyślnie. Urządzenie zrestartuje się za chwilę.');
-                // Reset UI
-                progressContainer.style.display = 'none';
-                fill.style.width = '0%';
-                percentTxt.textContent = '0%';
-                btn.textContent = 'Aktualizuj System';
-                btn.style.backgroundColor = '';
-                document.getElementById('firmware-file').value = '';
-            }, 1000);
+            alert('Aktualizacja przesłana. Urządzenie może uruchomić się ponownie.');
+        } else {
+            btn.textContent = 'Błąd OTA';
+            btn.style.backgroundColor = 'var(--danger-color)';
+            alert(`Błąd OTA (HTTP ${xhr.status}).`);
         }
-    }, 300);
+    };
+
+    xhr.onerror = function () {
+        btn.textContent = 'Błąd sieci OTA';
+        btn.style.backgroundColor = 'var(--danger-color)';
+        alert('Błąd połączenia podczas OTA.');
+    };
+
+    xhr.onloadend = function () {
+        btn.disabled = false;
+    };
+
+    xhr.send(formData);
 }
 
 // Init Event Listeners
@@ -2119,7 +1823,48 @@ document.addEventListener('DOMContentLoaded', () => {
     
     initNavigation();
     initOTA();
-    initLogSearch();
+
+    const currentBtn = document.getElementById('logs-current-btn');
+    const criticalBtn = document.getElementById('logs-critical-btn');
+    const clearBtn = document.getElementById('clear-logs-btn');
+    const deleteCriticalBtn = document.getElementById('delete-critical-btn');
+    const downloadBtn = document.getElementById('download-logs-btn');
+    const searchInput = document.getElementById('logs-search');
+
+    currentBtn?.addEventListener('click', () => {
+        activeLogType = 'normal';
+        renderLogs();
+    });
+    criticalBtn?.addEventListener('click', () => {
+        activeLogType = 'critical';
+        renderLogs();
+    });
+    clearBtn?.addEventListener('click', () => {
+        cachedLogs = { normal: [], critical: [] };
+        renderLogs();
+    });
+    deleteCriticalBtn?.addEventListener('click', async () => {
+        try {
+            await sendAction('clear_critical_logs');
+            await fetchLogs();
+        } catch (_) {}
+    });
+    downloadBtn?.addEventListener('click', () => {
+        const lines = (activeLogType === 'critical' ? cachedLogs.critical : cachedLogs.normal).join('\n');
+        const blob = new Blob([lines], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `akwarium_logs_${Date.now()}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+    searchInput?.addEventListener('input', renderLogs);
+
+    fetchStatus();
+    fetchLogs();
+    setInterval(fetchStatus, 3000);
+    setInterval(fetchLogs, 5000);
 
     // Mock toggle logic for dashboard toggles
     const toggles = document.querySelectorAll('input[type="checkbox"]');
@@ -2130,268 +1875,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// Log Search — real-time filtering with highlight
-function initLogSearch() {
-    const searchInput = document.getElementById('log-search');
-    const logContainer = document.getElementById('log-entries');
-    if (!searchInput || !logContainer) return;
-
-    // Store original text content for each entry
-    const entries = logContainer.children;
-
-    searchInput.addEventListener('input', () => {
-        const query = searchInput.value.trim().toLowerCase();
-        let visibleCount = 0;
-
-        // Remove existing "no results" message
-        const existingMsg = logContainer.querySelector('.log-no-results');
-        if (existingMsg) existingMsg.remove();
-
-        for (const entry of entries) {
-            // Skip the no-results placeholder
-            if (entry.classList.contains('log-no-results')) continue;
-
-            const spans = entry.querySelectorAll('span');
-            const fullText = Array.from(spans).map(s => s.textContent).join(' ').toLowerCase();
-
-            if (!query || fullText.includes(query)) {
-                entry.style.display = '';
-                visibleCount++;
-                // Highlight matching text in message span (last span)
-                if (query && spans.length > 0) {
-                    highlightMatch(spans[spans.length - 1], query);
-                } else {
-                    // Remove highlights
-                    spans.forEach(s => removeHighlight(s));
-                }
-            } else {
-                entry.style.display = 'none';
-            }
-        }
-
-        // Show "no results" if nothing matched
-        if (query && visibleCount === 0) {
-            const noResults = document.createElement('div');
-            noResults.className = 'log-no-results';
-            noResults.style.cssText = 'text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px;';
-            noResults.innerHTML = '<i class="fa-solid fa-magnifying-glass" style="font-size: 24px; margin-bottom: 12px; display: block; opacity: 0.4;"></i>Brak wyników dla „' + escapeHtml(searchInput.value) + '"';
-            logContainer.appendChild(noResults);
-        }
-    });
-}
-
-function highlightMatch(span, query) {
-    // First, remove existing highlights
-    removeHighlight(span);
-    const text = span.textContent;
-    const lowerText = text.toLowerCase();
-    const idx = lowerText.indexOf(query);
-    if (idx === -1) return;
-
-    const before = text.substring(0, idx);
-    const match = text.substring(idx, idx + query.length);
-    const after = text.substring(idx + query.length);
-
-    span.innerHTML = escapeHtml(before) +
-        '<mark style="background: rgba(34,211,238,0.25); color: var(--accent-cyan); border-radius: 3px; padding: 0 2px;">' +
-        escapeHtml(match) + '</mark>' +
-        escapeHtml(after);
-}
-
-function removeHighlight(span) {
-    // If the span contains <mark> tags, replace with plain text
-    if (span.querySelector('mark')) {
-        span.textContent = span.textContent;
-    }
-}
-
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
-// Export logs to CSV
-function exportLogsCSV() {
-    const logContainer = document.getElementById('log-entries');
-    if (!logContainer) return;
-
-    const entries = logContainer.querySelectorAll('div[style*="border-radius: 8px"]');
-    if (!entries.length) {
-        alert('Brak logów do eksportu.');
-        return;
-    }
-
-    // CSV header with BOM for Excel UTF-8 support
-    const BOM = '\uFEFF';
-    const rows = ['Typ;Godzina;Wiadomość'];
-
-    entries.forEach(entry => {
-        const spans = entry.querySelectorAll('span');
-        if (spans.length < 3) return;
-
-        const tagText = spans[0].textContent.trim();
-        const time = spans[1].textContent.trim();
-        const message = spans[2].textContent.trim();
-
-        // Classify: if tag contains "CRIT" or color is red → Krytyczny, else Info
-        const tagColor = spans[0].style.color || '';
-        const isCritical = tagText.toUpperCase().includes('CRIT') ||
-                           tagText.toUpperCase().includes('ERROR') ||
-                           tagText.toUpperCase().includes('WARN') ||
-                           tagColor.includes('ef4444') ||
-                           tagColor.includes('f59e0b');
-
-        const typ = isCritical ? 'Krytyczny' : 'Informacyjny';
-
-        // Escape quotes in message for CSV
-        const safeMessage = '"' + message.replace(/"/g, '""') + '"';
-
-        rows.push(`${typ};${time};${safeMessage}`);
-    });
-
-    const csvContent = BOM + rows.join('\n');
-
-    // Generate filename with current date
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const filename = `logi_akwarium_${dateStr}.csv`;
-
-    // Use data URI — more reliable for filename preservation than blob URLs
-    const encoded = encodeURIComponent(csvContent);
-    const link = document.createElement('a');
-    link.href = 'data:text/csv;charset=utf-8,' + encoded;
-    link.download = filename;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    // Clean up after a short delay
-    setTimeout(() => { document.body.removeChild(link); }, 200);
-}
-
-// Save Schedules with visual feedback
-function saveSchedules() {
-    const btn = document.querySelector('[onclick="saveSchedules()"]');
-    const lastSaved = btn ? btn.parentElement.querySelector('span') : null;
-
-    if (btn) {
-        const original = btn.innerHTML;
-        btn.innerHTML = '<i class="fa-solid fa-check"></i> Zapisano!';
-        btn.style.background = 'rgba(16, 185, 129, 0.15)';
-        btn.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-        btn.style.color = '#10b981';
-        btn.disabled = true;
-
-        if (lastSaved) {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
-            lastSaved.textContent = `Ostatni zapis: dzisiaj ${timeStr}`;
-        }
-
-        setTimeout(() => {
-            btn.innerHTML = original;
-            btn.style.background = 'rgba(34, 211, 238, 0.08)';
-            btn.style.borderColor = 'rgba(34, 211, 238, 0.25)';
-            btn.style.color = 'var(--accent-cyan)';
-            btn.disabled = false;
-        }, 2500);
-    }
-}
-
-// Schedule Bar Renderer — adapts scale for mobile vs desktop
-function renderScheduleBars() {
-    const containers = document.querySelectorAll('.schedule-bar-container[data-start]');
-    if (!containers.length) return;
-
-    const isMobile = window.innerWidth <= 768;
-
-    // Parse HH:MM → decimal hours
-    const parseH = t => { const [h, m] = t.split(':').map(Number); return h + m / 60; };
-
-    // Always use full 0–24h scale
-    const scaleStart = 0;
-    const scaleEnd   = 24;
-    const totalH = 24;
-
-    containers.forEach(c => {
-        const bar = c.querySelector('.schedule-bar');
-        const point = c.querySelector('.schedule-point');
-        const startPill = c.querySelector('.start-pill');
-        const endPill   = c.querySelector('.end-pill');
-
-        const startH = parseH(c.dataset.start);
-        const isPoint = c.dataset.point === 'true';
-
-        const leftPct = ((startH - scaleStart) / totalH * 100);
-
-        // Helper: pick transform so pill doesn't clip at container edges
-        const pillTransform = (pct) => {
-            if (pct <= 5)  return 'translateX(0%)';
-            if (pct >= 95) return 'translateX(-100%)';
-            return 'translateX(-50%)';
-        };
-
-        if (isPoint) {
-            // Feeding point marker
-            if (point) { point.style.left = leftPct.toFixed(2) + '%'; }
-            if (startPill) {
-                startPill.style.left = leftPct.toFixed(2) + '%';
-                startPill.style.transform = pillTransform(leftPct);
-            }
-        } else {
-            const endH = parseH(c.dataset.end);
-            const widthPct = ((endH - startH) / totalH * 100).toFixed(2);
-            const endLeftPct = ((endH - scaleStart) / totalH * 100);
-
-            if (bar) {
-                bar.style.left  = leftPct.toFixed(2) + '%';
-                bar.style.width = widthPct + '%';
-            }
-            if (startPill) {
-                startPill.style.left = leftPct.toFixed(2) + '%';
-                startPill.style.transform = pillTransform(leftPct);
-            }
-            if (endPill) {
-                endPill.style.left = endLeftPct.toFixed(2) + '%';
-                endPill.style.transform = pillTransform(endLeftPct);
-            }
-        }
-
-        // Set margin-bottom to give pills room
-        c.style.marginBottom = '36px';
-    });
-}
-
-// Run on load and resize
-window.addEventListener('resize', renderScheduleBars);
-document.addEventListener('DOMContentLoaded', () => {
-    renderScheduleBars();
-    initScheduleInputs();
-});
-
-// Live-bind time inputs to schedule bar rendering
-function initScheduleInputs() {
-    const timePills = document.querySelectorAll('.schedule-bar-container .time-pill');
-    timePills.forEach(pill => {
-        pill.addEventListener('input', onTimePillChange);
-        pill.addEventListener('change', onTimePillChange);
-    });
-}
-
-function onTimePillChange(e) {
-    const pill = e.target;
-    const container = pill.closest('.schedule-bar-container');
-    if (!container || !pill.value) return;
-
-    if (pill.classList.contains('start-pill')) {
-        container.dataset.start = pill.value;
-    } else if (pill.classList.contains('end-pill')) {
-        container.dataset.end = pill.value;
-    }
-
-    renderScheduleBars();
-}
-
 )WEBASSET";
 
-#endif // WEBASSETS_H
+#endif

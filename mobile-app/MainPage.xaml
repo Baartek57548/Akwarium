@@ -172,31 +172,8 @@
     </ContentPage.Resources>
 
     <Grid>
-        <Image Aspect="AspectFill" Source="water_bg_target2.jpg" />
-
-        <!-- Subtle top glow matching reference look -->
-        <BoxView Opacity="0.24">
-            <BoxView.Background>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#A7BDD8" Offset="0.0" />
-                    <GradientStop Color="#00000000" Offset="0.46" />
-                </LinearGradientBrush>
-            </BoxView.Background>
-        </BoxView>
-
-        <!-- Mid-screen ocean haze to match water depth in the reference -->
-        <BoxView Opacity="0.22">
-            <BoxView.Background>
-                <RadialGradientBrush Center="0.58,0.53" Radius="0.85">
-                    <GradientStop Color="#2B78A8" Offset="0.0" />
-                    <GradientStop Color="#0E3558" Offset="0.45" />
-                    <GradientStop Color="#00000000" Offset="1.0" />
-                </RadialGradientBrush>
-            </BoxView.Background>
-        </BoxView>
-
         <!-- Dark overlay for readability -->
-        <BoxView BackgroundColor="#031022" Opacity="0.10" />
+        <BoxView BackgroundColor="#020814" Opacity="0.85" />
 
         <Grid Padding="22" ColumnDefinitions="240,*" ColumnSpacing="22">
         <Border Grid.Column="0" BackgroundColor="{StaticResource SidebarBg}" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 26" StrokeThickness="1">
@@ -347,6 +324,7 @@
                                         <Label FontSize="11" HorizontalTextAlignment="End" Text="{Binding ConnectionStatusBadgeText}" TextColor="{StaticResource TextSecondary}" />
                                     </VerticalStackLayout>
                                 </Border>
+                                <Button BackgroundColor="#0B2434" BorderColor="#1A5E78" BorderWidth="1" Command="{Binding RefreshStatusCommand}" Style="{StaticResource FluentButtonStyle}" Text="Odswiez" TextColor="{StaticResource AccentCyan}" />
                             </HorizontalStackLayout>
                         </Grid>
 
