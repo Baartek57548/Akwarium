@@ -480,7 +480,7 @@
                                             <Border HeightRequest="14" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 7" />
                                             <Border HeightRequest="14" Margin="{Binding LightTimelineBarMargin}" WidthRequest="{Binding LightTimelineBarWidth}" BackgroundColor="#F5DE4D" Stroke="Transparent" StrokeShape="RoundRectangle 7" HorizontalOptions="Start" />
                                         </Grid>
-                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsLightScheduleEditable}">
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsLightScheduleEditable}" WidthRequest="1000" HorizontalOptions="Start">
                                             <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                                 <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedDayStartHour}" TextColor="{StaticResource TextPrimary}" />
                                                 <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedDayStartMinute}" TextColor="{StaticResource TextPrimary}" />
@@ -502,7 +502,7 @@
                                             <Border HeightRequest="14" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 7" />
                                             <Border HeightRequest="14" Margin="{Binding AerationTimelineBarMargin}" WidthRequest="{Binding AerationTimelineBarWidth}" BackgroundColor="#F8FAFC" Stroke="Transparent" StrokeShape="RoundRectangle 7" HorizontalOptions="Start" />
                                         </Grid>
-                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsAerationScheduleEditable}">
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsAerationScheduleEditable}" WidthRequest="1000" HorizontalOptions="Start">
                                             <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                                 <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedAerationOnHour}" TextColor="{StaticResource TextPrimary}" />
                                                 <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedAerationOnMinute}" TextColor="{StaticResource TextPrimary}" />
@@ -524,7 +524,7 @@
                                             <Border HeightRequest="14" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 7" />
                                             <Border HeightRequest="14" Margin="{Binding FilterTimelineBarMargin}" WidthRequest="{Binding FilterTimelineBarWidth}" BackgroundColor="#4F87F7" Stroke="Transparent" StrokeShape="RoundRectangle 7" HorizontalOptions="Start" />
                                         </Grid>
-                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsFilterScheduleEditable}">
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsFilterScheduleEditable}" WidthRequest="1000" HorizontalOptions="Start">
                                             <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                                                 <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedFilterOnHour}" TextColor="{StaticResource TextPrimary}" />
                                                 <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedFilterOnMinute}" TextColor="{StaticResource TextPrimary}" />
