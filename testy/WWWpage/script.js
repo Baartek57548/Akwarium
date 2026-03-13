@@ -110,6 +110,82 @@ async function sendAction(action, payload = {}) {
     }
 }
 
+function timeToMinutes(time) {
+    const [hours, minutes] = (time || '00:00').split(':').map(Number);
+    return ((Number.isFinite(hours) ? hours : 0) * 60) + (Number.isFinite(minutes) ? minutes : 0);
+}
+
+function minutesToPercent(totalMinutes) {
+    return Math.max(0, Math.min(100, (totalMinutes / (24 * 60)) * 100));
+}
+
+function updateRangeScheduleItem(item) {
+    const modeSelect = item.querySelector('.schedule-mode-select');
+    const startInput = item.querySelector('.schedule-time-start');
+    const endInput = item.querySelector('.schedule-time-end');
+    const bar = item.querySelector('.schedule-bar');
+    if (!modeSelect || !startInput || !endInput || !bar) return;
+
+    const mode = modeSelect.value;
+    const startMinutes = timeToMinutes(startInput.value);
+    let endMinutes = timeToMinutes(endInput.value);
+    if (endMinutes < startMinutes) {
+        endMinutes = startMinutes;
+        endInput.value = startInput.value;
+    }
+
+    startInput.disabled = mode !== 'harmonogram';
+    endInput.disabled = mode !== 'harmonogram';
+
+    const startPct = minutesToPercent(startMinutes);
+    let endPct = minutesToPercent(endMinutes);
+
+    if (mode === 'zawsze_wlaczone') {
+        endPct = 100;
+        bar.style.left = '0%';
+        bar.style.width = '100%';
+    } else if (mode === 'zawsze_wylaczone') {
+        bar.style.left = '0%';
+        bar.style.width = '0%';
+    } else {
+        bar.style.left = `${startPct}%`;
+        bar.style.width = `${Math.max(0, endPct - startPct)}%`;
+    }
+
+    startInput.style.left = `${startPct}%`;
+    endInput.style.left = `${endPct}%`;
+}
+
+function updatePointScheduleItem(item) {
+    const pointInput = item.querySelector('.schedule-time-point');
+    const point = item.querySelector('.schedule-point');
+    if (!pointInput || !point) return;
+
+    const pointPct = minutesToPercent(timeToMinutes(pointInput.value));
+    point.style.left = `${pointPct}%`;
+    pointInput.style.left = `${pointPct}%`;
+}
+
+function initScheduleTimeline() {
+    const scheduleItems = document.querySelectorAll('#harmonogramy .schedule-item');
+    scheduleItems.forEach(item => {
+        const kind = item.getAttribute('data-schedule-kind') || 'point';
+        if (kind === 'range') {
+            const modeSelect = item.querySelector('.schedule-mode-select');
+            const startInput = item.querySelector('.schedule-time-start');
+            const endInput = item.querySelector('.schedule-time-end');
+            modeSelect?.addEventListener('change', () => updateRangeScheduleItem(item));
+            startInput?.addEventListener('input', () => updateRangeScheduleItem(item));
+            endInput?.addEventListener('input', () => updateRangeScheduleItem(item));
+            updateRangeScheduleItem(item);
+        } else {
+            const pointInput = item.querySelector('.schedule-time-point');
+            pointInput?.addEventListener('input', () => updatePointScheduleItem(item));
+            updatePointScheduleItem(item);
+        }
+    });
+}
+
 // Tab Switching Logic
 function initNavigation() {
     const navItems = document.querySelectorAll('.nav-item[data-target]');
@@ -281,6 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     initNavigation();
     initOTA();
+    initScheduleTimeline();
 
     const currentBtn = document.getElementById('logs-current-btn');
     const criticalBtn = document.getElementById('logs-critical-btn');
