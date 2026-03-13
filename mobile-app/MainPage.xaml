@@ -324,7 +324,6 @@
                                         <Label FontSize="11" HorizontalTextAlignment="End" Text="{Binding ConnectionStatusBadgeText}" TextColor="{StaticResource TextSecondary}" />
                                     </VerticalStackLayout>
                                 </Border>
-                                <Button BackgroundColor="#0B2434" BorderColor="#1A5E78" BorderWidth="1" Command="{Binding RefreshStatusCommand}" Style="{StaticResource FluentButtonStyle}" Text="Odswiez" TextColor="{StaticResource AccentCyan}" />
                             </HorizontalStackLayout>
                         </Grid>
 
@@ -453,79 +452,118 @@
                     <VerticalStackLayout Padding="30" Spacing="20">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                             <VerticalStackLayout Spacing="4">
-                                <Label Style="{StaticResource PageTitleStyle}" Text="Harmonogram" />
-                                <Label Style="{StaticResource PageSubtitleStyle}" Text="Okna czasowe i tryby pracy dla swiatla, filtra, napowietrzania i karmienia." />
+                                <Label Style="{StaticResource PageTitleStyle}" Text="Harmonogramy" />
+                                <Label Style="{StaticResource PageSubtitleStyle}" Text="Zarzadzaj cyklem dobowym wszystkich urzadzen akwarium." />
                             </VerticalStackLayout>
                             <Button Grid.Column="1" BackgroundColor="{StaticResource AccentCyan}" Command="{Binding SaveSchedulesCommand}" CornerRadius="16" HeightRequest="46" IsEnabled="{Binding CanSaveSchedules}" Padding="18,0" Text="Zapisz zmiany" TextColor="#062133" />
                         </Grid>
 
-                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="14">
-                            <Border Grid.Column="0" Style="{StaticResource PanelCardStyle}">
-                                <VerticalStackLayout Padding="16" Spacing="12">
-                                    <Label Style="{StaticResource CardTitleStyle}" Text="Swiatlo" />
-                                    <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding ScheduleModes}" SelectedItem="{Binding SelectedLightMode}" TextColor="{StaticResource TextPrimary}" />
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding IsLightScheduleEditable}">
-                                        <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedDayStartHour}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedDayEndHour}" TextColor="{StaticResource TextPrimary}" />
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding IsLightScheduleEditable}">
-                                        <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedDayStartMinute}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedDayEndMinute}" TextColor="{StaticResource TextPrimary}" />
-                                    </Grid>
-                                    <Label Style="{StaticResource TinyMutedTextStyle}" Text="{Binding LightScheduleSummaryText}" />
-                                    <Label FontSize="11" IsVisible="{Binding HasLightScheduleError}" Text="{Binding LightScheduleErrorText}" TextColor="{StaticResource AccentRed}" />
-                                </VerticalStackLayout>
-                            </Border>
+                        <Border Style="{StaticResource PanelCardStyle}">
+                            <VerticalStackLayout Padding="20" Spacing="18">
+                                <Label FontFamily="OpenSansSemibold" FontSize="38" Text="Grafik Pracy (24h)" TextColor="{StaticResource TextPrimary}" />
+                                <Grid ColumnDefinitions="40,*,Auto,Auto,Auto,Auto" ColumnSpacing="0">
+                                    <Label Grid.Column="0" Style="{StaticResource TinyMutedTextStyle}" HorizontalTextAlignment="Start" Text="0" />
+                                    <Label Grid.Column="1" Style="{StaticResource TinyMutedTextStyle}" HorizontalTextAlignment="Center" Text="6" />
+                                    <Label Grid.Column="2" Style="{StaticResource TinyMutedTextStyle}" HorizontalTextAlignment="Center" Text="12" />
+                                    <Label Grid.Column="3" Style="{StaticResource TinyMutedTextStyle}" HorizontalTextAlignment="Center" Text="18" />
+                                    <Label Grid.Column="4" Style="{StaticResource TinyMutedTextStyle}" HorizontalTextAlignment="End" Text="24" />
+                                </Grid>
+                                <BoxView HeightRequest="1" Color="{StaticResource BorderColor}" />
 
-                            <Border Grid.Column="1" Style="{StaticResource PanelCardStyle}">
-                                <VerticalStackLayout Padding="16" Spacing="12">
-                                    <Label Style="{StaticResource CardTitleStyle}" Text="Filtr" />
-                                    <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding ScheduleModes}" SelectedItem="{Binding SelectedFilterMode}" TextColor="{StaticResource TextPrimary}" />
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding IsFilterScheduleEditable}">
-                                        <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedFilterOnHour}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedFilterOffHour}" TextColor="{StaticResource TextPrimary}" />
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding IsFilterScheduleEditable}">
-                                        <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedFilterOnMinute}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedFilterOffMinute}" TextColor="{StaticResource TextPrimary}" />
-                                    </Grid>
-                                    <Label Style="{StaticResource TinyMutedTextStyle}" Text="{Binding FilterScheduleSummaryText}" />
-                                    <Label FontSize="11" IsVisible="{Binding HasFilterScheduleError}" Text="{Binding FilterScheduleErrorText}" TextColor="{StaticResource AccentRed}" />
-                                </VerticalStackLayout>
-                            </Border>
+                                <Grid ColumnDefinitions="70,*,140" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="20" ColumnSpacing="12">
+                                    <Border Grid.Row="0" WidthRequest="56" HeightRequest="56" BackgroundColor="#2A2410" Stroke="#5E5230" StrokeShape="RoundRectangle 16">
+                                        <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="24" Text="&#xE793;" TextColor="{StaticResource AccentYellow}" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="8">
+                                        <Label FontFamily="OpenSansSemibold" FontSize="32" Text="Oswietlenie Glowne" TextColor="{StaticResource TextPrimary}" />
+                                        <Grid ColumnDefinitions="*">
+                                            <Border HeightRequest="28" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 14" />
+                                            <Border HeightRequest="28" Margin="{Binding LightTimelineBarMargin}" WidthRequest="{Binding LightTimelineBarWidth}" BackgroundColor="#F5DE4D" Stroke="Transparent" StrokeShape="RoundRectangle 14" HorizontalOptions="Start" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsLightScheduleEditable}">
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedDayStartHour}" TextColor="{StaticResource TextPrimary}" />
+                                                <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedDayStartMinute}" TextColor="{StaticResource TextPrimary}" />
+                                            </Grid>
+                                            <Grid Grid.Column="1" ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedDayEndHour}" TextColor="{StaticResource TextPrimary}" />
+                                                <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedDayEndMinute}" TextColor="{StaticResource TextPrimary}" />
+                                            </Grid>
+                                        </Grid>
+                                    </VerticalStackLayout>
+                                    <Picker Grid.Row="0" Grid.Column="2" BackgroundColor="#0A1628" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding ScheduleModes}" SelectedItem="{Binding SelectedLightMode}" TextColor="{StaticResource TextPrimary}" />
 
-                            <Border Grid.Column="2" Style="{StaticResource PanelCardStyle}">
-                                <VerticalStackLayout Padding="16" Spacing="12">
-                                    <Label Style="{StaticResource CardTitleStyle}" Text="Napowietrzanie" />
-                                    <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding ScheduleModes}" SelectedItem="{Binding SelectedAerationMode}" TextColor="{StaticResource TextPrimary}" />
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding IsAerationScheduleEditable}">
-                                        <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedAerationOnHour}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedAerationOffHour}" TextColor="{StaticResource TextPrimary}" />
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsEnabled="{Binding IsAerationScheduleEditable}">
-                                        <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedAerationOnMinute}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedAerationOffMinute}" TextColor="{StaticResource TextPrimary}" />
-                                    </Grid>
-                                    <Label Style="{StaticResource TinyMutedTextStyle}" Text="{Binding AerationScheduleSummaryText}" />
-                                    <Label FontSize="11" IsVisible="{Binding HasAerationScheduleError}" Text="{Binding AerationScheduleErrorText}" TextColor="{StaticResource AccentRed}" />
-                                </VerticalStackLayout>
-                            </Border>
-                        </Grid>
+                                    <Border Grid.Row="1" WidthRequest="56" HeightRequest="56" BackgroundColor="#152925" Stroke="#2A665F" StrokeShape="RoundRectangle 16">
+                                        <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="24" Text="&#xE753;" TextColor="{StaticResource AccentGreen}" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="8">
+                                        <Label FontFamily="OpenSansSemibold" FontSize="32" Text="Napowietrzanie" TextColor="{StaticResource TextPrimary}" />
+                                        <Grid ColumnDefinitions="*">
+                                            <Border HeightRequest="28" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 14" />
+                                            <Border HeightRequest="28" Margin="{Binding AerationTimelineBarMargin}" WidthRequest="{Binding AerationTimelineBarWidth}" BackgroundColor="#F8FAFC" Stroke="Transparent" StrokeShape="RoundRectangle 14" HorizontalOptions="Start" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsAerationScheduleEditable}">
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedAerationOnHour}" TextColor="{StaticResource TextPrimary}" />
+                                                <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedAerationOnMinute}" TextColor="{StaticResource TextPrimary}" />
+                                            </Grid>
+                                            <Grid Grid.Column="1" ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedAerationOffHour}" TextColor="{StaticResource TextPrimary}" />
+                                                <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedAerationOffMinute}" TextColor="{StaticResource TextPrimary}" />
+                                            </Grid>
+                                        </Grid>
+                                    </VerticalStackLayout>
+                                    <Picker Grid.Row="1" Grid.Column="2" BackgroundColor="#0A1628" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding ScheduleModes}" SelectedItem="{Binding SelectedAerationMode}" TextColor="{StaticResource TextPrimary}" />
 
-                        <Grid ColumnDefinitions="*" ColumnSpacing="14">
-                            <Border Style="{StaticResource PanelCardStyle}">
-                                <VerticalStackLayout Padding="16" Spacing="12">
-                                    <Label Style="{StaticResource CardTitleStyle}" Text="Karmienie automatyczne" />
-                                    <Grid ColumnDefinitions="160,*,*" ColumnSpacing="8">
-                                        <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding FeedModes}" SelectedItem="{Binding SelectedFeedMode}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedFeedHour}" TextColor="{StaticResource TextPrimary}" />
-                                        <Picker Grid.Column="2" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedFeedMinute}" TextColor="{StaticResource TextPrimary}" />
-                                    </Grid>
-                                    <Label Style="{StaticResource TinyMutedTextStyle}" Text="{Binding FeedScheduleSummaryText}" />
-                                    <Label FontSize="11" IsVisible="{Binding HasFeedScheduleError}" Text="{Binding FeedScheduleErrorText}" TextColor="{StaticResource AccentRed}" />
-                                </VerticalStackLayout>
-                            </Border>
-                        </Grid>
+                                    <Border Grid.Row="2" WidthRequest="56" HeightRequest="56" BackgroundColor="#131F33" Stroke="#365A8C" StrokeShape="RoundRectangle 16">
+                                        <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="24" Text="&#xE71C;" TextColor="{StaticResource AccentBlue}" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Row="2" Grid.Column="1" Spacing="8">
+                                        <Label FontFamily="OpenSansSemibold" FontSize="32" Text="Filtracja" TextColor="{StaticResource TextPrimary}" />
+                                        <Grid ColumnDefinitions="*">
+                                            <Border HeightRequest="28" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 14" />
+                                            <Border HeightRequest="28" Margin="{Binding FilterTimelineBarMargin}" WidthRequest="{Binding FilterTimelineBarWidth}" BackgroundColor="#4F87F7" Stroke="Transparent" StrokeShape="RoundRectangle 14" HorizontalOptions="Start" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsFilterScheduleEditable}">
+                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedFilterOnHour}" TextColor="{StaticResource TextPrimary}" />
+                                                <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedFilterOnMinute}" TextColor="{StaticResource TextPrimary}" />
+                                            </Grid>
+                                            <Grid Grid.Column="1" ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedFilterOffHour}" TextColor="{StaticResource TextPrimary}" />
+                                                <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedFilterOffMinute}" TextColor="{StaticResource TextPrimary}" />
+                                            </Grid>
+                                        </Grid>
+                                    </VerticalStackLayout>
+                                    <Picker Grid.Row="2" Grid.Column="2" BackgroundColor="#0A1628" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding ScheduleModes}" SelectedItem="{Binding SelectedFilterMode}" TextColor="{StaticResource TextPrimary}" />
+
+                                    <Border Grid.Row="3" WidthRequest="56" HeightRequest="56" BackgroundColor="#0F2234" Stroke="#28506A" StrokeShape="RoundRectangle 16">
+                                        <Label HorizontalOptions="Center" VerticalOptions="Center" FontFamily="Segoe Fluent Icons" FontSize="24" Text="&#xEAC5;" TextColor="{StaticResource AccentCyan}" />
+                                    </Border>
+                                    <VerticalStackLayout Grid.Row="3" Grid.Column="1" Spacing="8">
+                                        <Label FontFamily="OpenSansSemibold" FontSize="32" Text="Karmienie (Automatyczne)" TextColor="{StaticResource TextPrimary}" />
+                                        <Grid ColumnDefinitions="*">
+                                            <Border HeightRequest="28" BackgroundColor="#081322" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 14" />
+                                            <Border Margin="{Binding FeedTimelineMarkerMargin}" WidthRequest="18" HeightRequest="28" BackgroundColor="{StaticResource AccentCyan}" Stroke="Transparent" StrokeShape="RoundRectangle 9" HorizontalOptions="Start" />
+                                        </Grid>
+                                        <Grid ColumnDefinitions="200,*,*" ColumnSpacing="8">
+                                            <Picker BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding FeedModes}" SelectedItem="{Binding SelectedFeedMode}" TextColor="{StaticResource TextPrimary}" />
+                                            <Picker Grid.Column="1" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding HourOptions}" SelectedItem="{Binding SelectedFeedHour}" TextColor="{StaticResource TextPrimary}" />
+                                            <Picker Grid.Column="2" BackgroundColor="#101C31" ItemDisplayBinding="{Binding Label}" ItemsSource="{Binding MinuteOptions}" SelectedItem="{Binding SelectedFeedMinute}" TextColor="{StaticResource TextPrimary}" />
+                                        </Grid>
+                                    </VerticalStackLayout>
+                                    <Border Grid.Row="3" Grid.Column="2" Padding="10,6" BackgroundColor="#0A1628" Stroke="{StaticResource BorderColor}" StrokeShape="RoundRectangle 12">
+                                        <Label FontFamily="OpenSansSemibold" FontSize="12" Text="{Binding FeedScheduleSummaryText}" TextColor="{StaticResource TextPrimary}" HorizontalTextAlignment="Center" />
+                                    </Border>
+                                </Grid>
+
+                                <BoxView HeightRequest="1" Color="{StaticResource BorderColor}" />
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <Label FontSize="12" Text="{Binding ScheduleValidationSummary}" TextColor="{StaticResource TextMuted}" VerticalOptions="Center" />
+                                    <Button Grid.Column="1" BackgroundColor="#092338" BorderColor="#1A5E78" BorderWidth="1" Command="{Binding SaveSchedulesCommand}" CornerRadius="16" HeightRequest="44" IsEnabled="{Binding CanSaveSchedules}" Padding="20,0" Text="Zapisz Harmonogramy" TextColor="{StaticResource AccentCyan}" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Border>
                     </VerticalStackLayout>
                 </ScrollView>
                 <ScrollView IsVisible="{Binding IsFeederTabSelected}">

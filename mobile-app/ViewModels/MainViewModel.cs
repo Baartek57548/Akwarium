@@ -170,8 +170,8 @@ public sealed class MainViewModel : ObservableObject
 		_scheduleModes =
 		[
 			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.Schedule, "Harmonogram"),
-			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOn, "Zawsze wlaczone"),
-			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOff, "Zawsze wylaczone")
+			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOn, "Zawsze wlaczony"),
+			new SelectionOption<AquariumScheduleMode>(AquariumScheduleMode.AlwaysOff, "Zawsze wylaczony")
 		];
 
 		_minuteOptions = BuildMinuteOptions(AquariumValidationProfile.Default.MinuteStep);
@@ -757,6 +757,44 @@ public sealed class MainViewModel : ObservableObject
 	public bool IsFilterScheduleEditable => SelectedFilterMode?.Value == AquariumScheduleMode.Schedule;
 
 	public bool IsAerationScheduleEditable => SelectedAerationMode?.Value == AquariumScheduleMode.Schedule;
+
+	public double LightTimelineBarWidth => ResolveTimelineBarWidth(
+		SelectedLightMode,
+		SelectedDayStartHour,
+		SelectedDayStartMinute,
+		SelectedDayEndHour,
+		SelectedDayEndMinute);
+
+	public string LightTimelineBarMargin => ResolveTimelineBarMargin(
+		SelectedLightMode,
+		SelectedDayStartHour,
+		SelectedDayStartMinute);
+
+	public double FilterTimelineBarWidth => ResolveTimelineBarWidth(
+		SelectedFilterMode,
+		SelectedFilterOnHour,
+		SelectedFilterOnMinute,
+		SelectedFilterOffHour,
+		SelectedFilterOffMinute);
+
+	public string FilterTimelineBarMargin => ResolveTimelineBarMargin(
+		SelectedFilterMode,
+		SelectedFilterOnHour,
+		SelectedFilterOnMinute);
+
+	public double AerationTimelineBarWidth => ResolveTimelineBarWidth(
+		SelectedAerationMode,
+		SelectedAerationOnHour,
+		SelectedAerationOnMinute,
+		SelectedAerationOffHour,
+		SelectedAerationOffMinute);
+
+	public string AerationTimelineBarMargin => ResolveTimelineBarMargin(
+		SelectedAerationMode,
+		SelectedAerationOnHour,
+		SelectedAerationOnMinute);
+
+	public string FeedTimelineMarkerMargin => ResolveFeedMarkerMargin(SelectedFeedHour, SelectedFeedMinute);
 
 	public string LightScheduleHintText => IsLightScheduleEditable
 		? "Godziny aktywne tylko w trybie Harmonogram. Minuty sa ograniczone do kroku 5 minut."
@@ -1454,6 +1492,13 @@ public sealed class MainViewModel : ObservableObject
 		OnPropertyChanged(nameof(LightScheduleSummaryText));
 		OnPropertyChanged(nameof(FilterScheduleSummaryText));
 		OnPropertyChanged(nameof(AerationScheduleSummaryText));
+		OnPropertyChanged(nameof(LightTimelineBarWidth));
+		OnPropertyChanged(nameof(LightTimelineBarMargin));
+		OnPropertyChanged(nameof(FilterTimelineBarWidth));
+		OnPropertyChanged(nameof(FilterTimelineBarMargin));
+		OnPropertyChanged(nameof(AerationTimelineBarWidth));
+		OnPropertyChanged(nameof(AerationTimelineBarMargin));
+		OnPropertyChanged(nameof(FeedTimelineMarkerMargin));
 		OnPropertyChanged(nameof(FeedTimeText));
 		OnPropertyChanged(nameof(FeedScheduleSummaryText));
 	}
@@ -1660,10 +1705,63 @@ public sealed class MainViewModel : ObservableObject
 
 		return mode.Value switch
 		{
-			AquariumScheduleMode.AlwaysOn => "Zawsze wlaczone",
-			AquariumScheduleMode.AlwaysOff => "Wylaczone",
+			AquariumScheduleMode.AlwaysOn => "Zawsze wlaczony",
+			AquariumScheduleMode.AlwaysOff => "Zawsze wylaczony",
 			_ => $"{startHour?.Value ?? 0:00}:{startMinute?.Value ?? 0:00} - {endHour?.Value ?? 0:00}:{endMinute?.Value ?? 0:00}"
 		};
+	}
+
+	private static double ResolveTimelineBarWidth(
+		SelectionOption<AquariumScheduleMode>? mode,
+		SelectionOption<int>? startHour,
+		SelectionOption<int>? startMinute,
+		SelectionOption<int>? endHour,
+		SelectionOption<int>? endMinute)
+	{
+		const double timelineWidth = 840d;
+
+		if (mode?.Value == AquariumScheduleMode.AlwaysOn)
+		{
+			return timelineWidth;
+		}
+
+		if (mode?.Value == AquariumScheduleMode.AlwaysOff)
+		{
+			return 0d;
+		}
+
+		var start = ((startHour?.Value ?? 0) * 60) + (startMinute?.Value ?? 0);
+		var end = ((endHour?.Value ?? 0) * 60) + (endMinute?.Value ?? 0);
+		var duration = end >= start ? end - start : (24 * 60) - start + end;
+		var progress = Math.Clamp(duration / 1440d, 0d, 1d);
+		return Math.Max(8d, timelineWidth * progress);
+	}
+
+	private static string ResolveTimelineBarMargin(
+		SelectionOption<AquariumScheduleMode>? mode,
+		SelectionOption<int>? startHour,
+		SelectionOption<int>? startMinute)
+	{
+		const double timelineWidth = 840d;
+
+		if (mode?.Value == AquariumScheduleMode.AlwaysOn || mode?.Value == AquariumScheduleMode.AlwaysOff)
+		{
+			return "0,0,0,0";
+		}
+
+		var start = ((startHour?.Value ?? 0) * 60) + (startMinute?.Value ?? 0);
+		var offset = Math.Clamp(start / 1440d, 0d, 1d) * timelineWidth;
+		return $"{offset:0.##},0,0,0";
+	}
+
+	private static string ResolveFeedMarkerMargin(
+		SelectionOption<int>? hour,
+		SelectionOption<int>? minute)
+	{
+		const double timelineWidth = 840d;
+		var value = ((hour?.Value ?? 0) * 60) + (minute?.Value ?? 0);
+		var offset = Math.Clamp(value / 1440d, 0d, 1d) * timelineWidth;
+		return $"{offset:0.##},0,0,0";
 	}
 
 	private double ResolveTemperatureProgress(double temperature)
