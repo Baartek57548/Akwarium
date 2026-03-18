@@ -26,9 +26,19 @@ dotnet run --project ..\Aquarium.ControllerEmulator\Aquarium.ControllerEmulator.
 
 ## Sterowanie
 
-- `ArrowUp` / przycisk `UP`
+- `ArrowUp` (lub `Esc`) / przycisk `BACK`
 - `Enter` / przycisk `SELECT`
 - `ArrowDown` / przycisk `DOWN`
+
+## Reczne parametry
+
+W prawym panelu mozna recznie ustawic:
+
+- `Bateria [%]`
+- `Napowietrzanie [%]`
+- `Temperatura [C]`
+- logi (`Tresc logu`, `Czas [HH:MM]`, `Dodaj log`, `Wyczysc logi`)
+- `Uruchom kalibracje` (animacja kalibracji z firmware)
 
 ## Troubleshooting
 

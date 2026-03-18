@@ -65,7 +65,9 @@ const BitmapFont::Glyph &BitmapFont::GetGlyph(std::uint16_t encoding) const {
   }
 
   Glyph decoded = DecodeGlyph(encoding);
-  if (decoded.width <= 0 || decoded.height <= 0 || decoded.rows.empty()) {
+  // Some U8g2 glyphs (for example space) may intentionally have no bitmap rows
+  // but still define a valid horizontal advance (deltaX).
+  if (decoded.deltaX <= 0) {
     decoded = fallbackGlyph_;
   }
 
@@ -266,9 +268,8 @@ BitmapFont::Glyph BitmapFont::DecodeGlyph(std::uint16_t encoding) const {
   glyph.yOffset = ReadSignedBits(decodePtr, decodeBitPos, info_.bitsPerCharY);
   glyph.deltaX = ReadSignedBits(decodePtr, decodeBitPos, info_.bitsPerDeltaX);
 
-  if (glyph.width <= 0 || glyph.height <= 0) {
-    glyph.width = std::max(1, width_);
-    glyph.height = std::max(1, height_);
+  // Empty glyph bitmaps are valid in U8g2 and should not be replaced with fallback.
+  if (glyph.width == 0 || glyph.height == 0) {
     glyph.deltaX = std::max(1, glyph.deltaX);
     return glyph;
   }
