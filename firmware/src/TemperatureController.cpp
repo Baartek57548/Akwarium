@@ -63,7 +63,8 @@ float TemperatureController::readTemperature() {
   if (!sensorPresent) {
     refreshSensorPresence();
     if (!sensorPresent) {
-      return hasValidTemperature ? lastTemperature : DEVICE_DISCONNECTED_C;
+      hasValidTemperature = false;
+      return DEVICE_DISCONNECTED_C;
     }
   }
 
@@ -82,6 +83,10 @@ float TemperatureController::readTemperature() {
     }
   } else {
     refreshSensorPresence();
+    if (!sensorPresent || t == DEVICE_DISCONNECTED_C) {
+      hasValidTemperature = false;
+      return DEVICE_DISCONNECTED_C;
+    }
   }
 
   return hasValidTemperature ? lastTemperature : DEVICE_DISCONNECTED_C;
