@@ -254,6 +254,11 @@ void SystemController::updateSensors() {
         tempSensorErrorLogged = false;
       }
     } else {
+      SharedState::updateTemperature(NAN, tempController.getDailyMin(), 0,
+                                     tempController.getDailyMax());
+      if (tempController.isHeaterOn()) {
+        tempController.forceHeaterOff();
+      }
       if (tempInvalidReadCount < 255)
         tempInvalidReadCount++;
       if (tempInvalidReadCount >= 3 && !tempSensorErrorLogged) {

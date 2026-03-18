@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-enum class Error { NONE, SENSOR_NOT_OK, TIMEOUT };
+enum class Error { NONE, BUSY, SENSOR_NOT_OK, TIMEOUT };
 
 class FeederController {
 private:

@@ -23,7 +23,8 @@ void FeederController::begin() {
 }
 
 Error FeederController::startFeed(unsigned long durationMs, bool useSensor) {
-  if (feeding) return Error::NONE; // Already feeding
+  if (feeding)
+    return Error::BUSY;
 
   lastSensorState = isSensorConnected();
 

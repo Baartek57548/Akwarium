@@ -248,7 +248,13 @@ void setupApiEndpoints() {
         return;
       }
 
-      int ang = constrain(server.arg("angle").toInt(), 0, 90);
+      long parsedAngle = 0;
+      if (!parseLongStrict(server.arg("angle"), parsedAngle)) {
+        server.send(400, "text/plain", "invalid_angle");
+        return;
+      }
+
+      int ang = constrain(static_cast<int>(parsedAngle), 0, 90);
       SystemController::setManualServo(ang);
       server.send(200, "text/plain", "OK");
       return;
@@ -401,17 +407,14 @@ void setupApiEndpoints() {
       }
     }
 
-    if (parseInvalidFields > 0) {
-      sendValidationError(server, "invalid_payload");
-      return;
-    }
-
     Config cfg = ConfigManager::getCopy();
     ConfigValidationResult validation = {};
     if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
-      sendValidationError(server,
-                          validation.errorCode[0] != '\0' ? validation.errorCode
-                                                          : "invalid_values");
+      sendValidationError(server, parseInvalidFields > 0
+                                      ? "invalid_payload"
+                                      : validation.errorCode[0] != '\0'
+                                            ? validation.errorCode
+                                            : "invalid_values");
       return;
     }
 
@@ -420,6 +423,9 @@ void setupApiEndpoints() {
       return;
     }
 
-    server.send(200, "text/plain", "OK");
+    server.send(200, "text/plain",
+                (parseInvalidFields > 0 || validation.hasInvalidFields())
+                    ? "OK_PARTIAL"
+                    : "OK");
   });
 }

@@ -85,30 +85,33 @@ static void setupWebServer() {
     if (server.hasArg("epoch")) {
       PowerManager::registerActivity();
       time_t epoch = server.arg("epoch").toInt();
-      
-      // Sprawdz czy RTC jest dostępne i czy czas jest rozsądny
-      if (SystemController::isRtcReady()) {
-        DateTime rtcTime = SystemController::rtc.now();
-        DateTime newTime(epoch);
-        
-        // Aktualizuj RTC tylko jeśli różnica jest większa niż 1 minuta
-        // lub jeśli RTC ma niepoprawny czas
-        long diff = abs((long)newTime.unixtime() - (long)rtcTime.unixtime());
-        if (diff > 60 || rtcTime.year() < 2024 || rtcTime.year() > 2030) {
-          struct timeval tv;
-          tv.tv_sec = epoch;
-          tv.tv_usec = 0;
-          settimeofday(&tv, NULL);
-          syncSystemTime((uint32_t)epoch);
-          
-          struct tm timeinfo;
-          getLocalTime(&timeinfo);
-          Serial.println(&timeinfo, "[RTC] Zsynchronizowano czas ukladu: %Y-%m-%d %H:%M:%S");
-        } else {
-          Serial.println("[RTC] Czas w RTC jest juz aktualny, pomijam synchronizacje");
-        }
+
+      if (!SystemController::isRtcReady()) {
+        server.send(503, "text/plain", "rtc_unavailable");
+        return;
       }
-      
+
+      // Sprawdz czy RTC jest dostepne i czy czas jest rozsadny
+      DateTime rtcTime = SystemController::rtc.now();
+      DateTime newTime(epoch);
+
+      // Aktualizuj RTC tylko jesli roznica jest wieksza niz 1 minuta
+      // lub jesli RTC ma niepoprawny czas
+      long diff = abs((long)newTime.unixtime() - (long)rtcTime.unixtime());
+      if (diff > 60 || rtcTime.year() < 2024 || rtcTime.year() > 2030) {
+        struct timeval tv;
+        tv.tv_sec = epoch;
+        tv.tv_usec = 0;
+        settimeofday(&tv, NULL);
+        syncSystemTime((uint32_t)epoch);
+
+        struct tm timeinfo;
+        getLocalTime(&timeinfo);
+        Serial.println(&timeinfo, "[RTC] Zsynchronizowano czas ukladu: %Y-%m-%d %H:%M:%S");
+      } else {
+        Serial.println("[RTC] Czas w RTC jest juz aktualny, pomijam synchronizacje");
+      }
+
       server.send(200, "text/plain", "OK");
     } else {
       server.send(400, "text/plain", "Brak parametru epoch");
@@ -378,3 +381,5 @@ String AkwariumWifi::getIP() {
 uint8_t AkwariumWifi::getConnectedClients() {
   return isAPMode ? WiFi.softAPgetStationNum() : 0;
 }
+
+
