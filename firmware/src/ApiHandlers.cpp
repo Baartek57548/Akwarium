@@ -401,17 +401,14 @@ void setupApiEndpoints() {
       }
     }
 
-    if (parseInvalidFields > 0) {
-      sendValidationError(server, "invalid_payload");
-      return;
-    }
-
     Config cfg = ConfigManager::getCopy();
     ConfigValidationResult validation = {};
     if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
-      sendValidationError(server,
-                          validation.errorCode[0] != '\0' ? validation.errorCode
-                                                          : "invalid_values");
+      sendValidationError(server, parseInvalidFields > 0
+                                      ? "invalid_payload"
+                                      : validation.errorCode[0] != '\0'
+                                            ? validation.errorCode
+                                            : "invalid_values");
       return;
     }
 
@@ -420,6 +417,9 @@ void setupApiEndpoints() {
       return;
     }
 
-    server.send(200, "text/plain", "OK");
+    server.send(200, "text/plain",
+                (parseInvalidFields > 0 || validation.hasInvalidFields())
+                    ? "OK_PARTIAL"
+                    : "OK");
   });
 }

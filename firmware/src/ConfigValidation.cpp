@@ -132,9 +132,9 @@ static uint8_t deriveLegacyLightMode(const Config &cfg) {
 
 static void copyCandidateIfValid(Config &cfg, const Config &candidate,
                                  ConfigValidationResult &result) {
-  if (!result.hasInvalidFields() && result.hasAnyProvided()) {
+  if (result.hasAnyProvided() && result.providedFields > result.invalidFields) {
     cfg = candidate;
-    result.appliedFields = result.providedFields;
+    result.appliedFields = result.providedFields - result.invalidFields;
   }
 }
 

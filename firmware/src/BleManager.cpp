@@ -1005,17 +1005,14 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    if (parseInvalidFields > 0) {
-      publishResult("err", "invalid_payload");
-      return;
-    }
-
     Config cfg = ConfigManager::getCopy();
     ConfigValidationResult validation = {};
     if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
-      publishResult("err", validation.errorCode[0] != '\0'
-                               ? validation.errorCode
-                               : "invalid_values");
+      publishResult("err", parseInvalidFields > 0
+                               ? "invalid_payload"
+                               : validation.errorCode[0] != '\0'
+                                     ? validation.errorCode
+                                     : "invalid_values");
       return;
     }
 
@@ -1030,7 +1027,9 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
     // stack overflow -> LoadProhibited panic. Status zostanie zsynchronizowany
     // automatycznie w BleManager::update() co 2 sekundy.
     Serial.println("[BLE] Settings updated & saved.");
-    publishResult("ack", "settings_saved");
+    publishResult("ack", (parseInvalidFields > 0 || validation.hasInvalidFields())
+                              ? "settings_partial"
+                              : "settings_saved");
   }
 
   void onRead(BLECharacteristic *pCharacteristic) override {
