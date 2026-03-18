@@ -338,6 +338,7 @@ void updateUiState() {
 
   if (shouldApplyUiIdleHomeTimeout(uiState) &&
       (nowMs - lastUiInteractionMs >= UI_IDLE_RETURN_HOME_MS)) {
+    animation->cancelEditing();
     uiState = UiState::HOME;
   }
 

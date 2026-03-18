@@ -960,6 +960,12 @@ void AquariumAnimation::nextEditStep() {
     playConfirmAnimation();
   }
 }
+
+void AquariumAnimation::cancelEditing() {
+  isEditing = false;
+  editState = 0;
+}
+
 bool AquariumAnimation::isEditingActive() { return isEditing; }
 
 // --- GETTERY ---

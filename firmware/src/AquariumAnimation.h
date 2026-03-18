@@ -217,6 +217,7 @@ public:
   void scheduleEditIncrement();
   void startEditing();
   void nextEditStep();
+  void cancelEditing();
   bool isEditingActive();
 
   // Animacje
