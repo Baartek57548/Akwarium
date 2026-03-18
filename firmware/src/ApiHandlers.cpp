@@ -248,7 +248,13 @@ void setupApiEndpoints() {
         return;
       }
 
-      int ang = constrain(server.arg("angle").toInt(), 0, 90);
+      long parsedAngle = 0;
+      if (!parseLongStrict(server.arg("angle"), parsedAngle)) {
+        server.send(400, "text/plain", "invalid_angle");
+        return;
+      }
+
+      int ang = constrain(static_cast<int>(parsedAngle), 0, 90);
       SystemController::setManualServo(ang);
       server.send(200, "text/plain", "OK");
       return;
