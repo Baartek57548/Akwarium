@@ -678,10 +678,14 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
 
     if (strcmp(action, "feed_now") == 0) {
       portENTER_CRITICAL(&bleStateMux);
+      if (hasPendingBleCommand) {
+        portEXIT_CRITICAL(&bleStateMux);
+        publishResult("err", "command_pending");
+        return;
+      }
       pendingBleCommand.type = PendingBleCommand::Type::FEED_NOW;
       hasPendingBleCommand = true;
       portEXIT_CRITICAL(&bleStateMux);
-      publishResult("ack", "feed_now");
       return;
     }
 
@@ -692,29 +696,41 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
         return;
       }
       portENTER_CRITICAL(&bleStateMux);
+      if (hasPendingBleCommand) {
+        portEXIT_CRITICAL(&bleStateMux);
+        publishResult("err", "command_pending");
+        return;
+      }
       pendingBleCommand.type = PendingBleCommand::Type::SET_SERVO;
       pendingBleCommand.servoAngle = constrain(static_cast<int>(angle), 0, 90);
       hasPendingBleCommand = true;
       portEXIT_CRITICAL(&bleStateMux);
-      publishResult("ack", "set_servo");
       return;
     }
 
     if (strcmp(action, "clear_servo") == 0) {
       portENTER_CRITICAL(&bleStateMux);
+      if (hasPendingBleCommand) {
+        portEXIT_CRITICAL(&bleStateMux);
+        publishResult("err", "command_pending");
+        return;
+      }
       pendingBleCommand.type = PendingBleCommand::Type::CLEAR_SERVO;
       hasPendingBleCommand = true;
       portEXIT_CRITICAL(&bleStateMux);
-      publishResult("ack", "clear_servo");
       return;
     }
 
     if (strcmp(action, "clear_critical_logs") == 0) {
       portENTER_CRITICAL(&bleStateMux);
+      if (hasPendingBleCommand) {
+        portEXIT_CRITICAL(&bleStateMux);
+        publishResult("err", "command_pending");
+        return;
+      }
       pendingBleCommand.type = PendingBleCommand::Type::CLEAR_LOGS;
       hasPendingBleCommand = true;
       portEXIT_CRITICAL(&bleStateMux);
-      publishResult("ack", "clear_logs");
       return;
     }
 
@@ -1477,19 +1493,23 @@ void BleManager::update() {
     switch (cmd.type) {
     case PendingBleCommand::Type::FEED_NOW:
       SystemController::feedNow();
+      publishResult("ack", "feed_now");
       Serial.println("[BLE] Deferred: feedNow executed.");
       break;
     case PendingBleCommand::Type::SET_SERVO:
       SystemController::setManualServo(cmd.servoAngle);
+      publishResult("ack", "set_servo");
       Serial.printf("[BLE] Deferred: setManualServo(%d) executed.\n",
                     cmd.servoAngle);
       break;
     case PendingBleCommand::Type::CLEAR_SERVO:
       SystemController::clearManualServo();
+      publishResult("ack", "clear_servo");
       Serial.println("[BLE] Deferred: clearManualServo executed.");
       break;
     case PendingBleCommand::Type::CLEAR_LOGS:
       LogManager::clearCriticalLogs();
+      publishResult("ack", "clear_logs");
       Serial.println("[BLE] Deferred: clearCriticalLogs executed.");
       break;
     default:
