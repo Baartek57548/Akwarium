@@ -21,6 +21,12 @@ dotnet run --project tools/simulator/Aquarium.ControllerEmulator/Aquarium.Contro
 
 Klawiatura:
 
-- `ArrowUp` -> `UP`
+- `ArrowUp` -> `BACK`
 - `Enter` -> `SELECT`
 - `ArrowDown` -> `DOWN`
+
+Panel boczny emulatora:
+
+- reczne ustawienia: `Bateria [%]`, `Napowietrzanie [%]`, `Temperatura [C]`
+- reczne logi: `Tresc logu`, `Czas [HH:MM]`, `Dodaj log`, `Wyczysc logi`
+- `Uruchom kalibracje` (animacja kalibracji w stylu firmware)

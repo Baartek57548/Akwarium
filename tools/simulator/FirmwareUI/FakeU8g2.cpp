@@ -322,8 +322,8 @@ std::uint8_t U8G2::drawGlyph(int x, int y, std::uint16_t encoding) {
   }
 
   const auto &glyph = currentFont_->GetGlyph(encoding);
-  const int glyphWidth = std::max(1, glyph.width);
-  const int glyphHeight = std::max(1, glyph.height);
+  const int glyphWidth = std::max(0, glyph.width);
+  const int glyphHeight = std::max(0, glyph.height);
   const int glyphTop = y - glyphHeight - glyph.yOffset;
   const int glyphLeft = x + glyph.xOffset;
   const int drawWidth = std::min(glyphWidth, 16);

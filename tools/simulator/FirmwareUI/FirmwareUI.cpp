@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <ctime>
 #include <memory>
 #include <mutex>
@@ -15,6 +16,9 @@
 namespace {
 
 constexpr unsigned long UiIdleReturnHomeMs = 30000UL;
+constexpr unsigned long CalibrationPromptMs = 250UL;
+constexpr unsigned long CalibrationExpectedMs = 7000UL;
+constexpr unsigned long CalibrationResultMs = 1200UL;
 
 enum class UiState {
   HOME,
@@ -27,6 +31,7 @@ enum class UiState {
   LOGS,
   SETTINGS_DATETIME,
   TESTS,
+  CALIBRATION,
   FEEDING,
   ACCESS_POINT,
   BLUETOOTH
@@ -113,8 +118,18 @@ public:
     batteryPercent_ = 88;
     batteryVoltage_ = 4.0f;
     temperatureC_ = 24.0f;
+    manualTemperatureEnabled_ = false;
+    manualBatteryEnabled_ = false;
+    manualAerationEnabled_ = false;
+    manualTemperatureC_ = 24.0f;
+    manualBatteryPercent_ = 88;
+    manualAerationPercent_ = 30;
+    calibrationPhase_ = CalibrationPhase::IDLE;
+    calibrationPhaseStartMs_ = 0;
+    calibrationOk_ = true;
     simulatedClock_ = std::chrono::system_clock::now();
     fake_set_millis(0);
+    animation_->clearLogs();
     tick();
     return true;
   }
@@ -134,12 +149,87 @@ public:
     tick();
   }
 
+  void setManualTemperature(float value) {
+    if (!std::isfinite(value)) {
+      manualTemperatureEnabled_ = false;
+      return;
+    }
+    manualTemperatureEnabled_ = true;
+    manualTemperatureC_ = std::clamp(value, 0.0f, 45.0f);
+  }
+
+  void setManualBatteryPercent(int value) {
+    if (value < 0) {
+      manualBatteryEnabled_ = false;
+      return;
+    }
+    manualBatteryEnabled_ = true;
+    manualBatteryPercent_ = static_cast<std::uint8_t>(std::clamp(value, 0, 100));
+  }
+
+  void setManualAerationPercent(int value) {
+    if (value < 0) {
+      manualAerationEnabled_ = false;
+      return;
+    }
+    manualAerationEnabled_ = true;
+    manualAerationPercent_ = static_cast<std::uint8_t>(std::clamp(value, 0, 100));
+  }
+
+  void addManualLog(const char *message, const char *timeText) {
+    if (!animation_ || message == nullptr) {
+      return;
+    }
+
+    char msgBuf[20] = {};
+    std::strncpy(msgBuf, message, sizeof(msgBuf) - 1);
+    if (msgBuf[0] == '\0') {
+      return;
+    }
+
+    char timeBuf[6] = {};
+    if (timeText != nullptr && std::strlen(timeText) >= 4) {
+      std::strncpy(timeBuf, timeText, sizeof(timeBuf) - 1);
+    } else {
+      std::uint8_t hour = 0;
+      std::uint8_t minute = 0;
+      std::uint8_t second = 0;
+      std::uint8_t day = 1;
+      std::uint8_t month = 1;
+      std::uint16_t year = 2026;
+      getClockFields(hour, minute, second, day, month, year);
+      std::snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u", hour, minute);
+    }
+
+    animation_->addLog(msgBuf, timeBuf);
+  }
+
+  void clearManualLogs() {
+    if (animation_) {
+      animation_->clearLogs();
+    }
+  }
+
+  void startCalibrationAnimation() {
+    calibrationPhase_ = CalibrationPhase::PROMPT;
+    calibrationPhaseStartMs_ = lastTickMs_ == 0 ? millis() : lastTickMs_;
+    calibrationOk_ = true;
+    uiState_ = UiState::CALIBRATION;
+  }
+
   const std::uint8_t *getFrameBuffer() {
     tick();
     return display_.getPublishedLinearFrameBuffer();
   }
 
 private:
+  enum class CalibrationPhase {
+    IDLE,
+    PROMPT,
+    RUNNING,
+    RESULT
+  };
+
   void tick() {
     if (!animation_) {
       return;
@@ -230,7 +320,10 @@ private:
           uiState_ = UiState::TESTS;
           animation_->enterTestMode();
         } else if (sel == 4) {
-          animation_->playConfirmAnimation();
+          calibrationPhase_ = CalibrationPhase::PROMPT;
+          calibrationPhaseStartMs_ = nowMs;
+          calibrationOk_ = true;
+          uiState_ = UiState::CALIBRATION;
         } else if (sel == 5) {
           uiState_ = UiState::ACCESS_POINT;
         } else if (sel == 6) {
@@ -269,6 +362,28 @@ private:
       }
       if (selectJustPressed)
         animation_->toggleTestOption();
+      break;
+
+    case UiState::CALIBRATION:
+      if (upJustPressed || selectJustPressed) {
+        calibrationPhase_ = CalibrationPhase::IDLE;
+        uiState_ = UiState::MENU;
+        break;
+      }
+
+      if (calibrationPhase_ == CalibrationPhase::PROMPT &&
+          (nowMs - calibrationPhaseStartMs_ >= CalibrationPromptMs)) {
+        calibrationPhase_ = CalibrationPhase::RUNNING;
+        calibrationPhaseStartMs_ = nowMs;
+      } else if (calibrationPhase_ == CalibrationPhase::RUNNING &&
+                 (nowMs - calibrationPhaseStartMs_ >= CalibrationExpectedMs)) {
+        calibrationPhase_ = CalibrationPhase::RESULT;
+        calibrationPhaseStartMs_ = nowMs;
+      } else if (calibrationPhase_ == CalibrationPhase::RESULT &&
+                 (nowMs - calibrationPhaseStartMs_ >= CalibrationResultMs)) {
+        calibrationPhase_ = CalibrationPhase::IDLE;
+        uiState_ = UiState::MENU;
+      }
       break;
 
     case UiState::SETTINGS_DATETIME:
@@ -454,6 +569,104 @@ private:
     year = static_cast<std::uint16_t>(std::clamp(localTm.tm_year + 1900, 2024, 2099));
   }
 
+  int estimateTextWidth6x10(const char *text) const {
+    if (text == nullptr) {
+      return 0;
+    }
+    return static_cast<int>(std::strlen(text)) * 6;
+  }
+
+  int centeredX6x10(const char *text) const {
+    const int width = estimateTextWidth6x10(text);
+    return std::max(0, (128 - width) / 2);
+  }
+
+  void drawCalibrationPrompt() {
+    display_.setFont(u8g2_font_6x10_tr);
+    display_.drawStr(centeredX6x10("Kalibracja karmnika"), 10, "Kalibracja karmnika");
+    display_.drawStr(centeredX6x10("Przygotowanie..."), 21, "Przygotowanie...");
+  }
+
+  void drawCalibrationAnimation(unsigned long elapsedMs) {
+    static const int8_t spinnerX[8] = {0, 2, 3, 2, 0, -2, -3, -2};
+    static const int8_t spinnerY[8] = {-3, -2, 0, 2, 3, 2, 0, -2};
+    static const int8_t waveY[8] = {0, 1, 2, 1, 0, -1, -2, -1};
+
+    const unsigned long clampedElapsed = std::min(elapsedMs, CalibrationExpectedMs);
+    const std::uint8_t progressPct =
+        static_cast<std::uint8_t>((clampedElapsed * 100UL) / CalibrationExpectedMs);
+    std::uint8_t progressFill =
+        static_cast<std::uint8_t>((clampedElapsed * 112UL) / CalibrationExpectedMs);
+    progressFill = std::min<std::uint8_t>(progressFill, 112);
+
+    const std::uint8_t spinnerPhase = static_cast<std::uint8_t>((elapsedMs / 90UL) % 8UL);
+    const int pelletX = 30 + static_cast<int>((elapsedMs / 24UL) % 78UL);
+    const std::uint8_t wavePhase = static_cast<std::uint8_t>(((elapsedMs / 60UL) + pelletX) % 8U);
+    const int pelletY = 18 + waveY[wavePhase];
+
+    display_.setFont(u8g2_font_6x10_tr);
+    display_.drawStr(centeredX6x10("Kalibracja karmnika"), 9, "Kalibracja karmnika");
+
+    display_.drawFrame(3, 11, 122, 14);
+    display_.drawLine(26, 18, 119, 18);
+    display_.drawDisc(pelletX, pelletY, 2, U8G2_DRAW_ALL);
+
+    for (std::uint8_t i = 0; i < 8; i++) {
+      const std::uint8_t idx = static_cast<std::uint8_t>((spinnerPhase + i) % 8U);
+      const int x = 15 + spinnerX[idx];
+      const int y = 18 + spinnerY[idx];
+      if (i < 2) {
+        display_.drawDisc(x, y, 1, U8G2_DRAW_ALL);
+      } else {
+        display_.drawPixel(x, y);
+      }
+    }
+
+    display_.drawFrame(8, 27, 114, 4);
+    if (progressFill > 0) {
+      display_.drawBox(9, 28, progressFill, 2);
+    }
+
+    display_.setFont(u8g2_font_5x7_tr);
+    char percentText[8] = {};
+    std::snprintf(percentText, sizeof(percentText), "%3u%%",
+                  static_cast<unsigned>(progressPct));
+    display_.drawStr(97, 24, percentText);
+  }
+
+  void drawCalibrationResult() {
+    display_.setFont(u8g2_font_6x10_tr);
+    display_.drawStr(centeredX6x10("Kalibracja karmnika"), 9, "Kalibracja karmnika");
+    if (calibrationOk_) {
+      display_.drawStr(centeredX6x10("zakonczona"), 20, "zakonczona");
+      display_.drawLine(49, 25, 57, 30);
+      display_.drawLine(57, 30, 77, 14);
+    } else {
+      display_.drawStr(centeredX6x10("BLAD"), 20, "BLAD");
+      display_.drawLine(54, 14, 74, 30);
+      display_.drawLine(74, 14, 54, 30);
+    }
+  }
+
+  void drawCalibrationFrame(unsigned long nowMs) {
+    if (calibrationPhase_ == CalibrationPhase::PROMPT) {
+      drawCalibrationPrompt();
+      return;
+    }
+
+    if (calibrationPhase_ == CalibrationPhase::RUNNING) {
+      drawCalibrationAnimation(nowMs - calibrationPhaseStartMs_);
+      return;
+    }
+
+    if (calibrationPhase_ == CalibrationPhase::RESULT) {
+      drawCalibrationResult();
+      return;
+    }
+
+    drawCalibrationPrompt();
+  }
+
   void renderFrame(bool isUpPressed, bool isSelectPressed, bool isDownPressed) {
     if (!animation_) {
       return;
@@ -484,15 +697,25 @@ private:
     char feedTime[6] = {};
     std::snprintf(feedTime, sizeof(feedTime), "%02u:%02u", config_.feedHour, config_.feedMinute);
 
-    animation_->setTemperature(temperatureC_);
-    animation_->setAeration(aerationOn ? 80 : 30);
+    const float displayTemperature =
+        manualTemperatureEnabled_ ? manualTemperatureC_ : temperatureC_;
+    const std::uint8_t displayAeration =
+        manualAerationEnabled_ ? manualAerationPercent_ : static_cast<std::uint8_t>(aerationOn ? 80 : 30);
+    const std::uint8_t displayBattery =
+        manualBatteryEnabled_ ? manualBatteryPercent_ : batteryPercent_;
+    const float displayBatteryVoltage =
+        manualBatteryEnabled_ ? (3.3f + static_cast<float>(displayBattery) * 0.009f)
+                              : batteryVoltage_;
+
+    animation_->setTemperature(displayTemperature);
+    animation_->setAeration(displayAeration);
     animation_->setFilterStatus(filterOn);
     animation_->setLightStatus(lightOn);
     animation_->setHeaterStatus(heaterOn);
     animation_->setTime(hour, minute, second);
     animation_->setDate(day, month, year);
-    animation_->setBatteryVoltage(batteryVoltage_);
-    animation_->setBattery(batteryPercent_);
+    animation_->setBatteryVoltage(displayBatteryVoltage);
+    animation_->setBattery(displayBattery);
     animation_->setLightSchedule(config_.dayStartHour, config_.dayStartMinute, config_.dayEndHour,
                                  config_.dayEndMinute);
     animation_->setLightMode(config_.lightMode);
@@ -509,7 +732,9 @@ private:
 
     display_.clearBuffer();
 
-    if (!animation_->drawConfirmAnimationFrame()) {
+    const bool confirmFrameDrawn =
+        (uiState_ != UiState::CALIBRATION) && animation_->drawConfirmAnimationFrame();
+    if (!confirmFrameDrawn) {
       switch (uiState_) {
       case UiState::HOME:
         animation_->drawFrame();
@@ -540,6 +765,9 @@ private:
         break;
       case UiState::TESTS:
         animation_->drawTests(isUpPressed, isSelectPressed, isDownPressed);
+        break;
+      case UiState::CALIBRATION:
+        drawCalibrationFrame(lastTickMs_);
         break;
       case UiState::ACCESS_POINT:
         animation_->drawAccessPointScreen("Akwarium-AP", "12345678", "192.168.4.1", 1);
@@ -629,6 +857,17 @@ private:
   float temperatureC_ = 24.0f;
   float batteryVoltage_ = 4.0f;
   std::uint8_t batteryPercent_ = 88;
+
+  bool manualTemperatureEnabled_ = false;
+  bool manualBatteryEnabled_ = false;
+  bool manualAerationEnabled_ = false;
+  float manualTemperatureC_ = 24.0f;
+  std::uint8_t manualBatteryPercent_ = 88;
+  std::uint8_t manualAerationPercent_ = 30;
+
+  CalibrationPhase calibrationPhase_ = CalibrationPhase::IDLE;
+  unsigned long calibrationPhaseStartMs_ = 0;
+  bool calibrationOk_ = true;
 };
 
 FirmwareUiRuntime g_runtime;
@@ -660,6 +899,36 @@ FIRMWARE_UI_EXPORT void pressButtonDown() {
 FIRMWARE_UI_EXPORT void pressButtonSelect() {
   std::lock_guard<std::mutex> lock(g_mutex);
   g_runtime.pressSelect();
+}
+
+FIRMWARE_UI_EXPORT void setManualTemperature(float value) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_runtime.setManualTemperature(value);
+}
+
+FIRMWARE_UI_EXPORT void setManualBatteryPercent(int value) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_runtime.setManualBatteryPercent(value);
+}
+
+FIRMWARE_UI_EXPORT void setManualAerationPercent(int value) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_runtime.setManualAerationPercent(value);
+}
+
+FIRMWARE_UI_EXPORT void addManualLog(const char *message, const char *timeText) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_runtime.addManualLog(message, timeText);
+}
+
+FIRMWARE_UI_EXPORT void clearManualLogs() {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_runtime.clearManualLogs();
+}
+
+FIRMWARE_UI_EXPORT void startCalibrationAnimation() {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_runtime.startCalibrationAnimation();
 }
 
 FIRMWARE_UI_EXPORT const std::uint8_t *getFrameBuffer() {
