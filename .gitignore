@@ -12,3 +12,8 @@ mobile-app/**/obj/
 mobile-app/.vs/
 *.user
 *.suo
+
+# Shared libraries and application hosts
+**/bin/
+**/obj/
+**/node_modules/

@@ -73,4 +73,10 @@
 		<PackageReference Include="Plugin.BLE" Version="3.2.0" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<ProjectReference Include="..\shared\Aquarium.Models\Aquarium.Models.csproj" />
+		<ProjectReference Include="..\shared\Aquarium.Protocol\Aquarium.Protocol.csproj" />
+		<ProjectReference Include="..\shared\Aquarium.EmulatorCore\Aquarium.EmulatorCore.csproj" />
+	</ItemGroup>
+
 </Project>

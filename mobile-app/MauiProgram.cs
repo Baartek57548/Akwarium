@@ -19,7 +19,10 @@ public static class MauiProgram
 			});
 
 		builder.Services.AddSingleton<IFilePicker>(FilePicker.Default);
-		builder.Services.AddSingleton<IBluetoothService, BluetoothService>();
+		builder.Services.AddSingleton<IDeviceModeService, DeviceModeService>();
+		builder.Services.AddSingleton<BluetoothService>();
+		builder.Services.AddSingleton<EmulatorBluetoothService>();
+		builder.Services.AddSingleton<IBluetoothService, SelectableBluetoothService>();
 		builder.Services.AddSingleton<IFirmwarePackageService, FirmwarePackageService>();
 		builder.Services.AddTransient<MainViewModel>();
 		builder.Services.AddTransient<MainPage>();

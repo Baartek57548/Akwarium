@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="mobile-app/AquariumController.Mobile.csproj" />
+  <Project Path="shared/Aquarium.Models/Aquarium.Models.csproj" />
+  <Project Path="shared/Aquarium.Protocol/Aquarium.Protocol.csproj" />
+  <Project Path="shared/Aquarium.EmulatorCore/Aquarium.EmulatorCore.csproj" />
+  <Project Path="apps/Aquarium.Emulator/Aquarium.Emulator.csproj" />
+</Solution>

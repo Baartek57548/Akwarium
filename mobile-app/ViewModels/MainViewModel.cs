@@ -93,6 +93,7 @@ public sealed class MainViewModel : ObservableObject
 {
 	private readonly IBluetoothService _bluetoothService;
 	private readonly IFirmwarePackageService _firmwarePackageService;
+	private readonly IDeviceModeService _deviceModeService;
 	private readonly List<ActivityLogEntry> _allLogs = [];
 	private readonly IReadOnlyList<SelectionOption<int>> _hourOptions;
 	private readonly IReadOnlyList<SelectionOption<AquariumScheduleMode>> _scheduleModes;
@@ -158,10 +159,12 @@ public sealed class MainViewModel : ObservableObject
 
 	public MainViewModel(
 		IBluetoothService bluetoothService,
-		IFirmwarePackageService firmwarePackageService)
+		IFirmwarePackageService firmwarePackageService,
+		IDeviceModeService deviceModeService)
 	{
 		_bluetoothService = bluetoothService;
 		_firmwarePackageService = firmwarePackageService;
+		_deviceModeService = deviceModeService;
 
 		_hourOptions = Enumerable.Range(0, 24)
 			.Select(hour => new SelectionOption<int>(hour, hour.ToString("00", CultureInfo.InvariantCulture)))
@@ -190,6 +193,7 @@ public sealed class MainViewModel : ObservableObject
 		ShowCriticalLogsCommand = new RelayCommand(() => ApplyLogFilter(true));
 		ClearLogsViewCommand = new RelayCommand(ClearLogsView);
 		CancelBleOtaCommand = new RelayCommand(CancelBleOta);
+		SwitchConnectionModeCommand = new AsyncRelayCommand(SwitchConnectionModeAsync);
 
 		RefreshStatusCommand = new AsyncRelayCommand(RefreshStatusAsync);
 		SaveSchedulesCommand = new AsyncRelayCommand(SaveSchedulesAsync);
@@ -207,6 +211,7 @@ public sealed class MainViewModel : ObservableObject
 
 		_bluetoothService.AdapterStateChanged += HandleAdapterStateChanged;
 		_bluetoothService.ConnectionChanged += HandleConnectionChanged;
+		_deviceModeService.ModeChanged += HandleModeChanged;
 
 		SelectedLightMode = _scheduleModes[0];
 		SelectedFilterMode = _scheduleModes[0];
@@ -231,6 +236,7 @@ public sealed class MainViewModel : ObservableObject
 
 		AddLog("system", "Panel BLE uruchomiony. Oczekiwanie na polaczenie.", false);
 		AddLog("system", "Streaming logow firmware nie jest obecnie wystawiony przez kontrakt BLE. Widok pokazuje logi aplikacji i wyniki komend.", false);
+		AddLog("system", $"Tryb polaczenia: {ConnectionModeText}.", false);
 	}
 
 	public ObservableCollection<BleDeviceInfo> DiscoveredDevices { get; }
@@ -893,6 +899,10 @@ public sealed class MainViewModel : ObservableObject
 
 	public string ConnectionClientsText => $"Klienci BLE/AP: {CurrentStatus.ConnectedClients}";
 
+	public string ConnectionModeText => _deviceModeService.CurrentMode == DeviceConnectionMode.Emulator
+		? "EMULATOR"
+		: "REAL DEVICE";
+
 	public string CurrentFirmwareVersionText => CurrentDeviceInfo.FirmwareDisplayText;
 
 	public string CurrentFirmwareBuildText => CurrentDeviceInfo.BuildDisplayText;
@@ -986,6 +996,8 @@ public sealed class MainViewModel : ObservableObject
 	public IRelayCommand ClearLogsViewCommand { get; }
 
 	public IRelayCommand CancelBleOtaCommand { get; }
+
+	public IAsyncRelayCommand SwitchConnectionModeCommand { get; }
 
 	public IAsyncRelayCommand RefreshStatusCommand { get; }
 
@@ -1292,6 +1304,23 @@ public sealed class MainViewModel : ObservableObject
 		_otaCancellationSource?.Cancel();
 	}
 
+	private async Task SwitchConnectionModeAsync()
+	{
+		var nextMode = _deviceModeService.CurrentMode == DeviceConnectionMode.Emulator
+			? DeviceConnectionMode.RealDevice
+			: DeviceConnectionMode.Emulator;
+
+		if (IsConnected)
+		{
+			await DisconnectAsync();
+		}
+
+		await _deviceModeService.SetModeAsync(nextMode);
+		OnPropertyChanged(nameof(ConnectionModeText));
+		StatusMessage = $"Tryb polaczenia: {ConnectionModeText}.";
+		AddLog("system", StatusMessage, false);
+	}
+
 	private void ApplySettings(AquariumSettings settings)
 	{
 		SelectedLightMode = FindOption(_scheduleModes, settings.LightMode);
@@ -1566,6 +1595,17 @@ public sealed class MainViewModel : ObservableObject
 			{
 				await RefreshStatusAsync();
 			}
+		});
+	}
+
+	private void HandleModeChanged(object? sender, DeviceConnectionModeChangedEventArgs e)
+	{
+		MainThread.BeginInvokeOnMainThread(() =>
+		{
+			SelectedDevice = null;
+			DiscoveredDevices.Clear();
+			OnPropertyChanged(nameof(ConnectionModeText));
+			AddLog("system", $"Tryb polaczenia: {ConnectionModeText}.", false);
 		});
 	}
 

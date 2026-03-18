@@ -300,6 +300,7 @@
                         <Label FontSize="11" LineBreakMode="TailTruncation" Text="{Binding SelectedDeviceSummary}" TextColor="{StaticResource TextSecondary}" />
                         <Label FontSize="11" LineBreakMode="TailTruncation" Text="{Binding NetworkSummaryText}" TextColor="{StaticResource TextSecondary}" />
                         <Label FontSize="10" Text="{Binding CurrentFirmwareVersionText}" TextColor="{StaticResource TextMuted}" />
+                        <Button BackgroundColor="{StaticResource GhostButtonBg}" BorderColor="{StaticResource BorderColor}" BorderWidth="1" Command="{Binding SwitchConnectionModeCommand}" CornerRadius="14" HeightRequest="34" Padding="12,0" Text="{Binding ConnectionModeText}" TextColor="{StaticResource AccentCyan}" />
                     </VerticalStackLayout>
                 </Border>
             </Grid>
