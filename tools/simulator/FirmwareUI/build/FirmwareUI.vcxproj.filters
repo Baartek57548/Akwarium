@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Bartek\Documents\PlatformIO\Projects\260225-101701-seeed_xiao_esp32s3\tools\simulator\FirmwareUI\BitmapFont.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Bartek\Documents\PlatformIO\Projects\260225-101701-seeed_xiao_esp32s3\tools\simulator\FirmwareUI\FakeU8g2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Bartek\Documents\PlatformIO\Projects\260225-101701-seeed_xiao_esp32s3\tools\simulator\FirmwareUI\FirmwareUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Bartek\Documents\PlatformIO\Projects\260225-101701-seeed_xiao_esp32s3\tools\simulator\FirmwareUI\SystemControllerCompat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Bartek\Documents\PlatformIO\Projects\260225-101701-seeed_xiao_esp32s3\tools\simulator\FirmwareUI\U8g2FontData.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Bartek\Documents\PlatformIO\Projects\260225-101701-seeed_xiao_esp32s3\tools\simulator\FirmwareUI\UIRenderers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Bartek\Documents\PlatformIO\Projects\260225-101701-seeed_xiao_esp32s3\firmware\src\AquariumAnimation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Bartek\Documents\PlatformIO\Projects\260225-101701-seeed_xiao_esp32s3\tools\simulator\FirmwareUI\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{E54A2CD4-5FDB-37F5-912A-0A3258AAD9EA}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
