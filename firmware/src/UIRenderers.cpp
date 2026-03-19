@@ -85,105 +85,146 @@
 // AquariumAnimation.cpp. Najlatwiej wyciagnac same metody i zamienic oryginaly
 // na nakladki.
 
+namespace {
+
+static void formatHomeTemperature(const char *rawTemp, char *out,
+                                  size_t outSize) {
+  if (outSize == 0) {
+    return;
+  }
+
+  const char *src = rawTemp ? rawTemp : "T:--.-'C";
+  if (src[0] == 'T' && src[1] == ':') {
+    src += 2;
+  }
+
+  size_t outIdx = 0;
+  for (size_t i = 0; src[i] != '\0' && outIdx + 1 < outSize; i++) {
+    char c = src[i];
+    if (c == '\'') {
+      continue;
+    }
+    out[outIdx++] = c;
+  }
+  out[outIdx] = '\0';
+
+  if (outIdx == 0) {
+    snprintf(out, outSize, "--.-C");
+  }
+}
+
+static void drawLightIcon(U8G2 *oled, int x, int y, bool on) {
+  if (on) {
+    oled->drawDisc(x + 4, y + 2, 2, U8G2_DRAW_ALL);
+    oled->drawBox(x + 3, y + 4, 2, 3);
+    oled->drawBox(x + 2, y + 7, 4, 1);
+  } else {
+    oled->drawCircle(x + 4, y + 2, 2, U8G2_DRAW_ALL);
+    oled->drawFrame(x + 3, y + 4, 2, 3);
+    oled->drawLine(x + 2, y + 7, x + 5, y + 7);
+  }
+}
+
+static void drawFilterIcon(U8G2 *oled, int x, int y, bool on) {
+  if (on) {
+    oled->drawDisc(x + 2, y + 3, 1, U8G2_DRAW_ALL);
+  } else {
+    oled->drawCircle(x + 2, y + 3, 1, U8G2_DRAW_ALL);
+  }
+
+  oled->drawLine(x + 0, y + 6, x + 3, y + 6);
+  oled->drawLine(x + 4, y + 5, x + 7, y + 5);
+  oled->drawLine(x + 0, y + 4, x + 2, y + 4);
+  oled->drawLine(x + 3, y + 3, x + 5, y + 3);
+  oled->drawLine(x + 6, y + 4, x + 7, y + 4);
+  if (on) {
+    oled->drawLine(x + 0, y + 5, x + 2, y + 5);
+    oled->drawLine(x + 3, y + 4, x + 5, y + 4);
+    oled->drawLine(x + 6, y + 5, x + 7, y + 5);
+  }
+}
+
+static void drawHeaterIcon(U8G2 *oled, int x, int y, bool on) {
+  // Stylizowana spirala 8x8.
+  oled->drawLine(x + 1, y + 1, x + 3, y + 1);
+  oled->drawLine(x + 3, y + 1, x + 3, y + 3);
+  oled->drawLine(x + 3, y + 3, x + 1, y + 3);
+  oled->drawLine(x + 1, y + 3, x + 1, y + 5);
+  oled->drawLine(x + 1, y + 5, x + 3, y + 5);
+  oled->drawLine(x + 5, y + 1, x + 7, y + 1);
+  oled->drawLine(x + 7, y + 1, x + 7, y + 3);
+  oled->drawLine(x + 7, y + 3, x + 5, y + 3);
+  oled->drawLine(x + 5, y + 3, x + 5, y + 5);
+  oled->drawLine(x + 5, y + 5, x + 7, y + 5);
+  if (on) {
+    oled->drawLine(x + 2, y + 2, x + 2, y + 6);
+    oled->drawLine(x + 6, y + 2, x + 6, y + 6);
+  }
+}
+
+static void drawAerationIcon(U8G2 *oled, int x, int y) {
+  oled->drawCircle(x + 2, y + 6, 1, U8G2_DRAW_ALL);
+  oled->drawCircle(x + 4, y + 4, 1, U8G2_DRAW_ALL);
+  oled->drawCircle(x + 6, y + 2, 1, U8G2_DRAW_ALL);
+}
+
+static void drawFeederIcon(U8G2 *oled, int x, int y) {
+  oled->drawFrame(x + 1, y + 3, 6, 4);
+  oled->drawLine(x + 1, y + 2, x + 6, y + 2);
+  oled->drawPixel(x + 3, y + 1);
+  oled->drawPixel(x + 5, y + 1);
+}
+
+static void drawBatteryIndicator(U8G2 *oled, int x, int y, uint8_t percent) {
+  if (percent > 100) {
+    percent = 100;
+  }
+  oled->drawFrame(x, y, 14, 8);
+  oled->drawFrame(x + 14, y + 2, 2, 4);
+
+  int fillWidth = (12 * percent) / 100;
+  if (fillWidth > 0) {
+    oled->drawBox(x + 1, y + 1, fillWidth, 6);
+  }
+}
+
+} // namespace
+
 void HomeRenderer::drawFrame(AquariumAnimation *ctx) {
   if (!display)
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
 
-  // Layer 4: Time.
-  display->setFont(u8g2_font_4x6_tr);
-  display->drawStr(0, 5, timeBuffer);
-  display->drawLine(0, 6, 127, 6);
+  // Sekcja gorna 0..21: czas + temperatura
+  char timeShort[6];
+  snprintf(timeShort, sizeof(timeShort), "%02d:%02d", currentHour, currentMinute);
 
-  // Reset reason banner (30s po starcie, tylko dla crash-resetow)
-  {
-    const char *rstLabel = SystemController::getLastResetLabel();
-    if (rstLabel != nullptr && millis() < 30000UL) {
-      char rstBuf[22];
-      snprintf(rstBuf, sizeof(rstBuf), "RST:%s c=%d", rstLabel,
-               SystemController::getLastResetReason());
-      display->setDrawColor(1);
-      display->drawBox(0, 0, 128, 7);
-      display->setDrawColor(0);
-      display->setFont(u8g2_font_4x6_tr);
-      display->drawStr(1, 6, rstBuf);
-      display->setDrawColor(1);
-    }
+  char temperatureDisplay[12];
+  formatHomeTemperature(tempBuffer, temperatureDisplay, sizeof(temperatureDisplay));
+
+  display->setFont(u8g2_font_logisoso16_tn);
+  display->drawStr(0, 18, timeShort);
+  int16_t tempWidth = display->getStrWidth(temperatureDisplay);
+  int16_t tempX = 127 - tempWidth + 1;
+  if (tempX < 66) {
+    tempX = 66;
   }
+  display->drawStr(tempX, 18, temperatureDisplay);
 
-  // Left block: filter/light status and divider.
-  display->drawXBMP(1, 8, 7, 10, image_Layer_19_bits);
-  display->drawXBMP(0, 21, 9, 11, image_Layer_19_1_bits);
-  if (isFilterOn)
-    display->drawDisc(14, 13, 3, U8G2_DRAW_ALL);
-  else
-    display->drawXBMP(11, 10, 7, 7, image_Layer_20_bits);
-  if (isLightOn)
-    display->drawDisc(14, 26, 3, U8G2_DRAW_ALL);
-  else
-    display->drawXBMP(11, 23, 7, 7, image_Layer_20_bits);
-  display->drawLine(0, 19, 19, 19);
+  // Separatory zgodnie z blueprintem.
+  display->drawLine(0, 22, 127, 22);
+  display->drawLine(64, 0, 64, 21);
 
-  // Middle blocks.
-  display->drawLine(20, 7, 20, 31);
-  display->drawXBMP(22, 8, 9, 23, image_Layer_21_bits);
+  // Pasek statusu 24..31
+  drawLightIcon(display, 0, 24, isLightOn);
+  drawFilterIcon(display, 12, 24, isFilterOn);
+  drawHeaterIcon(display, 24, 24, isHeaterOn);
+  drawAerationIcon(display, 36, 24);
+  drawFeederIcon(display, 48, 24);
 
-  display->drawXBMP(32, 14, 11, 11, image_Layer_22_bits);
-  if (isHeaterOn)
-    display->drawDisc(37, 19, 2, U8G2_DRAW_ALL);
-  else
-    display->drawCircle(37, 19, 2, U8G2_DRAW_ALL);
-  display->drawLine(45, 7, 45, 31);
-
-  display->drawXBMP(48, 9, 9, 23, image_Layer_25_bits);
-  if (batteryPercent > 0) {
-    int fillHeight = (20 * batteryPercent) / 100;
-    if (fillHeight < 1)
-      fillHeight = 1;
-    display->drawBox(50, 31 - fillHeight, 5, fillHeight);
-  }
-  // Ensure battery base is always visible.
-  display->drawLine(50, 31, 54, 31);
-
-  display->drawLine(59, 7, 59, 31);
-  display->drawXBMP(62, 8, 24, 12, image_Layer_19_2_bits);
-
-  // Text overlays.
-  display->setFont(u8g2_font_4x6_tr);
-  display->drawStr(44, 5, tempBuffer);
-  display->drawStr(89, 5, dateBuffer);
-  display->setFont(u8g2_font_profont11_tr);
-  display->drawStr(65, 28, valBuffer);
-
-  // Right block.
-  display->drawLine(87, 7, 87, 31);
-  display->drawXBMP(87, 16, 41, 7, image_Layer_24_bits);
-
-  char feedTime[6];
-  if (feedFreq == 0)
-    snprintf(feedTime, sizeof(feedTime), "--:--");
-  else
-    snprintf(feedTime, sizeof(feedTime), "%02d:%02d", feedHour, feedMinute);
-  display->setFont(u8g2_font_4x6_tr);
-  display->drawStr(89, 13, feedTime);
-
-  if (feedFreq == 0) {
-    display->drawStr(112, 13, "OFF");
-  } else {
-    display->drawEllipse(120, 11, 7, 3);
-    display->drawVLine(118, 9, 5);
-    display->drawVLine(122, 9, 5);
-    if (feedFreq >= 1)
-      display->drawBox(114, 10, 4, 3);
-    if (feedFreq >= 2)
-      display->drawBox(118, 10, 4, 3);
-    if (feedFreq >= 3)
-      display->drawBox(122, 10, 4, 3);
-  }
-
-  display->drawEllipse(73, 25, 12, 6);
-  display->drawXBMP(89, 25, 37, 5, image_Layer_29_bits);
+  // Bateria wyrównana do prawej (ok. 16x8 px).
+  drawBatteryIndicator(display, 112, 24, batteryPercent);
 }
 
 void HomeRenderer::drawFeedingScreen(AquariumAnimation *ctx) {

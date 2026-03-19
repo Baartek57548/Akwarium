@@ -400,15 +400,14 @@ static void disableStaForSleepInternal() {
   }
 
   WiFi.mode(WIFI_STA);
-  const bool disconnected = WiFi.disconnect(true, false);
-  if (!disconnected) {
-    delay(WIFI_MODE_SWITCH_DELAY_MS);
-    WiFi.mode(WIFI_OFF);
-  }
+  // Stabilniejsza sciezka na ESP32-S3:
+  // unikamy hard un-init (disconnect(..., true)), bo potrafi logowac
+  // "wifi:timeout when WiFi un-init, type=4".
+  WiFi.disconnect(false, false);
   staIsOff = true;
   staDisconnectedSinceMs = 0;
   staReconnectAttempts = 0;
-  Serial.println("[WIFI-STA] Wylaczono STA/radio dla nocnego sleep.");
+  Serial.println("[WIFI-STA] Wylaczono STA dla nocnego sleep.");
 }
 
 static void enableStaAfterSleepInternal() {
