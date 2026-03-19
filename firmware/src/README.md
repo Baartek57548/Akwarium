@@ -136,6 +136,8 @@ REST API:
 Dozwolone akcje `action`:
 
 - `feed_now`
+- `set_light` (wymaga `state`: `0|1|false|true|off|on`, mapuje tryb swiatla na AlwaysOff/AlwaysOn)
+- `set_filter` (wymaga `state`: `0|1|false|true|off|on`, mapuje tryb filtra na AlwaysOff/AlwaysOn)
 - `set_servo` (wymaga `angle` 0..90)
 - `clear_servo`
 - `clear_critical_logs`

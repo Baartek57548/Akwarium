@@ -39,6 +39,7 @@ public:
   Error startFeed(unsigned long durationMs, bool useSensor = false);
   void update();
   bool isFeeding();
+  void forceStop();
   void setSafetyTimeout(unsigned long timeoutMs);
   Error getLastError() const;
   void clearError();

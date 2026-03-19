@@ -18,6 +18,8 @@ public:
   static bool isStaOff();
   static String getAPName();
   static String getAPPassword();
+  static String getConfiguredAPName();
+  static String getConfiguredAPPassword();
   static String getIP();
   static uint8_t getConnectedClients();
   static WebServer &getServer();

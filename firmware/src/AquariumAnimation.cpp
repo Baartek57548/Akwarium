@@ -383,6 +383,7 @@ AquariumAnimation::AquariumAnimation(U8G2 *u8g2_instance) {
   snprintf(feedTimeBuffer, sizeof(feedTimeBuffer), "--:--");
 
   batteryPercent = 0;
+  aerationPercent = 0;
   isFilterOn = false;
   isLightOn = false;
   isHeaterOn = false;
@@ -445,6 +446,7 @@ AquariumAnimation::AquariumAnimation(U8G2 *u8g2_instance) {
   testLight = false;
   testHeater = false;
   testFilter = false;
+  testFeeder = false;
   testAerationVal = 0;
 
   confirmAnimActive = false;
@@ -594,6 +596,7 @@ void AquariumAnimation::setDate(int day, int month, int year) {
 void AquariumAnimation::setAeration(uint8_t percent) {
   if (percent > 100)
     percent = 100;
+  aerationPercent = percent;
   snprintf(valBuffer, sizeof(valBuffer), "%d%%", percent);
 }
 void AquariumAnimation::setBattery(uint8_t percent) {
@@ -1578,12 +1581,20 @@ void AquariumAnimation::drawTests(bool btnBackState, bool btnSelectState,
     display->drawDisc(91, 24, 3, U8G2_DRAW_ALL);
   else
     display->drawCircle(91, 24, 3, U8G2_DRAW_ALL);
+  if (testFeeder)
+    display->drawDisc(52, 24, 2, U8G2_DRAW_ALL);
+  else
+    display->drawCircle(52, 24, 2, U8G2_DRAW_ALL);
+  display->setFont(u8g2_font_4x6_tr);
+  display->drawStr(42, 30, "FDR");
 
   // Napowietrzanie
   display->setFont(u8g2_font_t0_17_tr);
   char buf[6];
-  sprintf(buf, "%d%%", testAerationVal);
+  sprintf(buf, "%d", testAerationVal);
   display->drawStr(20, 13, buf);
+  display->setFont(u8g2_font_5x7_tr);
+  display->drawStr(47, 12, "deg");
 
   // Kursor
   int cursorX = 0, cursorY = 0;
@@ -1599,6 +1610,9 @@ void AquariumAnimation::drawTests(bool btnBackState, bool btnSelectState,
   } else if (testSelection == 3) {
     cursorX = 122;
     cursorY = 21;
+  } else if (testSelection == 4) {
+    cursorX = 57;
+    cursorY = 24;
   }
 
   display->drawXBMP(cursorX, cursorY, 4, 7, image_ButtonLeft_bits);
@@ -1751,7 +1765,10 @@ void AquariumAnimation::enterTestMode() {
   testLight = isLightOn;
   testHeater = isHeaterOn;
   testFilter = isFilterOn;
-  testAerationVal = 0;
+  testFeeder = false;
+  testAerationVal = static_cast<uint8_t>(
+      constrain(map(aerationPercent, 0, 100, SERVO_CLOSED_ANGLE, SERVO_OPEN_ANGLE),
+                SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE));
   testSelection = 0;
   isEditing = false;
 }
@@ -1759,7 +1776,7 @@ void AquariumAnimation::enterTestMode() {
 void AquariumAnimation::testNext() {
   if (!isEditing) {
     testSelection++;
-    if (testSelection > 3)
+    if (testSelection > 4)
       testSelection = 0;
   }
 }
@@ -1773,13 +1790,15 @@ void AquariumAnimation::toggleTestOption() {
     testLight = !testLight;
   } else if (testSelection == 3) {
     testFilter = !testFilter;
+  } else if (testSelection == 4) {
+    testFeeder = !testFeeder;
   }
 }
 
 void AquariumAnimation::incrementTestValue() {
   if (testSelection == 0 && isEditing) {
     testAerationVal += 10;
-    if (testAerationVal > 100)
+    if (testAerationVal > SERVO_CLOSED_ANGLE)
       testAerationVal = 0;
   }
 }
@@ -1787,6 +1806,7 @@ void AquariumAnimation::incrementTestValue() {
 bool AquariumAnimation::getTestLight() { return testLight; }
 bool AquariumAnimation::getTestHeater() { return testHeater; }
 bool AquariumAnimation::getTestFilter() { return testFilter; }
+bool AquariumAnimation::getTestFeeder() { return testFeeder; }
 uint8_t AquariumAnimation::getTestAeration() { return testAerationVal; }
 
 // EKRAN GĹĂ“WNY (FRAME)

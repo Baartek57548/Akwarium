@@ -9,9 +9,9 @@ TemperatureController::TemperatureController(int oneWirePin, int heaterPin,
     : oneWire(oneWirePin), sensors(&oneWire), oneWirePin(oneWirePin),
       heaterPin(heaterPin), targetTemp(targetTemp), hysteresis(hysteresis),
       heaterState(false), lastSwitchTime(0), sensorPresent(false),
-      lastTemperature(0.0f), hasValidTemperature(false), lastTempRead(0),
-      heaterOutputActiveHigh(heaterOutputActiveHigh), dailyMinTemp(100.0f),
-      dailyMaxTemp(-100.0f) {}
+      lastTemperature(0.0f), hasValidTemperature(false), invalidSampleCount(0),
+      lastTempRead(0), heaterOutputActiveHigh(heaterOutputActiveHigh),
+      dailyMinTemp(100.0f), dailyMaxTemp(-100.0f) {}
 
 void TemperatureController::writeHeaterOutput(bool enabled) {
   digitalWrite(heaterPin,
@@ -64,6 +64,7 @@ float TemperatureController::readTemperature() {
     refreshSensorPresence();
     if (!sensorPresent) {
       hasValidTemperature = false;
+      invalidSampleCount = MAX_INVALID_SAMPLES;
       return DEVICE_DISCONNECTED_C;
     }
   }
@@ -74,6 +75,7 @@ float TemperatureController::readTemperature() {
   if (isValidTempSample(t)) {
     lastTemperature = t;
     hasValidTemperature = true;
+    invalidSampleCount = 0;
 
     if (t < dailyMinTemp) {
       dailyMinTemp = t;
@@ -83,7 +85,11 @@ float TemperatureController::readTemperature() {
     }
   } else {
     refreshSensorPresence();
-    if (!sensorPresent || t == DEVICE_DISCONNECTED_C) {
+    if (invalidSampleCount < 255) {
+      invalidSampleCount++;
+    }
+    if (!sensorPresent || t == DEVICE_DISCONNECTED_C ||
+        invalidSampleCount >= MAX_INVALID_SAMPLES) {
       hasValidTemperature = false;
       return DEVICE_DISCONNECTED_C;
     }
@@ -99,8 +105,10 @@ void TemperatureController::controlHeater(float currentTemp) {
     return;
   }
 
-  const float disconnectThreshold = targetTemp + hysteresis;
-  const float reconnectThreshold = targetTemp;
+  // Sterownik traktuje targetTemp jako prog bezpieczenstwa (odciecie po
+  // przegrzaniu), a nie klasyczne sterowanie termostatyczne.
+  const float disconnectThreshold = targetTemp;
+  const float reconnectThreshold = targetTemp - hysteresis;
 
   if (heaterState && currentTemp >= disconnectThreshold) {
     if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {
@@ -126,6 +134,12 @@ void TemperatureController::setHysteresis(float value) {
 }
 
 bool TemperatureController::isHeaterOn() { return heaterState; }
+
+void TemperatureController::forceHeaterOn() {
+  writeHeaterOutput(true);
+  heaterState = true;
+  lastSwitchTime = millis();
+}
 
 void TemperatureController::forceHeaterOff() {
   writeHeaterOutput(false);
