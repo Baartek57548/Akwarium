@@ -71,6 +71,7 @@ static TestOverridesState testOverrides = {false, false, false, false, false,
 static const unsigned long TEST_OVERRIDE_TIMEOUT_MS = 1500UL;
 static bool filterWindowFallbackLogged = false;
 static bool heaterFailsafeClampLogged = false;
+static bool heaterModeOffIgnoredLogged = false;
 static constexpr float HEATER_FAILSAFE_MIN_C = 30.0f;
 static constexpr float HEATER_FAILSAFE_MIN_HYST_C = 0.5f;
 
@@ -441,21 +442,31 @@ void SystemController::updateDecisions() {
       tempController.forceHeaterOff();
     }
   } else {
-    if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Threshold)) {
-      const float safetyCutoff = max(cfg.targetTemp, HEATER_FAILSAFE_MIN_C);
-      const float safetyHyst = max(cfg.tempHysteresis, HEATER_FAILSAFE_MIN_HYST_C);
-      if (cfg.targetTemp < HEATER_FAILSAFE_MIN_C && !heaterFailsafeClampLogged) {
+    const float safetyCutoff = max(cfg.targetTemp, HEATER_FAILSAFE_MIN_C);
+    const float safetyHyst = max(cfg.tempHysteresis, HEATER_FAILSAFE_MIN_HYST_C);
+
+    if (cfg.targetTemp < HEATER_FAILSAFE_MIN_C && !heaterFailsafeClampLogged) {
+      LogManager::logWarn(
+          "Grzalka: prog safety podniesiony do 30C (sterownik pracuje jako bezpiecznik).");
+      heaterFailsafeClampLogged = true;
+    }
+
+    // W instalacji NO + wlasny termostat sterownik ma pelnic role bezpiecznika,
+    // wiec nie wymuszamy stalego OFF na podstawie heaterMode.
+    if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Off)) {
+      if (!heaterModeOffIgnoredLogged) {
         LogManager::logWarn(
-            "Grzalka: prog safety podniesiony do 30C (sterownik pracuje jako bezpiecznik).");
-        heaterFailsafeClampLogged = true;
+            "Grzalka: heaterMode=Off zignorowany (aktywny tryb bezpiecznika awaryjnego).");
+        heaterModeOffIgnoredLogged = true;
       }
-      tempController.setTargetTemperature(safetyCutoff);
-      tempController.setHysteresis(safetyHyst);
-      if (!isnan(snap.temperature) && tempInvalidReadCount < 3) {
-        tempController.controlHeater(snap.temperature);
-      }
-    } else if (tempController.isHeaterOn()) {
-      tempController.forceHeaterOff();
+    } else {
+      heaterModeOffIgnoredLogged = false;
+    }
+
+    tempController.setTargetTemperature(safetyCutoff);
+    tempController.setHysteresis(safetyHyst);
+    if (!isnan(snap.temperature) && tempInvalidReadCount < 3) {
+      tempController.controlHeater(snap.temperature);
     }
   }
 
