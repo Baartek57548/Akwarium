@@ -319,23 +319,32 @@ void SystemController::hardwareSetup() {
     LogManager::logError("Nie znaleziono modulu RTC (DS3231)!");
   } else if (rtc.lostPower()) {
     rtcReady = true;
-    LogManager::logWarn("RTC zresetowany, proba przywrocenia kopii...");
-    if (!restoreRtcFromBackup()) {
-      LogManager::logWarn("Brak kopii czasu w NVS, ustawiam wartosc domyslna (2025-01-01).");
+    LogManager::logWarn(
+        "RTC zglosil lostPower - sprawdzam czas z RTC i kopie zapasowa.");
+
+    // Na czesci modulow flaga OSF potrafi pozostac ustawiona mimo poprawnego
+    // czasu, dlatego najpierw probujemy zachowac czas z samego RTC.
+    DateTime rtcNow = rtc.now();
+    if (rtcNow.year() >= 2024 && rtcNow.year() <= 2099) {
+      rtc.adjust(rtcNow); // Czyszczenie flagi OSF/lostPower.
+      lastPersistedEpoch = rtcNow.unixtime();
+      LogManager::logInfo("RTC: zachowano czas z ukladu mimo lostPower.");
+    } else if (!restoreRtcFromBackup()) {
+      LogManager::logWarn(
+          "Brak poprawnego czasu RTC i kopii NVS, ustawiam wartosc domyslna (2025-01-01).");
       rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
       lastPersistedEpoch = 0;
     }
   } else {
     rtcReady = true;
-    // Sprawdz czy czas w RTC jest rozsądny (nie za stary)
+    // Sprawdz czy czas w RTC jest rozsadny.
     DateTime now = rtc.now();
-    if (now.year() < 2024 || now.year() > 2030) {
+    if (now.year() < 2024 || now.year() > 2099) {
       LogManager::logWarn("RTC ma niepoprawny czas, przywracanie domyslnego...");
       rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
     }
   }
 }
-
 void SystemController::init() {
   SharedState::init();
   ConfigManager::init();
@@ -1034,3 +1043,4 @@ void SystemController::handlePowerManagement(U8G2 *display,
   PowerManager::setMode(MODE_LIGHT_SLEEP);
   enterNightLightSleep();
 }
+
