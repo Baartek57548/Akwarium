@@ -15,15 +15,28 @@
 #include <esp_task_wdt.h>
 #include <nvs_flash.h>
 
-#define HEATER_PIN 2
-#define PUMP_PIN 4
-#define FEEDER_PIN 3
+#ifndef RELAY_HEATER_PIN
+#define RELAY_HEATER_PIN 4
+#endif
+#ifndef RELAY_FILTER_PIN
+#define RELAY_FILTER_PIN 2
+#endif
+#ifndef RELAY_LIGHT_PIN
+#define RELAY_LIGHT_PIN 5
+#endif
+#ifndef RELAY_FEEDER_PIN
+#define RELAY_FEEDER_PIN 3
+#endif
+
+#define HEATER_PIN RELAY_HEATER_PIN
+#define PUMP_PIN RELAY_FILTER_PIN
+#define FEEDER_PIN RELAY_FEEDER_PIN
 #define SERVO_PIN 6
 #define BUTTON_UP_PIN GPIO_NUM_15
 #define BUTTON_SELECT_PIN GPIO_NUM_16
 #define BUTTON_DOWN_PIN GPIO_NUM_14
 #define ONE_WIRE_BUS 1
-#define LIGHT_PIN 5
+#define LIGHT_PIN RELAY_LIGHT_PIN
 #define FEEDER_SENSOR_PIN 12
 #define BAT_ADC_PIN 7
 #define BAT_EN_PIN 10
@@ -272,6 +285,15 @@ void SystemController::hardwareSetup() {
   if (!rtcBackupReady) {
     LogManager::logWarn("RTCBackup: brak dostepu do namespace Preferences.");
   }
+
+  if (HEATER_PIN == PUMP_PIN) {
+    LogManager::logError("BLAD mapowania pinow: HEATER_PIN == FILTER_PIN");
+  }
+  char pinMapMsg[96];
+  snprintf(pinMapMsg, sizeof(pinMapMsg),
+           "PinMap: L=%d F=%d H=%d FEED=%d", LIGHT_PIN, PUMP_PIN, HEATER_PIN,
+           FEEDER_PIN);
+  LogManager::logInfo(pinMapMsg);
 
   pinMode(LIGHT_PIN, OUTPUT);
   writeManagedOutput(LIGHT_PIN, false, LIGHT_OUTPUT_ACTIVE_HIGH);
