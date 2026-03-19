@@ -104,75 +104,44 @@ static void formatHomeTemperature(const char *rawTemp, char *out,
     if (c == '\'') {
       continue;
     }
+    if (c == 'C' || c == 'c') {
+      break;
+    }
     out[outIdx++] = c;
   }
-  out[outIdx] = '\0';
-
   if (outIdx == 0) {
-    snprintf(out, outSize, "--.-C");
+    snprintf(out, outSize, "--.-");
+    outIdx = strlen(out);
   }
+
+  if (outIdx + 2 < outSize) {
+    out[outIdx++] = '*';
+    out[outIdx++] = 'C';
+  }
+  out[outIdx] = '\0';
 }
 
-static void drawLightIcon(U8G2 *oled, int x, int y, bool on) {
+static void drawRelayStatusBadge(U8G2 *oled, int x, int y, char label,
+                                 bool on) {
+  char labelText[2] = {label, '\0'};
+  oled->drawFrame(x, y, 12, 8);
+
   if (on) {
-    oled->drawDisc(x + 4, y + 2, 2, U8G2_DRAW_ALL);
-    oled->drawBox(x + 3, y + 4, 2, 3);
-    oled->drawBox(x + 2, y + 7, 4, 1);
+    oled->drawBox(x + 1, y + 1, 10, 6);
+    oled->setDrawColor(0);
+    oled->drawStr(x + 4, y + 7, labelText);
+    oled->setDrawColor(1);
+    oled->drawPixel(x + 1, y + 1);
   } else {
-    oled->drawCircle(x + 4, y + 2, 2, U8G2_DRAW_ALL);
-    oled->drawFrame(x + 3, y + 4, 2, 3);
-    oled->drawLine(x + 2, y + 7, x + 5, y + 7);
+    oled->drawStr(x + 4, y + 7, labelText);
+    oled->drawCircle(x + 2, y + 2, 1, U8G2_DRAW_ALL);
   }
 }
 
-static void drawFilterIcon(U8G2 *oled, int x, int y, bool on) {
-  if (on) {
-    oled->drawDisc(x + 2, y + 3, 1, U8G2_DRAW_ALL);
-  } else {
-    oled->drawCircle(x + 2, y + 3, 1, U8G2_DRAW_ALL);
-  }
-
-  oled->drawLine(x + 0, y + 6, x + 3, y + 6);
-  oled->drawLine(x + 4, y + 5, x + 7, y + 5);
-  oled->drawLine(x + 0, y + 4, x + 2, y + 4);
-  oled->drawLine(x + 3, y + 3, x + 5, y + 3);
-  oled->drawLine(x + 6, y + 4, x + 7, y + 4);
-  if (on) {
-    oled->drawLine(x + 0, y + 5, x + 2, y + 5);
-    oled->drawLine(x + 3, y + 4, x + 5, y + 4);
-    oled->drawLine(x + 6, y + 5, x + 7, y + 5);
-  }
-}
-
-static void drawHeaterIcon(U8G2 *oled, int x, int y, bool on) {
-  // Stylizowana spirala 8x8.
-  oled->drawLine(x + 1, y + 1, x + 3, y + 1);
-  oled->drawLine(x + 3, y + 1, x + 3, y + 3);
-  oled->drawLine(x + 3, y + 3, x + 1, y + 3);
-  oled->drawLine(x + 1, y + 3, x + 1, y + 5);
-  oled->drawLine(x + 1, y + 5, x + 3, y + 5);
-  oled->drawLine(x + 5, y + 1, x + 7, y + 1);
-  oled->drawLine(x + 7, y + 1, x + 7, y + 3);
-  oled->drawLine(x + 7, y + 3, x + 5, y + 3);
-  oled->drawLine(x + 5, y + 3, x + 5, y + 5);
-  oled->drawLine(x + 5, y + 5, x + 7, y + 5);
-  if (on) {
-    oled->drawLine(x + 2, y + 2, x + 2, y + 6);
-    oled->drawLine(x + 6, y + 2, x + 6, y + 6);
-  }
-}
-
-static void drawAerationIcon(U8G2 *oled, int x, int y) {
-  oled->drawCircle(x + 2, y + 6, 1, U8G2_DRAW_ALL);
-  oled->drawCircle(x + 4, y + 4, 1, U8G2_DRAW_ALL);
-  oled->drawCircle(x + 6, y + 2, 1, U8G2_DRAW_ALL);
-}
-
-static void drawFeederIcon(U8G2 *oled, int x, int y) {
-  oled->drawFrame(x + 1, y + 3, 6, 4);
-  oled->drawLine(x + 1, y + 2, x + 6, y + 2);
-  oled->drawPixel(x + 3, y + 1);
-  oled->drawPixel(x + 5, y + 1);
+static void drawStaticBadge(U8G2 *oled, int x, int y, char label) {
+  char labelText[2] = {label, '\0'};
+  oled->drawFrame(x, y, 10, 8);
+  oled->drawStr(x + 3, y + 7, labelText);
 }
 
 static void drawBatteryIndicator(U8G2 *oled, int x, int y, uint8_t percent) {
@@ -196,34 +165,43 @@ void HomeRenderer::drawFrame(AquariumAnimation *ctx) {
   display->setFontMode(1);
   display->setBitmapMode(1);
 
-  // Sekcja gorna 0..21: czas + temperatura
-  char timeShort[6];
-  snprintf(timeShort, sizeof(timeShort), "%02d:%02d", currentHour, currentMinute);
+  // Sekcja gorna 0..21: czas + temperatura.
+  char timeMain[6];
+  snprintf(timeMain, sizeof(timeMain), "%02d:%02d", currentHour, currentMinute);
+  char secondsText[3];
+  snprintf(secondsText, sizeof(secondsText), "%02d", currentSecond);
 
   char temperatureDisplay[12];
   formatHomeTemperature(tempBuffer, temperatureDisplay, sizeof(temperatureDisplay));
 
   display->setFont(u8g2_font_logisoso16_tn);
-  display->drawStr(0, 18, timeShort);
+  display->drawStr(0, 18, timeMain);
+
+  const int16_t timeMainWidth = display->getStrWidth(timeMain);
+  display->setFont(u8g2_font_6x10_tr);
+  display->drawStr(timeMainWidth + 2, 18, secondsText);
+
+  display->setFont(u8g2_font_logisoso16_tn);
   int16_t tempWidth = display->getStrWidth(temperatureDisplay);
   int16_t tempX = 127 - tempWidth + 1;
-  if (tempX < 66) {
-    tempX = 66;
+  if (tempX < 77) {
+    tempX = 77;
   }
   display->drawStr(tempX, 18, temperatureDisplay);
 
   // Separatory zgodnie z blueprintem.
   display->drawLine(0, 22, 127, 22);
-  display->drawLine(64, 0, 64, 21);
+  display->drawLine(74, 0, 74, 21);
 
-  // Pasek statusu 24..31
-  drawLightIcon(display, 0, 24, isLightOn);
-  drawFilterIcon(display, 12, 24, isFilterOn);
-  drawHeaterIcon(display, 24, 24, isHeaterOn);
-  drawAerationIcon(display, 36, 24);
-  drawFeederIcon(display, 48, 24);
+  // Pasek statusu 24..31 (czytelne statusy przekaźnikow).
+  display->setFont(u8g2_font_4x6_tr);
+  drawRelayStatusBadge(display, 0, 24, 'L', isLightOn);
+  drawRelayStatusBadge(display, 13, 24, 'F', isFilterOn);
+  drawRelayStatusBadge(display, 26, 24, 'H', isHeaterOn);
+  drawStaticBadge(display, 40, 24, 'A');
+  drawStaticBadge(display, 52, 24, 'K');
 
-  // Bateria wyrównana do prawej (ok. 16x8 px).
+  // Bateria wyrownana do prawej (ok. 16x8 px).
   drawBatteryIndicator(display, 112, 24, batteryPercent);
 }
 

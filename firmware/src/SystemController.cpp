@@ -28,13 +28,12 @@
 #define BAT_ADC_PIN 7
 #define BAT_EN_PIN 10
 
-// Relays for light/filter/feeder are active-low and wired on NC path in this
-// build profile: LOW drives the relay and changes contact state.
+// Relays are active-low in this build profile (LOW energizes relay).
 static constexpr bool LIGHT_OUTPUT_ACTIVE_HIGH = false;
 static constexpr bool PUMP_OUTPUT_ACTIVE_HIGH = false;
-// Heater relay is wired on NO path with opposite behavior:
-// HIGH keeps heater connected, LOW disconnects heater.
-static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = true;
+// Grzalka jest podlaczona do styku NO, ale sam kanal przekaznika nadal jest
+// aktywny stanem niskim (jak pozostale kanaly).
+static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = false;
 static constexpr bool FEEDER_OUTPUT_ACTIVE_HIGH = false;
 
 static uint8_t outputLevelForState(bool enabled, bool activeHigh) {
@@ -70,6 +69,7 @@ static portMUX_TYPE testOverrideMux = portMUX_INITIALIZER_UNLOCKED;
 static TestOverridesState testOverrides = {false, false, false, false, false,
                                            SERVO_CLOSED_ANGLE, 0};
 static const unsigned long TEST_OVERRIDE_TIMEOUT_MS = 1500UL;
+static bool filterWindowFallbackLogged = false;
 
 static TestOverridesState getTestOverridesSnapshot() {
   portENTER_CRITICAL(&testOverrideMux);
@@ -128,8 +128,8 @@ static bool hasEnoughNvsSpaceForRtcBackup() {
     // Gdy nie mozemy odczytac statystyk, nie blokujemy zapisu.
     return true;
   }
-  // Zostawiamy zapas wpisow dla innych namespaces i logow.
-  return stats.free_entries >= 4;
+  // Zostawiamy bezpieczny zapas wpisow dla innych namespaces i logow.
+  return stats.free_entries >= 12;
 }
 
 static bool saveRtcBackupEpoch(uint32_t epoch) {
@@ -410,6 +410,23 @@ void SystemController::updateDecisions() {
   bool runFilter = ScheduleManager::isFilterActive(nowMin);
   bool runAeration = ScheduleManager::isAerationActive(nowMin);
 
+  const bool isFilterScheduleWindowZeroLength =
+      cfg.filterMode == static_cast<uint8_t>(ScheduleMode::Schedule) &&
+      cfg.filterHourOn == cfg.filterHourOff &&
+      cfg.filterMinuteOn == cfg.filterMinuteOff;
+  if (isFilterScheduleWindowZeroLength) {
+    // Zero-length okna traktujemy jako blad konfiguracji i awaryjnie
+    // podpinamy filtr pod rytm dnia.
+    runFilter = isLightActive;
+    if (!filterWindowFallbackLogged) {
+      LogManager::logWarn(
+          "Filtr: harmonogram ma takie samo ON/OFF, fallback do trybu dziennego.");
+      filterWindowFallbackLogged = true;
+    }
+  } else {
+    filterWindowFallbackLogged = false;
+  }
+
   // Grzalka ma wlasny termostat, a ten sterownik robi odciecie bezpieczenstwa
   // (awaria/przegrzanie) po przekroczeniu targetTemp.
   // Ponowne podlaczenie nastepuje dopiero po schlodzeniu o histereze.
@@ -502,6 +519,20 @@ void SystemController::applyOutputs() {
   writeManagedOutput(LIGHT_PIN, snap.isLightOn, LIGHT_OUTPUT_ACTIVE_HIGH);
   writeManagedOutput(PUMP_PIN, snap.isFilterOn, PUMP_OUTPUT_ACTIVE_HIGH);
   writeManagedOutput(HEATER_PIN, snap.isHeaterOn, HEATER_OUTPUT_ACTIVE_HIGH);
+
+  static bool relayStateInitialized = false;
+  static bool prevLight = false;
+  static bool prevFilter = false;
+  static bool prevHeater = false;
+  if (!relayStateInitialized || prevLight != snap.isLightOn ||
+      prevFilter != snap.isFilterOn || prevHeater != snap.isHeaterOn) {
+    relayStateInitialized = true;
+    prevLight = snap.isLightOn;
+    prevFilter = snap.isFilterOn;
+    prevHeater = snap.isHeaterOn;
+    Serial.printf("[RELAYS] L=%d F=%d H=%d\n", snap.isLightOn ? 1 : 0,
+                  snap.isFilterOn ? 1 : 0, snap.isHeaterOn ? 1 : 0);
+  }
 
   servoController.update();
   if (testSnapshot.active) {
