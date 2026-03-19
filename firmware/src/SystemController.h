@@ -27,6 +27,11 @@ public:
   static void setManualServo(int angle);
   static void clearManualServo();
   static int getServoPosition();
+  static void
+  setTestOverrides(bool lightOn, bool filterOn, bool heaterConnected,
+                   bool feederRelayOn, uint8_t aerationAngle);
+  static void clearTestOverrides();
+  static bool isTestOverrideActive();
 
   // Reczna kalibracja karmnika uruchamiana z menu
   static bool runFeederCalibration(U8G2 *display);

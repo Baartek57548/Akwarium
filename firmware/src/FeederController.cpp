@@ -96,6 +96,12 @@ bool FeederController::isFeeding() {
   return feeding;
 }
 
+void FeederController::forceStop() {
+  writeFeederOutput(false);
+  feeding = false;
+  useSensorStop = false;
+}
+
 void FeederController::setSafetyTimeout(unsigned long timeoutMs) {
   safetyTimeout = timeoutMs;
 }

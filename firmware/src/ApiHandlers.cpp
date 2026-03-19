@@ -62,6 +62,24 @@ static bool parseTimeArg(const String &value, int &hour, int &minute) {
   return true;
 }
 
+static bool parseBoolArg(const String &raw, bool &out) {
+  if (raw.length() == 0) {
+    return false;
+  }
+
+  if (raw == "1" || raw.equalsIgnoreCase("true") || raw.equalsIgnoreCase("on")) {
+    out = true;
+    return true;
+  }
+
+  if (raw == "0" || raw.equalsIgnoreCase("false") || raw.equalsIgnoreCase("off")) {
+    out = false;
+    return true;
+  }
+
+  return false;
+}
+
 static void populateValidationJson(JsonObject validation) {
   const ValidationProfileSnapshot profile = ConfigValidation::getValidationProfile();
 
@@ -238,6 +256,47 @@ void setupApiEndpoints() {
 
     if (action == "feed_now") {
       SystemController::feedNow();
+      server.send(200, "text/plain", "OK");
+      return;
+    }
+
+    if (action == "set_light" || action == "set_filter") {
+      if (!server.hasArg("state")) {
+        server.send(400, "text/plain", "missing_state");
+        return;
+      }
+
+      bool state = false;
+      if (!parseBoolArg(server.arg("state"), state)) {
+        server.send(400, "text/plain", "invalid_state");
+        return;
+      }
+
+      ConfigPatch patch = {};
+      if (action == "set_light") {
+        patch.hasLightMode = true;
+        patch.lightMode = state ? static_cast<int>(ScheduleMode::AlwaysOn)
+                                : static_cast<int>(ScheduleMode::AlwaysOff);
+      } else {
+        patch.hasFilterMode = true;
+        patch.filterMode = state ? static_cast<int>(ScheduleMode::AlwaysOn)
+                                 : static_cast<int>(ScheduleMode::AlwaysOff);
+      }
+
+      Config cfg = ConfigManager::getCopy();
+      ConfigValidationResult validation = {};
+      if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
+        sendValidationError(server,
+                            validation.errorCode[0] != '\0' ? validation.errorCode
+                                                             : "invalid_values");
+        return;
+      }
+
+      if (!ConfigManager::updateAndSave(cfg)) {
+        server.send(500, "text/plain", "save_failed");
+        return;
+      }
+
       server.send(200, "text/plain", "OK");
       return;
     }

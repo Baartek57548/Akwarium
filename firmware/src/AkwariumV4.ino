@@ -187,6 +187,21 @@ static void captureUiChanges() {
   }
 }
 
+static void syncTestOverridesWithUiState() {
+  if (!animation) {
+    return;
+  }
+
+  if (uiState == UiState::TESTS) {
+    SystemController::setTestOverrides(
+        animation->getTestLight(), animation->getTestFilter(),
+        animation->getTestHeater(), animation->getTestFeeder(),
+        animation->getTestAeration());
+  } else if (SystemController::isTestOverrideActive()) {
+    SystemController::clearTestOverrides();
+  }
+}
+
 static void applyPendingUiChanges() {
   PendingScheduleUpdate localSchedule = {};
   PendingTimeUpdate localTime = {};
@@ -381,16 +396,24 @@ void updateUiState() {
 
   case UiState::ACCESS_POINT: {
     static uint8_t maxClients = 0;
+    static unsigned long lastClientSeenMs = 0;
+    constexpr unsigned long AP_CLIENT_GRACE_MS = 60000UL;
     uint8_t currentClients = AkwariumWifi::getConnectedClients();
     if (currentClients > maxClients) {
       maxClients = currentClients;
     }
+    if (currentClients > 0) {
+      lastClientSeenMs = millis();
+    }
 
     // Auto disconnect when client leaves
-    if (maxClients > 0 && currentClients == 0) {
+    if (maxClients > 0 && currentClients == 0 &&
+        lastClientSeenMs > 0 &&
+        (millis() - lastClientSeenMs >= AP_CLIENT_GRACE_MS)) {
       AkwariumWifi::stopAP();
       uiState = UiState::HOME;
       maxClients = 0;
+      lastClientSeenMs = 0;
     }
 
     // Manual exit
@@ -398,6 +421,7 @@ void updateUiState() {
       AkwariumWifi::stopAP();
       uiState = UiState::MENU;
       maxClients = 0;
+      lastClientSeenMs = 0;
     }
     break;
   }
@@ -420,8 +444,10 @@ void updateUiState() {
     break;
 
   case UiState::TESTS:
-    if (upJustPressed)
+    if (upJustPressed) {
+      animation->cancelEditing();
       uiState = UiState::MENU;
+    }
     if (downJustPressed) {
       if (animation->isEditingActive())
         animation->incrementTestValue();
@@ -578,6 +604,7 @@ void VideoTask(void *pvParameters) {
   while (true) {
     if (animation != nullptr) {
       updateUiState();
+      syncTestOverridesWithUiState();
       syncBleSessionWithUiState();
       captureUiChanges();
 
@@ -651,8 +678,8 @@ void VideoTask(void *pvParameters) {
           break;
         case UiState::ACCESS_POINT:
           animation->drawAccessPointScreen(
-              AkwariumWifi::getAPName().c_str(),
-              AkwariumWifi::getAPPassword().c_str(),
+              AkwariumWifi::getConfiguredAPName().c_str(),
+              AkwariumWifi::getConfiguredAPPassword().c_str(),
               AkwariumWifi::getIP().c_str(),
               AkwariumWifi::getConnectedClients());
           break;

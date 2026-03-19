@@ -47,6 +47,7 @@ private:
   char feedTimeBuffer[6];
 
   uint8_t batteryPercent;
+  uint8_t aerationPercent;
 
   // Statusy urzÄ…dzeĹ„
   bool isFilterOn;
@@ -130,7 +131,8 @@ private:
   bool testLight;
   bool testHeater;
   bool testFilter;
-  uint8_t testAerationVal;
+  bool testFeeder;
+  uint8_t testAerationVal; // Kat serwa 0..90 stopni
 
   // Animacja zapisu (non-blocking, renderowana w gĹ‚Ăłwnej pÄ™tli rysowania)
   bool confirmAnimActive;
@@ -233,6 +235,7 @@ public:
   bool getTestLight();
   bool getTestHeater();
   bool getTestFilter();
+  bool getTestFeeder();
   uint8_t getTestAeration();
 
   // Gettery

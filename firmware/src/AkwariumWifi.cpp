@@ -8,6 +8,10 @@
 #include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <uri/UriRegex.h>
+#include <cstring>
+#include <esp_err.h>
+#include <esp_wifi.h>
 #include <sys/time.h>
 #include <time.h>
 #include <RTClib.h>
@@ -36,8 +40,16 @@ static volatile bool apStopRequested = false;
 static volatile bool staOffRequested = false;
 static volatile bool staOnRequested = false;
 static volatile bool staIsOff = false;
+static unsigned long lastStaReconnectAttemptMs = 0;
+static unsigned long staDisconnectedSinceMs = 0;
+static uint8_t staReconnectAttempts = 0;
+static const unsigned long STA_RECONNECT_INTERVAL_MS = 15000UL;
+static const unsigned long STA_FALLBACK_TO_AP_MS = 180000UL;
+static const unsigned long WIFI_MODE_SWITCH_DELAY_MS = 25UL;
 
 WebServer &AkwariumWifi::getServer() { return server; }
+static void startAPInternal();
+static void sendCaptiveRedirect();
 
 static void setupNetwork() {
   WiFi.mode(WIFI_STA);
@@ -52,12 +64,60 @@ static void setupNetwork() {
 
   if (WiFi.status() == WL_CONNECTED) {
     isAPMode = false;
+    staDisconnectedSinceMs = 0;
+    staReconnectAttempts = 0;
     Serial.println("\n[WIFI] Polaczono. IP: " + WiFi.localIP().toString());
   } else {
     isAPMode = false;
     Serial.println(
         "\n[WIFI] Timeout. Polaczenie STA nieudane. Projekt dziala offline.");
   }
+}
+
+static void maintainStaConnection() {
+  if (isAPMode || staIsOff) {
+    staDisconnectedSinceMs = 0;
+    staReconnectAttempts = 0;
+    return;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    staDisconnectedSinceMs = 0;
+    staReconnectAttempts = 0;
+    return;
+  }
+
+  const unsigned long nowMs = millis();
+  if (staDisconnectedSinceMs == 0) {
+    staDisconnectedSinceMs = nowMs;
+  }
+
+  if (nowMs - lastStaReconnectAttemptMs >= STA_RECONNECT_INTERVAL_MS) {
+    lastStaReconnectAttemptMs = nowMs;
+    if (staReconnectAttempts < 255) {
+      staReconnectAttempts++;
+    }
+    Serial.printf("[WIFI-STA] Ponowna proba laczenia (%u)\n",
+                  static_cast<unsigned>(staReconnectAttempts));
+    WiFi.reconnect();
+  }
+
+  if (nowMs - staDisconnectedSinceMs >= STA_FALLBACK_TO_AP_MS) {
+    Serial.println("[WIFI-STA] Brak lacznosci >3 min. Fallback do AP.");
+    staDisconnectedSinceMs = 0;
+    staReconnectAttempts = 0;
+    startAPInternal();
+  }
+}
+
+static void sendCaptiveRedirect() {
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
+  server.sendHeader("Location",
+                    String("http://") + WiFi.softAPIP().toString() + "/",
+                    true);
+  server.send(302, "text/plain", "");
 }
 
 static void setupWebServer() {
@@ -120,14 +180,19 @@ static void setupWebServer() {
 
   server.onNotFound([]() {
     if (isAPMode) {
-      server.sendHeader("Location",
-                        String("http://") + WiFi.softAPIP().toString() + "/",
-                        true);
-      server.send(302, "text/plain", "");
+      sendCaptiveRedirect();
     } else {
       server.send(404, "text/plain", "Error 404");
     }
   });
+
+  // Captive portal probes (Android/iOS/Windows)
+  server.on("/generate_204", HTTP_GET, []() { sendCaptiveRedirect(); });
+  server.on("/hotspot-detect.html", HTTP_GET, []() { sendCaptiveRedirect(); });
+  server.on("/connecttest.txt", HTTP_GET, []() { sendCaptiveRedirect(); });
+  server.on("/ncsi.txt", HTTP_GET, []() { sendCaptiveRedirect(); });
+  server.on("/fwlink", HTTP_GET, []() { sendCaptiveRedirect(); });
+
   server.on(
       "/update", HTTP_POST,
       []() {
@@ -237,6 +302,16 @@ static void setupWebServer() {
         }
       });
 
+  // Catch-all route, aby WebServer nie raportowal "request handler not found"
+  // dla probe requestow captive portal i nieznanych sciezek.
+  server.on(UriRegex("^/.*"), HTTP_ANY, []() {
+    if (isAPMode) {
+      sendCaptiveRedirect();
+    } else {
+      server.send(404, "text/plain", "Error 404");
+    }
+  });
+
   server.begin();
 }
 
@@ -245,16 +320,64 @@ static void startAPInternal() {
     return;
   }
 
-  WiFi.disconnect();
-  WiFi.mode(WIFI_AP);
-  staIsOff = true;
-  if (WiFi.softAP(apSSID, apPassword)) {
+  const size_t ssidLen = strlen(apSSID);
+  const size_t passLen = strlen(apPassword);
+  if (ssidLen == 0 || ssidLen > 31) {
+    Serial.println(
+        "[WIFI-AP] BLAD: AP_SSID musi miec dlugosc 1..31 znakow.");
+    return;
+  }
+  if (passLen < 8 || passLen > 63) {
+    Serial.println(
+        "[WIFI-AP] BLAD: AP_PASSWORD musi miec dlugosc 8..63 znakow. AP nie zostal uruchomiony.");
+    return;
+  }
+
+  WiFi.disconnect(false, false);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  WiFi.mode(WIFI_AP_STA);
+  staIsOff = false;
+
+  bool apStarted = WiFi.softAP(apSSID, apPassword);
+  if (!apStarted) {
+    // Druga proba po pelnym restarcie interfejsu WiFi.
+    WiFi.mode(WIFI_OFF);
+    delay(WIFI_MODE_SWITCH_DELAY_MS);
+    WiFi.mode(WIFI_AP);
+    apStarted = WiFi.softAP(apSSID, apPassword);
+  }
+
+  if (apStarted) {
+    wifi_config_t apCfg = {};
+    const esp_err_t cfgErr = esp_wifi_get_config(WIFI_IF_AP, &apCfg);
+    if (cfgErr == ESP_OK) {
+      if (apCfg.ap.authmode == WIFI_AUTH_OPEN) {
+        Serial.println(
+            "[WIFI-AP] BLAD: AP uruchomil sie jako OPEN mimo hasla. Wylaczam AP.");
+        WiFi.softAPdisconnect(true);
+        isAPMode = false;
+        staIsOff = true;
+        return;
+      }
+      Serial.printf("[WIFI-AP] SSID=%s auth=%d passLen=%u\n", apSSID,
+                    static_cast<int>(apCfg.ap.authmode),
+                    static_cast<unsigned>(passLen));
+    } else {
+      Serial.printf("[WIFI-AP] Ostrzezenie: esp_wifi_get_config(AP) failed: %s\n",
+                    esp_err_to_name(cfgErr));
+    }
+
+    dnsServer.stop();
     dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
     isAPMode = true;
     Serial.println("[WIFI-AP] Uruchomiono AP. IP: " +
                    WiFi.softAPIP().toString());
   } else {
-    Serial.println("[WIFI-AP] BLAD: nie udalo sie uruchomic AP.");
+    Serial.printf(
+        "[WIFI-AP] BLAD: nie udalo sie uruchomic AP (mode=%d, passLen=%u).\n",
+        static_cast<int>(WiFi.getMode()), static_cast<unsigned>(passLen));
+    isAPMode = false;
+    staIsOff = true;
   }
 }
 
@@ -276,9 +399,15 @@ static void disableStaForSleepInternal() {
     return;
   }
 
-  WiFi.disconnect(true, false);
-  WiFi.mode(WIFI_OFF);
+  WiFi.mode(WIFI_STA);
+  const bool disconnected = WiFi.disconnect(true, false);
+  if (!disconnected) {
+    delay(WIFI_MODE_SWITCH_DELAY_MS);
+    WiFi.mode(WIFI_OFF);
+  }
   staIsOff = true;
+  staDisconnectedSinceMs = 0;
+  staReconnectAttempts = 0;
   Serial.println("[WIFI-STA] Wylaczono STA/radio dla nocnego sleep.");
 }
 
@@ -315,11 +444,14 @@ static void processAPRequests() {
 }
 
 static void WifiTask(void *parameter) {
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(false);
   setupNetwork();
   setupWebServer();
 
   for (;;) {
     processAPRequests();
+    maintainStaConnection();
     if (isAPMode)
       dnsServer.processNextRequest();
     server.handleClient();
@@ -373,6 +505,10 @@ String AkwariumWifi::getAPName() {
 String AkwariumWifi::getAPPassword() {
   return isAPMode ? String(apPassword) : String(STA_PASSWORD);
 }
+
+String AkwariumWifi::getConfiguredAPName() { return String(apSSID); }
+
+String AkwariumWifi::getConfiguredAPPassword() { return String(apPassword); }
 
 String AkwariumWifi::getIP() {
   return isAPMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString();

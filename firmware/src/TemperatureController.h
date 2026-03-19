@@ -18,8 +18,10 @@ private:
   bool sensorPresent;
   float lastTemperature;
   bool hasValidTemperature;
+  uint8_t invalidSampleCount;
   unsigned long lastTempRead;
   const unsigned long TEMP_READ_INTERVAL = 2000;
+  static constexpr uint8_t MAX_INVALID_SAMPLES = 3;
   bool heaterOutputActiveHigh;
 
   // Nowe zmienne do statystyk
@@ -39,6 +41,7 @@ public:
   void setTargetTemperature(float temp);
   void setHysteresis(float value);
   bool isHeaterOn();
+  void forceHeaterOn();
   void forceHeaterOff();
 
   // Nowe metody

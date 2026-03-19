@@ -13,6 +13,7 @@
 #include <esp_err.h>
 #include <esp_sleep.h>
 #include <esp_task_wdt.h>
+#include <nvs_flash.h>
 
 #define HEATER_PIN 2
 #define PUMP_PIN 4
@@ -55,6 +56,28 @@ static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
 static const unsigned long OLED_IDLE_TIMEOUT_MS = 120000UL;
 static bool wokeFromButtonThisBoot = false;
 
+struct TestOverridesState {
+  bool active;
+  bool lightOn;
+  bool filterOn;
+  bool heaterConnected;
+  bool feederRelayOn;
+  uint8_t aerationAngle;
+  unsigned long lastUpdateMs;
+};
+
+static portMUX_TYPE testOverrideMux = portMUX_INITIALIZER_UNLOCKED;
+static TestOverridesState testOverrides = {false, false, false, false, false,
+                                           SERVO_CLOSED_ANGLE, 0};
+static const unsigned long TEST_OVERRIDE_TIMEOUT_MS = 1500UL;
+
+static TestOverridesState getTestOverridesSnapshot() {
+  portENTER_CRITICAL(&testOverrideMux);
+  TestOverridesState snapshot = testOverrides;
+  portEXIT_CRITICAL(&testOverrideMux);
+  return snapshot;
+}
+
 static void syncBleWithOledState(bool oledShouldStayOn) {
   const bool bleConnected = BleManager::isConnected();
   const bool bleAdvertising = BleManager::isAdvertising();
@@ -83,7 +106,71 @@ RTC_DS3231 SystemController::rtc;
 
 // Backup RTC epoch w NVS, aby odzyskać czas nawet przy utracie baterii.
 static Preferences rtcBackupPrefs;
+static bool rtcBackupReady = false;
+static bool rtcBackupWriteDisabled = false;
 static uint32_t lastPersistedEpoch = 0;
+static uint8_t rtcBackupPersistFailCount = 0;
+static bool rtcBackupNoSpaceLogged = false;
+static unsigned long nextRtcPersistAttemptMs = 0;
+static const uint32_t RTC_PERSIST_EPOCH_INTERVAL_SEC = 3600UL;
+static const unsigned long RTC_PERSIST_INITIAL_DELAY_MS = 60000UL;
+static const unsigned long RTC_PERSIST_RETRY_DELAY_MS = 300000UL;
+static const uint8_t RTC_PERSIST_MAX_FAILS = 1;
+
+static bool isDeadlineReached(unsigned long nowMs, unsigned long deadlineMs) {
+  return static_cast<long>(nowMs - deadlineMs) >= 0;
+}
+
+static bool hasEnoughNvsSpaceForRtcBackup() {
+  nvs_stats_t stats = {};
+  const esp_err_t err = nvs_get_stats(nullptr, &stats);
+  if (err != ESP_OK) {
+    // Gdy nie mozemy odczytac statystyk, nie blokujemy zapisu.
+    return true;
+  }
+  // Zostawiamy zapas wpisow dla innych namespaces i logow.
+  return stats.free_entries >= 4;
+}
+
+static bool saveRtcBackupEpoch(uint32_t epoch) {
+  if (!rtcBackupReady || rtcBackupWriteDisabled) {
+    return false;
+  }
+
+  if (!hasEnoughNvsSpaceForRtcBackup()) {
+    rtcBackupWriteDisabled = true;
+    if (!rtcBackupNoSpaceLogged) {
+      LogManager::logWarn(
+          "RTCBackup: NVS prawie pelne - pomijam zapis lastEpoch.");
+      rtcBackupNoSpaceLogged = true;
+    }
+    return false;
+  }
+
+  size_t bytesWritten = rtcBackupPrefs.putUInt("lastEpoch", epoch);
+  if (bytesWritten == sizeof(uint32_t)) {
+    lastPersistedEpoch = epoch;
+    rtcBackupPersistFailCount = 0;
+    rtcBackupNoSpaceLogged = false;
+    return true;
+  }
+
+  if (rtcBackupPersistFailCount < 255) {
+    rtcBackupPersistFailCount++;
+  }
+  nextRtcPersistAttemptMs = millis() + RTC_PERSIST_RETRY_DELAY_MS;
+
+  if (rtcBackupPersistFailCount >= RTC_PERSIST_MAX_FAILS) {
+    rtcBackupWriteDisabled = true;
+    if (!rtcBackupNoSpaceLogged) {
+      LogManager::logWarn(
+          "RTCBackup: NVS pelne/uszkodzone - dalsze zapisy lastEpoch wylaczone.");
+      rtcBackupNoSpaceLogged = true;
+    }
+  }
+
+  return false;
+}
 
 DateTime getCurrentDateTime() {
   if (SystemController::isRtcReady()) {
@@ -96,6 +183,9 @@ DateTime getCurrentDateTime() {
 
 // Przywracanie czasu z kopii w NVS (ostatni zapisany epoch)
 static bool restoreRtcFromBackup() {
+  if (!rtcBackupReady) {
+    return false;
+  }
   uint32_t epoch = rtcBackupPrefs.getUInt("lastEpoch", 0);
   // Akceptujemy zakres mniej więcej 2024-2035, aby uniknąć śmieci
   if (epoch < 1700000000UL || epoch > 2060000000UL) {
@@ -109,21 +199,33 @@ static bool restoreRtcFromBackup() {
 
 // Ograniczamy liczbę zapisów do flash – nie częściej niż co godzinę
 static void persistRtcIfNeeded(const DateTime &now) {
+  if (!rtcBackupReady || rtcBackupWriteDisabled) {
+    return;
+  }
+
+  const unsigned long nowMs = millis();
+  if (!isDeadlineReached(nowMs, nextRtcPersistAttemptMs)) {
+    return;
+  }
+
   uint32_t epoch = now.unixtime();
   if (lastPersistedEpoch != 0 &&
       (epoch > lastPersistedEpoch ? epoch - lastPersistedEpoch
-                                  : lastPersistedEpoch - epoch) < 3600UL) {
+                                  : lastPersistedEpoch - epoch) <
+          RTC_PERSIST_EPOCH_INTERVAL_SEC) {
     return;
   }
-  rtcBackupPrefs.putUInt("lastEpoch", epoch);
-  lastPersistedEpoch = epoch;
+
+  if (!saveRtcBackupEpoch(epoch) && !rtcBackupWriteDisabled) {
+    return;
+  }
 }
 
 void syncSystemTime(uint32_t epoch) {
   if (SystemController::isRtcReady()) {
     SystemController::rtc.adjust(DateTime(epoch));
-    lastPersistedEpoch = epoch;
-    rtcBackupPrefs.putUInt("lastEpoch", epoch);
+    nextRtcPersistAttemptMs = millis();
+    saveRtcBackupEpoch(epoch);
   }
 }
 
@@ -161,7 +263,11 @@ const char *SystemController::getLastResetLabel() {
 
 void SystemController::hardwareSetup() {
   // Backup NVS dla RTC (oddzielny namespace, aby nie kolidowac z Config/Logs)
-  rtcBackupPrefs.begin("RTCBackup", false);
+  rtcBackupReady = rtcBackupPrefs.begin("RTCBackup", false);
+  nextRtcPersistAttemptMs = millis() + RTC_PERSIST_INITIAL_DELAY_MS;
+  if (!rtcBackupReady) {
+    LogManager::logWarn("RTCBackup: brak dostepu do namespace Preferences.");
+  }
 
   pinMode(LIGHT_PIN, OUTPUT);
   writeManagedOutput(LIGHT_PIN, false, LIGHT_OUTPUT_ACTIVE_HIGH);
@@ -238,6 +344,7 @@ void SystemController::init() {
 
 void SystemController::updateSensors() {
   unsigned long nowMs = millis();
+  const bool testOverrideActive = isTestOverrideActive();
 
   if (nowMs - lastTempCheckMs >= 2000) {
     lastTempCheckMs = nowMs;
@@ -256,7 +363,7 @@ void SystemController::updateSensors() {
     } else {
       SharedState::updateTemperature(NAN, tempController.getDailyMin(), 0,
                                      tempController.getDailyMax());
-      if (tempController.isHeaterOn()) {
+      if (!testOverrideActive && tempController.isHeaterOn()) {
         tempController.forceHeaterOff();
       }
       if (tempInvalidReadCount < 255)
@@ -280,6 +387,13 @@ void SystemController::updateDecisions() {
   if (OtaManager::isOtaInProgress())
     return;
 
+  TestOverridesState testSnapshot = getTestOverridesSnapshot();
+  if (testSnapshot.active &&
+      (millis() - testSnapshot.lastUpdateMs > TEST_OVERRIDE_TIMEOUT_MS)) {
+    clearTestOverrides();
+    testSnapshot.active = false;
+  }
+
   DateTime now = getCurrentDateTime();
   SharedState::updateTime(now.hour(), now.minute(), now.second(), now.day(),
                           now.month(), now.year());
@@ -296,18 +410,26 @@ void SystemController::updateDecisions() {
   bool runFilter = ScheduleManager::isFilterActive(nowMin);
   bool runAeration = ScheduleManager::isAerationActive(nowMin);
 
-  // Grzalka pracuje domyslnie w trybie "podlaczona", a sterownik realizuje
-  // odciecie dopiero po przekroczeniu targetTemp + hysteresis. Ponowne
-  // podlaczenie nastepuje przy temperaturze <= targetTemp.
+  // Grzalka ma wlasny termostat, a ten sterownik robi odciecie bezpieczenstwa
+  // (awaria/przegrzanie) po przekroczeniu targetTemp.
+  // Ponowne podlaczenie nastepuje dopiero po schlodzeniu o histereze.
   SharedStateData snap = SharedState::getSnapshot();
-  if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Threshold)) {
-    tempController.setTargetTemperature(cfg.targetTemp);
-    tempController.setHysteresis(cfg.tempHysteresis);
-    if (!isnan(snap.temperature) && tempInvalidReadCount < 3) {
-      tempController.controlHeater(snap.temperature);
+  if (testSnapshot.active) {
+    if (testSnapshot.heaterConnected) {
+      tempController.forceHeaterOn();
+    } else {
+      tempController.forceHeaterOff();
     }
-  } else if (tempController.isHeaterOn()) {
-    tempController.forceHeaterOff();
+  } else {
+    if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Threshold)) {
+      tempController.setTargetTemperature(cfg.targetTemp);
+      tempController.setHysteresis(cfg.tempHysteresis);
+      if (!isnan(snap.temperature) && tempInvalidReadCount < 3) {
+        tempController.controlHeater(snap.temperature);
+      }
+    } else if (tempController.isHeaterOn()) {
+      tempController.forceHeaterOff();
+    }
   }
 
   // Decyzje dot. swiatla, filtra (Tymczasowe, tu wchodzi w gre UI zaleznie od
@@ -316,23 +438,31 @@ void SystemController::updateDecisions() {
 
   // Servo logic
   int servoTarget = SERVO_CLOSED_ANGLE;
-  if (runAeration)
-    servoTarget = SERVO_OPEN_ANGLE;
-  int minsToOff = ScheduleManager::getMinutesUntilFilterOff(nowMin);
-  if (minsToOff > 0 && minsToOff <= cfg.servoPreOffMins)
-    servoTarget = SERVO_PREOFF_ANGLE;
-
-  if (!isnan(snap.temperature) && snap.temperature > 30.0f) {
+  if (testSnapshot.active) {
+    isLightActive = testSnapshot.lightOn;
+    runFilter = testSnapshot.filterOn;
+    runAeration = (testSnapshot.aerationAngle < SERVO_CLOSED_ANGLE);
     servoTarget =
-        constrain(cfg.servoAlarmAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
-  }
+        constrain(testSnapshot.aerationAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
+  } else {
+    if (runAeration)
+      servoTarget = SERVO_OPEN_ANGLE;
+    int minsToOff = ScheduleManager::getMinutesUntilFilterOff(nowMin);
+    if (minsToOff > 0 && minsToOff <= cfg.servoPreOffMins)
+      servoTarget = SERVO_PREOFF_ANGLE;
 
-  if (manualServoOverride) {
-    if (millis() - manualServoTimer > 300000UL) {
-      manualServoOverride = false;
-    } else {
+    if (!isnan(snap.temperature) && snap.temperature > 30.0f) {
       servoTarget =
-          constrain(manualServoAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
+          constrain(cfg.servoAlarmAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
+    }
+
+    if (manualServoOverride) {
+      if (millis() - manualServoTimer > 300000UL) {
+        manualServoOverride = false;
+      } else {
+        servoTarget =
+            constrain(manualServoAngle, SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
+      }
     }
   }
 
@@ -354,16 +484,32 @@ void SystemController::updateDecisions() {
 }
 
 void SystemController::applyOutputs() {
-  if (OtaManager::isOtaInProgress())
+  if (OtaManager::isOtaInProgress()) {
+    // OTA wymusza bezpieczny stan fizycznych wyjsc i odciecie grzalki.
+    writeManagedOutput(LIGHT_PIN, false, LIGHT_OUTPUT_ACTIVE_HIGH);
+    writeManagedOutput(PUMP_PIN, false, PUMP_OUTPUT_ACTIVE_HIGH);
+    writeManagedOutput(HEATER_PIN, false, HEATER_OUTPUT_ACTIVE_HIGH);
+    if (tempController.isHeaterOn()) {
+      tempController.forceHeaterOff();
+    }
+    feederController.forceStop();
+    servoController.update();
     return;
+  }
 
   SharedStateData snap = SharedState::getSnapshot();
+  TestOverridesState testSnapshot = getTestOverridesSnapshot();
   writeManagedOutput(LIGHT_PIN, snap.isLightOn, LIGHT_OUTPUT_ACTIVE_HIGH);
   writeManagedOutput(PUMP_PIN, snap.isFilterOn, PUMP_OUTPUT_ACTIVE_HIGH);
   writeManagedOutput(HEATER_PIN, snap.isHeaterOn, HEATER_OUTPUT_ACTIVE_HIGH);
 
   servoController.update();
-  feederController.update();
+  if (testSnapshot.active) {
+    writeManagedOutput(FEEDER_PIN, testSnapshot.feederRelayOn,
+                       FEEDER_OUTPUT_ACTIVE_HIGH);
+  } else {
+    feederController.update();
+  }
 }
 
 void SystemController::update() {
@@ -393,6 +539,40 @@ void SystemController::clearManualServo() { manualServoOverride = false; }
 
 int SystemController::getServoPosition() {
   return servoController.getCurrentPosition();
+}
+
+void SystemController::setTestOverrides(bool lightOn, bool filterOn,
+                                        bool heaterConnected,
+                                        bool feederRelayOn,
+                                        uint8_t aerationAngle) {
+  const uint8_t boundedAngle =
+      constrain(static_cast<int>(aerationAngle), SERVO_OPEN_ANGLE, SERVO_CLOSED_ANGLE);
+
+  portENTER_CRITICAL(&testOverrideMux);
+  testOverrides.active = true;
+  testOverrides.lightOn = lightOn;
+  testOverrides.filterOn = filterOn;
+  testOverrides.heaterConnected = heaterConnected;
+  testOverrides.feederRelayOn = feederRelayOn;
+  testOverrides.aerationAngle = boundedAngle;
+  testOverrides.lastUpdateMs = millis();
+  portEXIT_CRITICAL(&testOverrideMux);
+}
+
+void SystemController::clearTestOverrides() {
+  portENTER_CRITICAL(&testOverrideMux);
+  testOverrides.active = false;
+  testOverrides.feederRelayOn = false;
+  testOverrides.lastUpdateMs = 0;
+  portEXIT_CRITICAL(&testOverrideMux);
+  feederController.forceStop();
+}
+
+bool SystemController::isTestOverrideActive() {
+  portENTER_CRITICAL(&testOverrideMux);
+  const bool active = testOverrides.active;
+  portEXIT_CRITICAL(&testOverrideMux);
+  return active;
 }
 
 static void logEspErr(const char *prefix, esp_err_t err) {

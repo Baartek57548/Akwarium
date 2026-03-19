@@ -90,7 +90,15 @@ void ScheduleManager::checkAutoFeed(const DateTime &now) {
 
   if (now.hour() == sysConfig.feedHour &&
       now.minute() == sysConfig.feedMinute && now.second() < 5) {
-    uint32_t diff = now.unixtime() - sysConfig.lastFeedEpoch;
+    const uint32_t nowEpoch = now.unixtime();
+    if (nowEpoch < sysConfig.lastFeedEpoch) {
+      // Czas zostal cofnięty (RTC/NTP), blokujemy auto-feed do nowej osi czasu.
+      sysConfig.lastFeedEpoch = nowEpoch;
+      ConfigManager::updateAndSave(sysConfig);
+      return;
+    }
+
+    uint32_t diff = nowEpoch - sysConfig.lastFeedEpoch;
     bool shouldFeed = false;
     if (sysConfig.feedMode == 1 && diff >= 86000)
       shouldFeed = true;
@@ -102,7 +110,7 @@ void ScheduleManager::checkAutoFeed(const DateTime &now) {
     if (shouldFeed) {
       // Zabezpieczenie przed podwojnym karmieniem w krotkim czasie (odstep
       // minimum 3h)
-      if (now.unixtime() - sysConfig.lastFeedEpoch < (3 * 3600))
+      if (nowEpoch - sysConfig.lastFeedEpoch < (3 * 3600))
         return;
 
       Error err = feederCtrl->startFeed(1500, true);
@@ -110,7 +118,7 @@ void ScheduleManager::checkAutoFeed(const DateTime &now) {
         feederCtrl->clearError();
         // Potem podlaczymy to pod systemController by ustawil STATE_FEEDING
         LogManager::logInfo("Auto Feed rozpoczety z harmonogramu.");
-        sysConfig.lastFeedEpoch = now.unixtime();
+        sysConfig.lastFeedEpoch = nowEpoch;
         ConfigManager::updateAndSave(sysConfig);
       } else {
         LogManager::logError(
