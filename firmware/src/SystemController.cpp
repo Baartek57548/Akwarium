@@ -44,9 +44,9 @@
 // Relays are active-low in this build profile (LOW energizes relay).
 static constexpr bool LIGHT_OUTPUT_ACTIVE_HIGH = false;
 static constexpr bool PUMP_OUTPUT_ACTIVE_HIGH = false;
-// Grzalka jest podlaczona do styku NO, ale sam kanal przekaznika nadal jest
-// aktywny stanem niskim (jak pozostale kanaly).
-static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = false;
+// Grzalka: normalny stan pracy to HIGH (ON), odciecie bezpieczenstwa wymusza
+// przelaczenie przekaźnika na przeciwny poziom.
+static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = true;
 static constexpr bool FEEDER_OUTPUT_ACTIVE_HIGH = false;
 
 static uint8_t outputLevelForState(bool enabled, bool activeHigh) {
@@ -83,10 +83,7 @@ static TestOverridesState testOverrides = {false, false, false, false, false,
                                            SERVO_CLOSED_ANGLE, 0};
 static const unsigned long TEST_OVERRIDE_TIMEOUT_MS = 1500UL;
 static bool filterWindowFallbackLogged = false;
-static bool heaterFailsafeClampLogged = false;
 static bool heaterModeOffIgnoredLogged = false;
-static constexpr float HEATER_FAILSAFE_MIN_C = 30.0f;
-static constexpr float HEATER_FAILSAFE_MIN_HYST_C = 0.5f;
 
 static TestOverridesState getTestOverridesSnapshot() {
   portENTER_CRITICAL(&testOverrideMux);
@@ -379,7 +376,6 @@ void SystemController::init() {
 
 void SystemController::updateSensors() {
   unsigned long nowMs = millis();
-  const bool testOverrideActive = isTestOverrideActive();
 
   if (nowMs - lastTempCheckMs >= 2000) {
     lastTempCheckMs = nowMs;
@@ -398,9 +394,6 @@ void SystemController::updateSensors() {
     } else {
       SharedState::updateTemperature(NAN, tempController.getDailyMin(), 0,
                                      tempController.getDailyMax());
-      if (!testOverrideActive && tempController.isHeaterOn()) {
-        tempController.forceHeaterOff();
-      }
       if (tempInvalidReadCount < 255)
         tempInvalidReadCount++;
       if (tempInvalidReadCount >= 3 && !tempSensorErrorLogged) {
@@ -473,17 +466,8 @@ void SystemController::updateDecisions() {
       tempController.forceHeaterOff();
     }
   } else {
-    const float safetyCutoff = max(cfg.targetTemp, HEATER_FAILSAFE_MIN_C);
-    const float safetyHyst = max(cfg.tempHysteresis, HEATER_FAILSAFE_MIN_HYST_C);
-
-    if (cfg.targetTemp < HEATER_FAILSAFE_MIN_C && !heaterFailsafeClampLogged) {
-      LogManager::logWarn(
-          "Grzalka: prog safety podniesiony do 30C (sterownik pracuje jako bezpiecznik).");
-      heaterFailsafeClampLogged = true;
-    }
-
-    // W instalacji NO + wlasny termostat sterownik ma pelnic role bezpiecznika,
-    // wiec nie wymuszamy stalego OFF na podstawie heaterMode.
+    // W instalacji NO + wlasny termostat grzalka pozostaje ON (HIGH),
+    // a sterownik realizuje tylko odciecie bezpieczenstwa.
     if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Off)) {
       if (!heaterModeOffIgnoredLogged) {
         LogManager::logWarn(
@@ -494,8 +478,8 @@ void SystemController::updateDecisions() {
       heaterModeOffIgnoredLogged = false;
     }
 
-    tempController.setTargetTemperature(safetyCutoff);
-    tempController.setHysteresis(safetyHyst);
+    tempController.setTargetTemperature(cfg.targetTemp);
+    tempController.setHysteresis(cfg.tempHysteresis);
     if (!isnan(snap.temperature) && tempInvalidReadCount < 3) {
       tempController.controlHeater(snap.temperature);
     }

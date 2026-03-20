@@ -1,10 +1,8 @@
-# Testing tools
+# tools/testing
 
-Helper scripts and assets for verification of the firmware, protocol and emulator.
+Katalog na uporządkowane materiały pomocnicze związane z weryfikacją projektu. Obecnie pełni rolę miejsca docelowego dla scenariuszy testowych, fixture'ów i artefaktów pomocniczych.
 
-Suggested future contents:
+## Gdzie czytać dalej
 
-- BLE payload fixtures
-- HTTP payload fixtures
-- regression scenarios
-- protocol compatibility tests
+- [Dokumentacja testowania](../../docs/testing.md)
+- [Manual smoke test](../../docs/manual_smoke_test.md)

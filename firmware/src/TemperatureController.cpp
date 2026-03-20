@@ -105,10 +105,12 @@ void TemperatureController::controlHeater(float currentTemp) {
     return;
   }
 
-  // Sterownik traktuje targetTemp jako prog bezpieczenstwa (odciecie po
-  // przegrzaniu), a nie klasyczne sterowanie termostatyczne.
-  const float disconnectThreshold = targetTemp;
-  const float reconnectThreshold = targetTemp - hysteresis;
+  // Tryb bezpiecznika:
+  // - domyslnie grzalka pozostaje podlaczona (ON),
+  // - odciecie dopiero po przekroczeniu target + histereza,
+  // - ponowne podlaczenie po schlodzeniu do target.
+  const float disconnectThreshold = targetTemp + hysteresis;
+  const float reconnectThreshold = targetTemp;
 
   if (heaterState && currentTemp >= disconnectThreshold) {
     if (now - lastSwitchTime >= MIN_SWITCH_INTERVAL) {

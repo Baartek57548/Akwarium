@@ -1,23 +1,16 @@
-# FirmwareUI (native DLL)
+# FirmwareUI
 
-Native Windows library that runs real UI rendering logic from `firmware/src/AquariumAnimation.cpp` using a fake U8g2 implementation and exposes a small C API for WinForms.
+Natywna biblioteka `C++`, która uruchamia realny kod renderujący firmware z emulacją `U8g2` i wystawia prosty interfejs do hosta desktopowego.
 
-## Exported API
+## Eksporty
 
-- `int initUI()`
-- `void pressButtonUp()`
-- `void pressButtonDown()`
-- `void pressButtonSelect()`
-- `const uint8_t* getFrameBuffer()` (returns `128*32` bytes, layout: `frame[x][y]`)
+- `initUI()`
+- `pressButtonUp()`
+- `pressButtonDown()`
+- `pressButtonSelect()`
+- `getFrameBuffer()`
 
-## Build (CMake)
+## Gdzie czytać dalej
 
-```powershell
-cd tools/simulator/FirmwareUI
-cmake -S . -B build -A x64
-cmake --build build --config Release
-```
-
-Expected output DLL:
-
-- `tools/simulator/FirmwareUI/build/Release/FirmwareUI.dll`
+- [Dokumentacja emulatorów](../../../docs/emulator.md)
+- [Setup](../../../docs/setup.md)

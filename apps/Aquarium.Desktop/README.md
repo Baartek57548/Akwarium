@@ -1,9 +1,8 @@
 # Aquarium.Desktop
 
-Logical MAUI Windows host for the aquarium controller.
+Ten katalog opisuje logiczną rolę hosta desktop w architekturze. Aktualna implementacja MAUI Windows znajduje się fizycznie w `mobile-app/`.
 
-Current physical source location:
+## Gdzie czytać dalej
 
-- `mobile-app/`
-
-The Windows target of the MAUI app shares the same codebase as the mobile host.
+- [Dokumentacja UI](../../docs/ui.md)
+- [Setup](../../docs/setup.md)

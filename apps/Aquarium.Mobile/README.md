@@ -1,9 +1,8 @@
 # Aquarium.Mobile
 
-Logical MAUI mobile host for the aquarium controller.
+Ten katalog opisuje logiczną rolę hosta mobile w architekturze. Aktualna implementacja MAUI znajduje się fizycznie w `mobile-app/`.
 
-Current physical source location:
+## Gdzie czytać dalej
 
-- `mobile-app/`
-
-This directory exists to document the new architecture and to keep the repository layout aligned with the target structure.
+- [Dokumentacja UI](../../docs/ui.md)
+- [Setup](../../docs/setup.md)
