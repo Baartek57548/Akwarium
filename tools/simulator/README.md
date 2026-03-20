@@ -1,32 +1,13 @@
-# Simulator Tools
+# tools/simulator
 
-Folder zawiera emulator UI oparty o realny kod firmware:
+Ten katalog zawiera emulator lokalnego UI firmware oparty o realny kod renderujący OLED.
 
-- `tools/simulator/FirmwareUI/` - natywna biblioteka C++ (`FirmwareUI.dll`) z emulacja U8g2 (`FakeU8g2`) i wykonaniem logiki rysowania z `firmware/src/AquariumAnimation.cpp`.
-- `tools/simulator/Aquarium.ControllerEmulator/` - aplikacja WinForms, ktora laduje `FirmwareUI.dll`, pobiera framebuffer OLED 128x32 i renderuje go pixel-perfect.
+## Co tu jest
 
-## Build native DLL (Windows)
+- `FirmwareUI/` - natywna biblioteka `C++` eksportująca framebuffer i wejście przycisków,
+- `Aquarium.ControllerEmulator/` - host `WinForms` renderujący emulowany ekran.
 
-```powershell
-cd tools/simulator/FirmwareUI
-cmake -S . -B build -A x64
-cmake --build build --config Release
-```
+## Gdzie czytać dalej
 
-## Run WinForms emulator
-
-```powershell
-dotnet run --project tools/simulator/Aquarium.ControllerEmulator/Aquarium.ControllerEmulator.csproj
-```
-
-Klawiatura:
-
-- `ArrowUp` -> `BACK`
-- `Enter` -> `SELECT`
-- `ArrowDown` -> `DOWN`
-
-Panel boczny emulatora:
-
-- reczne ustawienia: `Bateria [%]`, `Napowietrzanie [%]`, `Temperatura [C]`
-- reczne logi: `Tresc logu`, `Czas [HH:MM]`, `Dodaj log`, `Wyczysc logi`
-- `Uruchom kalibracje` (animacja kalibracji w stylu firmware)
+- [Dokumentacja emulatorów](../../docs/emulator.md)
+- [Setup](../../docs/setup.md)

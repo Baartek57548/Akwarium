@@ -1,13 +1,16 @@
 # Apps
 
-This folder contains application hosts in the refactored architecture.
+Ten katalog grupuje hosty aplikacyjne i logiczne role warstwy UI oraz emulatora.
 
-- `Aquarium.Emulator/` - WinForms emulator of the ESP32 device.
-- `Aquarium.Mobile/` - logical MAUI mobile host; the current source tree still lives in `mobile-app/`.
-- `Aquarium.Desktop/` - logical MAUI Windows host; it shares the same codebase as the mobile host.
+## Co tu jest
 
-The shared runtime logic is factored into:
+- `Aquarium.Emulator/` - funkcjonalny emulator urządzenia,
+- `Aquarium.Mobile/` - logiczny punkt odniesienia dla hosta mobile,
+- `Aquarium.Desktop/` - logiczny punkt odniesienia dla hosta desktop.
 
-- `shared/Aquarium.Models/`
-- `shared/Aquarium.Protocol/`
-- `shared/Aquarium.EmulatorCore/`
+Rzeczywisty kod MAUI znajduje się w `mobile-app/`.
+
+## Gdzie czytać dalej
+
+- [Dokumentacja UI](../docs/ui.md)
+- [Dokumentacja emulatorów](../docs/emulator.md)
