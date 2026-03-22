@@ -253,6 +253,7 @@ static void setupWebServer() {
         server.send(200, "text/html; charset=utf-8", html);
 
         if (otaSuccess) {
+          OtaManager::prepareOutputsForRestart();
           delay(1000);
           ESP.restart();
         }

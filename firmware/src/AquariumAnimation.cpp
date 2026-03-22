@@ -1,5 +1,6 @@
 #include "AquariumAnimation.h"
 #include "ConfigData.h"
+#include "LogManager.h"
 #include "UIRenderers.h"
 #include <Arduino.h>
 
@@ -432,6 +433,13 @@ AquariumAnimation::AquariumAnimation(U8G2 *u8g2_instance) {
   currentMonth = 1;
   currentYear = 2025;
 
+  tempHour = currentHour;
+  tempMinute = currentMinute;
+  tempSecond = currentSecond;
+  tempDay = currentDay;
+  tempMonth = currentMonth;
+  tempYear = currentYear;
+
   scheduleChangePending = false;
   timeChangePending = false;
   activeScheduleId = 0;
@@ -441,6 +449,7 @@ AquariumAnimation::AquariumAnimation(U8G2 *u8g2_instance) {
 
   logCount = 0;
   logScroll = 0;
+  logsCriticalMode = false;
 
   testSelection = 0;
   testLight = false;
@@ -785,14 +794,19 @@ void AquariumAnimation::startEditing() {
       tempHour = feedFreq;
     }
   } else if (activeScheduleId == 5) { // Date/time
+    // Always preload full date/time state so saving only one row (date or time)
+    // cannot reuse stale values from previous edits.
+    tempHour = currentHour;
+    tempMinute = currentMinute;
+    tempSecond = currentSecond;
+    tempDay = currentDay;
+    tempMonth = currentMonth;
+    tempYear = currentYear;
+
     if (scheduleSelection == 0) {
-      tempHour = currentHour;
-      tempMinute = currentMinute;
-      tempSecond = currentSecond;
+      // Time row edit.
     } else {
-      tempDay = currentDay;
-      tempMonth = currentMonth;
-      tempYear = currentYear;
+      // Date row edit.
     }
   }
 }
@@ -1068,45 +1082,241 @@ void AquariumAnimation::addLog(const char *message, const char *time) {
     logScroll = logCount - 3;
 }
 void AquariumAnimation::logScrollNext() {
-  if (logCount > 3) {
+  const uint8_t totalLogs = logsCriticalMode ? LogManager::getCriticalLogsCount()
+                                             : LogManager::getNormalLogsCount();
+  if (totalLogs > 3) {
     logScroll++;
-    if (logScroll > logCount - 3)
+    if (logScroll > totalLogs - 3)
       logScroll = 0;
   }
+}
+void AquariumAnimation::setLogsCriticalMode(bool criticalMode) {
+  if (logsCriticalMode == criticalMode) {
+    return;
+  }
+
+  logsCriticalMode = criticalMode;
+  logScroll = 0;
 }
 void AquariumAnimation::clearLogs() {
   logCount = 0;
   logScroll = 0;
 }
-void AquariumAnimation::drawLogs(bool btnBackState, bool btnSelectState,
-                                 bool btnNextState) {
-  if (!display)
+void AquariumAnimation::drawLogsCategoryMenu(uint8_t selection,
+                                             bool btnBackState,
+                                             bool btnSelectState,
+                                             bool btnNextState) {
+  if (!display) {
     return;
+  }
+
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(98, 0, 98, 31);
-  display->drawLine(18, 0, 18, 31);
-  display->drawLine(19, 10, 127, 10);
-  display->drawLine(19, 21, 127, 21);
-  display->drawXBMP(1, 8, 16, 16, image_operation_warning_bits);
-  display->setFont(u8g2_font_profont10_tr);
-  if (logCount == 0) {
-    display->drawStr(26, 8, "Brak logow");
+  display->drawLine(0, 0, 0, 31);
+  display->drawLine(19, 0, 19, 31);
+  display->drawLine(20, 10, 113, 10);
+  display->drawLine(20, 21, 113, 21);
+  display->drawLine(114, 0, 114, 31);
+  display->drawLine(127, 0, 127, 31);
+  display->drawLine(115, 10, 126, 10);
+  display->drawLine(115, 20, 126, 20);
+
+  if (selection == 0) {
+    display->drawXBMP(2, 8, 16, 16, image_clock_quarters_bits);
+  } else if (selection == 1) {
+    display->drawXBMP(2, 8, 16, 16, image_operation_warning_bits);
   } else {
+    // Prosta ikona "statystyk" (wykres slupkowy) w obszarze ikony.
+    display->drawFrame(3, 8, 14, 16);
+    display->drawBox(5, 20, 2, 3);
+    display->drawBox(9, 16, 2, 7);
+    display->drawBox(13, 12, 2, 11);
+  }
+
+  display->setFont(u8g2_font_5x7_tr);
+  display->drawStr(24, 8, "Zwykle");
+  display->drawStr(24, 19, "Krytyczne");
+  display->drawStr(24, 30, "Statystyki");
+
+  if (selection == 0) {
+    display->drawXBMP(108, 2, 4, 7, image_ButtonLeft_bits);
+  } else if (selection == 1) {
+    display->drawXBMP(108, 13, 4, 7, image_ButtonLeft_bits);
+  } else {
+    display->drawXBMP(108, 24, 4, 7, image_ButtonLeft_bits);
+  }
+
+  if (!btnBackState)
+    display->drawXBMP(116, 1, 10, 8, image_Pin_back_arrow_bits);
+  if (!btnSelectState)
+    display->drawXBMP(116, 12, 10, 7, image_Layer_11_bits);
+  if (!btnNextState)
+    display->drawXBMP(119, 23, 5, 7, image_arrow_down_bits);
+}
+
+void AquariumAnimation::drawLogsStats(const char *firmwareVersion,
+                                      uint32_t resetCount,
+                                      uint32_t uptimeSeconds,
+                                      uint16_t todayFeedings,
+                                      bool btnBackState, bool btnSelectState,
+                                      bool btnNextState) {
+  if (!display)
+    return;
+  (void)btnSelectState;
+
+  display->setFontMode(1);
+  display->setBitmapMode(1);
+  display->drawLine(0, 0, 0, 31);
+  display->drawLine(0, 10, 113, 10);
+  display->drawLine(0, 21, 113, 21);
+  display->drawLine(114, 0, 114, 31);
+  display->drawLine(127, 0, 127, 31);
+  display->drawLine(115, 10, 126, 10);
+  display->drawLine(115, 20, 126, 20);
+
+  const char *safeVersion =
+      (firmwareVersion != nullptr && firmwareVersion[0] != '\0')
+          ? firmwareVersion
+          : "dev";
+  char lineVersion[22];
+  snprintf(lineVersion, sizeof(lineVersion), "Ver:%.14s", safeVersion);
+
+  char lineResets[22];
+  snprintf(lineResets, sizeof(lineResets), "RST:%lu KRM:%u",
+           static_cast<unsigned long>(resetCount),
+           static_cast<unsigned int>(todayFeedings));
+
+  const unsigned long totalSeconds = static_cast<unsigned long>(uptimeSeconds);
+  const unsigned long days = totalSeconds / 86400UL;
+  const unsigned long hours = (totalSeconds % 86400UL) / 3600UL;
+  const unsigned long minutes = (totalSeconds % 3600UL) / 60UL;
+  const unsigned long seconds = totalSeconds % 60UL;
+
+  char uptimeBuf[22];
+  if (days > 0) {
+    snprintf(uptimeBuf, sizeof(uptimeBuf), "UP:%lud %02lu:%02lu", days, hours,
+             minutes);
+  } else {
+    snprintf(uptimeBuf, sizeof(uptimeBuf), "UP:%02lu:%02lu:%02lu", hours,
+             minutes, seconds);
+  }
+
+  display->setFont(u8g2_font_5x7_tr);
+  display->drawStr(2, 8, lineVersion);
+  display->drawStr(2, 19, lineResets);
+  display->drawStr(2, 30, uptimeBuf);
+
+  if (!btnBackState)
+    display->drawXBMP(116, 1, 10, 8, image_Pin_back_arrow_bits);
+  if (!btnNextState)
+    display->drawXBMP(119, 23, 5, 7, image_arrow_down_bits);
+}
+
+void AquariumAnimation::drawLogs(bool btnBackState, bool btnSelectState,
+                                 bool btnNextState, bool deleteHoldActive,
+                                 uint8_t deleteHoldProgress) {
+  if (!display)
+    return;
+  (void)btnSelectState;
+  display->setFontMode(1);
+  display->setBitmapMode(1);
+
+  if (deleteHoldActive) {
+    const int boxX = 16;
+    const int boxY = 8;
+    const int boxW = 96;
+    const int boxH = 16;
+    const int innerW = boxW - 4;
+
+    display->drawFrame(boxX, boxY, boxW, boxH);
+    const int progressW = (innerW * static_cast<int>(deleteHoldProgress)) / 100;
+    if (progressW > 0) {
+      display->drawBox(boxX + 2, boxY + boxH - 4, progressW, 2);
+    }
+
+    display->setFont(u8g2_font_6x10_tr);
+    const char *deleteText = "USUN";
+    int16_t textX = boxX + ((boxW - display->getStrWidth(deleteText)) / 2);
+    if (textX < boxX + 2) {
+      textX = boxX + 2;
+    }
+    display->drawStr(textX, boxY + 11, deleteText);
+    return;
+  }
+
+  display->drawLine(0, 0, 0, 31);
+  display->drawLine(0, 10, 113, 10);
+  display->drawLine(0, 21, 113, 21);
+  display->drawLine(85, 0, 85, 31);
+  display->drawLine(113, 0, 113, 31);
+  display->drawLine(114, 0, 114, 31);
+  display->drawLine(127, 0, 127, 31);
+  display->drawLine(115, 10, 126, 10);
+  display->drawLine(115, 20, 126, 20);
+
+  display->setFont(u8g2_font_profont10_tr);
+
+  const uint8_t totalLogs = logsCriticalMode ? LogManager::getCriticalLogsCount()
+                                             : LogManager::getNormalLogsCount();
+  if (totalLogs <= 3) {
+    logScroll = 0;
+  } else if (logScroll > totalLogs - 3) {
+    logScroll = 0;
+  }
+
+  if (totalLogs == 0) {
+    display->drawStr(20, 20, "Brak logow");
+  } else {
+    const int msgX = 2;
+    const int msgClipX0 = 1;
+    const int msgClipX1 = 85; // Granica przed separatorem kolumny czasu.
+    const int msgAreaWidth = msgClipX1 - msgX;
+    const int scrollGapPx = 16;
+    const unsigned long scrollPx = millis() / 80UL; // ok. 12.5 px/s.
+
     for (int i = 0; i < 3; i++) {
-      int index = logScroll + i;
-      if (index < logCount) {
-        int yPos = 8 + (i * 11);
-        char msgShort[13];
-        strncpy(msgShort, logs[index].message, 12);
-        msgShort[12] = '\0';
-        display->drawStr(26, yPos, msgShort);
-        display->drawStr(101, yPos, logs[index].time);
-        int arrowY = 3 + (i * 11);
-        display->drawXBMP(21, arrowY, 3, 5, image_ButtonRightSmall_copy_bits);
+      const int offsetFromNewest = logScroll + i;
+      if (offsetFromNewest < totalLogs) {
+        const int indexFromOldest = (totalLogs - 1) - offsetFromNewest;
+        const int yPos = 8 + (i * 11);
+        const int rowTop = i * 11;
+        const int rowBottom = rowTop + 11;
+        char messageBuf[64] = {0};
+        char timeBuf[6] = {0};
+        const bool gotLog = logsCriticalMode
+                                ? LogManager::getCriticalLogAt(
+                                      indexFromOldest, messageBuf,
+                                      sizeof(messageBuf),
+                                      timeBuf, sizeof(timeBuf))
+                                : LogManager::getNormalLogAt(
+                                      indexFromOldest, messageBuf,
+                                      sizeof(messageBuf),
+                                      timeBuf, sizeof(timeBuf));
+        if (!gotLog) {
+          continue;
+        }
+
+        const int msgWidth = display->getStrWidth(messageBuf);
+        display->setClipWindow(msgClipX0, rowTop, msgClipX1, rowBottom);
+        if (msgWidth <= msgAreaWidth) {
+          display->drawStr(msgX, yPos, messageBuf);
+        } else {
+          const int cycleWidth = msgWidth + scrollGapPx;
+          const int offset = static_cast<int>(scrollPx % cycleWidth);
+          const int baseX = msgX - offset;
+          display->drawStr(baseX, yPos, messageBuf);
+          display->drawStr(baseX + cycleWidth, yPos, messageBuf);
+        }
+        display->setMaxClipWindow();
+        display->drawStr(88, yPos, timeBuf);
       }
     }
   }
+
+  if (!btnBackState)
+    display->drawXBMP(116, 1, 10, 8, image_Pin_back_arrow_bits);
+  if (!btnNextState)
+    display->drawXBMP(119, 23, 5, 7, image_arrow_down_bits);
 }
 
 // MENU
@@ -1156,29 +1366,56 @@ void AquariumAnimation::drawMenu(bool btnBackState, bool btnSelectState,
 }
 
 // HARMONOGRAM ĹšWIATĹO
+static const char *modeLabelForSchedule(uint8_t mode) {
+  if (mode == static_cast<uint8_t>(ScheduleMode::AlwaysOn)) {
+    return "Allways ON";
+  }
+  if (mode == static_cast<uint8_t>(ScheduleMode::AlwaysOff)) {
+    return "Allways OFF";
+  }
+  return "Harmonogram";
+}
+
+static void drawScheduleGlyph(U8G2 *oled, uint8_t scheduleId) {
+  if (!oled) {
+    return;
+  }
+
+  switch (scheduleId) {
+  case 0: // Light
+    // Stara ikona swiatla, wycentrowana pionowo jak w ekranie logow.
+    oled->drawXBMP(4, 9, 10, 14, image_Layer_4_1_bits);
+    break;
+
+  case 1: // Aeration
+    // Stara ikona napowietrzania, wycentrowana pionowo jak w ekranie logow.
+    oled->drawXBMP(2, 8, 15, 16, image_schedule_aeration_wind_bits);
+    break;
+
+  case 2: // Filter
+    // Stara ikona filtra, wycentrowana pionowo jak w ekranie logow.
+    oled->drawXBMP(4, 9, 11, 14, image_weather_humidity_1_bits);
+    break;
+  }
+}
+
 void AquariumAnimation::drawSchedule(bool btnBackState, bool btnSelectState,
                                      bool btnNextState) {
   if (!display)
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(0, 10, 113, 10);
-  display->drawLine(0, 21, 113, 21);
-  display->drawXBMP(2, 0, 10, 14, image_Layer_4_1_bits);
-  display->drawLine(15, 1, 15, 32);
-  display->setFont(u8g2_font_6x13_tr);
-  char modeBuf[12];
+  display->drawLine(19, 10, 113, 10);
+  display->drawLine(19, 21, 113, 21);
+  drawScheduleGlyph(display, 0);
+  display->drawLine(18, 0, 18, 31);
+  char modeBuf[24];
   char onBuf[8];
   char offBuf[8];
   const uint8_t shownMode =
       (isEditing && scheduleSelection == 0 && activeScheduleId == 0) ? tempHour
                                                                       : lightMode;
-  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s",
-           shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOn)
-               ? "ON"
-               : (shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOff)
-                      ? "OFF"
-                      : "SCH"));
+  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s", modeLabelForSchedule(shownMode));
 
   if (isEditing && scheduleSelection == 1 && activeScheduleId == 0) {
     if (editState == 1 && (millis() / 500) % 2 == 0)
@@ -1202,7 +1439,9 @@ void AquariumAnimation::drawSchedule(bool btnBackState, bool btnSelectState,
     sprintf(offBuf, "%02d:%02d", scheduleHourOff, scheduleMinOff);
   }
 
-  display->drawStr(19, 9, modeBuf);
+  display->setFont(u8g2_font_5x7_tr);
+  display->drawStr(19, 8, modeBuf);
+  display->setFont(u8g2_font_6x13_tr);
   display->drawStr(23, 20, onBuf);
   display->drawStr(23, 31, offBuf);
   if (scheduleSelection == 0)
@@ -1231,24 +1470,18 @@ void AquariumAnimation::drawScheduleAeration(bool btnBackState,
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(0, 10, 113, 10);
-  display->drawLine(0, 21, 113, 21);
-  display->drawXBMP(1, 0, 15, 16, image_schedule_aeration_wind_bits);
-  display->drawLine(15, 1, 15, 32);
+  display->drawLine(19, 10, 113, 10);
+  display->drawLine(19, 21, 113, 21);
+  drawScheduleGlyph(display, 1);
+  display->drawLine(18, 0, 18, 31);
 
-  display->setFont(u8g2_font_6x13_tr);
-  char modeBuf[12];
+  char modeBuf[24];
   char bufOn[8];
   char bufOff[8];
   const uint8_t shownMode =
       (isEditing && scheduleSelection == 0 && activeScheduleId == 1) ? tempHour
                                                                       : aerationMode;
-  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s",
-           shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOn)
-               ? "ON"
-               : (shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOff)
-                      ? "OFF"
-                      : "SCH"));
+  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s", modeLabelForSchedule(shownMode));
 
   if (isEditing && scheduleSelection == 1 && activeScheduleId == 1) {
     if (editState == 1 && (millis() / 500) % 2 == 0)
@@ -1272,7 +1505,9 @@ void AquariumAnimation::drawScheduleAeration(bool btnBackState,
     sprintf(bufOff, "%02d:%02d", aerationHourOff, aerationMinOff);
   }
 
-  display->drawStr(19, 9, modeBuf);
+  display->setFont(u8g2_font_5x7_tr);
+  display->drawStr(19, 8, modeBuf);
+  display->setFont(u8g2_font_6x13_tr);
   display->drawStr(22, 20, bufOn);
   display->drawStr(22, 31, bufOff);
 
@@ -1302,21 +1537,15 @@ void AquariumAnimation::drawScheduleFilter(bool btnBackState, bool btnSelectStat
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(0, 10, 113, 10);
-  display->drawLine(0, 21, 113, 21);
-  display->drawXBMP(2, 0, 11, 14, image_weather_humidity_1_bits);
-  display->drawLine(15, 1, 15, 32);
-  display->setFont(u8g2_font_6x13_tr);
-  char modeBuf[12], bufOn[10], bufOff[10];
+  display->drawLine(19, 10, 113, 10);
+  display->drawLine(19, 21, 113, 21);
+  drawScheduleGlyph(display, 2);
+  display->drawLine(18, 0, 18, 31);
+  char modeBuf[24], bufOn[10], bufOff[10];
   const uint8_t shownMode =
       (isEditing && scheduleSelection == 0 && activeScheduleId == 2) ? tempHour
                                                                       : filterMode;
-  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s",
-           shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOn)
-               ? "ON"
-               : (shownMode == static_cast<uint8_t>(ScheduleMode::AlwaysOff)
-                      ? "OFF"
-                      : "SCH"));
+  snprintf(modeBuf, sizeof(modeBuf), "MODE:%s", modeLabelForSchedule(shownMode));
   if (isEditing && scheduleSelection == 1 && activeScheduleId == 2) {
     if (editState == 1) {
       if ((millis() / 500) % 2 == 0)
@@ -1347,7 +1576,9 @@ void AquariumAnimation::drawScheduleFilter(bool btnBackState, bool btnSelectStat
   } else {
     sprintf(bufOff, "%02d:%02d", filterHourOff, filterMinOff);
   }
-  display->drawStr(19, 9, modeBuf);
+  display->setFont(u8g2_font_5x7_tr);
+  display->drawStr(19, 8, modeBuf);
+  display->setFont(u8g2_font_6x13_tr);
   display->drawStr(23, 20, bufOn);
   display->drawStr(23, 31, bufOff);
   if (scheduleSelection == 0)
@@ -1377,7 +1608,7 @@ void AquariumAnimation::drawScheduleTemp(bool btnBackState, bool btnSelectState,
     return;
   display->setFontMode(1);
   display->setBitmapMode(1);
-  display->drawLine(15, 1, 15, 32);
+  display->drawLine(18, 0, 18, 31);
   display->drawXBMP(3, 4, 13, 25, image_weather_temperature_bits);
   display->setFont(u8g2_font_timR24_tr);
   char tempBuf[10];
@@ -1424,9 +1655,9 @@ void AquariumAnimation::drawScheduleFeeding(bool btnBackState,
 
   // Ikona karmienia
   display->drawXBMP(2, 1, 25, 29, image_Layer_1_bits);
+  display->drawLine(29, 0, 29, 31);
 
   // Pionowa linia oddzielajÄ…ca ikonÄ™
-  display->drawLine(29, 0, 29, 31);
 
   // --- WIERSZ 1: CZAS KARMIENIA ---
   display->setFont(u8g2_font_timR14_tr);
@@ -1783,7 +2014,13 @@ void AquariumAnimation::testNext() {
 
 void AquariumAnimation::toggleTestOption() {
   if (testSelection == 0) {
-    isEditing = !isEditing;
+    if (!isEditing) {
+      // Pierwszy SELECT od razu zmienia kat, aby bylo widac reakcje serwa.
+      isEditing = true;
+      incrementTestValue();
+    } else {
+      isEditing = false;
+    }
   } else if (testSelection == 1) {
     testHeater = !testHeater;
   } else if (testSelection == 2) {

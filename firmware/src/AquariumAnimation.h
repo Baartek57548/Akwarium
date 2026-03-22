@@ -125,6 +125,7 @@ private:
   LogEntry logs[20];
   uint8_t logCount;
   uint8_t logScroll;
+  bool logsCriticalMode;
 
   // Testy
   uint8_t testSelection;
@@ -181,7 +182,13 @@ public:
   void drawScheduleFeeding(bool btnBack, bool btnSelect, bool btnNext);
 
   void drawSettingsDateTime(bool btnBack, bool btnSelect, bool btnNext);
-  void drawLogs(bool btnBack, bool btnSelect, bool btnNext);
+  void drawLogsCategoryMenu(uint8_t selection, bool btnBack, bool btnSelect,
+                            bool btnNext);
+  void drawLogsStats(const char *firmwareVersion, uint32_t resetCount,
+                     uint32_t uptimeSeconds, uint16_t todayFeedings,
+                     bool btnBack, bool btnSelect, bool btnNext);
+  void drawLogs(bool btnBack, bool btnSelect, bool btnNext,
+                bool deleteHoldActive, uint8_t deleteHoldProgress);
   void drawTests(bool btnBack, bool btnSelect, bool btnNext);
   void drawAccessPointScreen(const char *apName, const char *apPass,
                              const char *ip, uint8_t clients);
@@ -214,6 +221,7 @@ public:
   void setTargetTempSetting(uint8_t value);
   void setHeaterMode(uint8_t mode);
   void logScrollNext();
+  void setLogsCriticalMode(bool criticalMode);
   void addLog(const char *message, const char *time);
   void clearLogs();
   void scheduleEditIncrement();

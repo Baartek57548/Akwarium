@@ -49,6 +49,8 @@ public:
   // Diagnostyka resetow
   static int getLastResetReason();
   static const char *getLastResetLabel();
+  static uint32_t getResetCount();
+  static uint32_t getUptimeSeconds();
 
 private:
   static void hardwareSetup();
