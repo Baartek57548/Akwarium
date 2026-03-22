@@ -15,7 +15,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aquarium Controller ESP32</title>
-    <link rel="stylesheet" href="style.css?v=3">
+    <link rel="stylesheet" href="style.css?v=4">
     <style>
         /* Custom Time Inputs (Pills) */
         input[type="time"].time-pill {
@@ -485,14 +485,14 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                     <p>Wgraj nowy plik .bin firmware'u do mikrokontrolera ESP32-S3.</p>
                 </div>
                 
-                <div class="card glass" style="max-width: 640px; margin: 0 auto; padding: 50px 40px; border: 1px solid rgba(255,255,255,0.05); border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+                <div class="card glass" style="width: 100%; max-width: none; margin: 0; padding: 50px 40px; border: 1px solid rgba(255,255,255,0.05); border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
                     <div class="card-body" style="text-align: center;">
                         <div style="width: 80px; height: 80px; background: rgba(59, 130, 246, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px auto;">
                             <i class="fa-solid fa-cloud-arrow-up fa-2x" style="color: var(--accent-blue);"></i>
                         </div>
                         
                         <h3 class="mb-2" style="font-size: 24px; font-weight: 600; color: #f8fafc;">Instalacja nowej wersji</h2>
-                        <p class="text-muted mb-4" style="font-size: 14px; max-width: 400px; margin-left: auto; margin-right: auto; line-height: 1.5;">Prześlij skompilowany plik <code style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-family: monospace; color: var(--accent-cyan);">.bin</code> aby zaktualizować oprogramowanie bazowe mikrokontrolera ESP32-S3 sterującego akwarium.</p>
+                        <p class="text-muted mb-4" style="font-size: 14px; max-width: none; margin-left: auto; margin-right: auto; line-height: 1.5;">Prześlij skompilowany plik <code style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-family: monospace; color: var(--accent-cyan);">.bin</code> aby zaktualizować oprogramowanie bazowe mikrokontrolera ESP32-S3 sterującego akwarium.</p>
                         
                         <div class="file-upload-wrapper mb-4" style="border: 2px dashed rgba(255,255,255,0.15); border-radius: 16px; padding: 40px 20px; transition: border-color 0.3s, background 0.3s; cursor: pointer; background: rgba(0,0,0,0.2);" onmouseover="this.style.borderColor='var(--accent-blue)'; this.style.background='rgba(59, 130, 246, 0.05)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.15)'; this.style.background='rgba(0,0,0,0.2)';" onclick="document.getElementById('firmware-file').click()">
                             <input type="file" id="firmware-file" accept=".bin" style="display: none;">
@@ -627,7 +627,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
                         </div>
                         <div class="card-body" style="gap: 15px;">
                             <div style="margin-bottom: 5px;">
-                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; max-width: 700px;">
+                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; max-width: none;">
                                     <strong>Restart ESP32</strong> wymusza ponowne uruchomienie systemu z zachowaniem wszystkich ustawień i harmonogramów w uPamięci (NVS).<br>
                                     <strong>Przywrócenie Ustawień Fabrycznych</strong> (hard reset) trwale kasuje wszystkie dane na urządzeniu (w tym dane logowania WiFi AP oraz ustawioną automatykę temp/karmnika).
                                 </p>
@@ -654,7 +654,7 @@ const char web_index_html[] PROGMEM = R"rawliteral(
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=4"></script>
 </body>
 </html>
 
@@ -829,7 +829,9 @@ body {
     flex: 1;
     margin-left: var(--sidebar-width);
     padding: 32px 48px;
-    max-width: 1400px;
+    width: calc(100vw - var(--sidebar-width));
+    max-width: none;
+    min-height: 100vh;
 }
 
 /* Topbar */
@@ -1359,7 +1361,8 @@ input:checked + .slider:before {
 
 /* Timeline Container (Harmonogramy) */
 .timeline-container {
-    max-width: 800px;
+    width: 100%;
+    max-width: none;
 }
 .p-4 { padding: 24px; }
 .mh-2 { font-size: 18px; font-weight: 600; }
@@ -1429,7 +1432,8 @@ input:checked + .slider:before {
 
 /* Terminal Layout (Logi) */
 .terminal {
-    max-width: 1000px;
+    width: 100%;
+    max-width: none;
     display: flex;
     flex-direction: column;
     overflow: hidden;
