@@ -9,7 +9,8 @@
 #include "AquariumAnimation.h"
 #include "BleManager.h"
 #include "ConfigManager.h"
-#include "ConfigValidation.h"
+#include "FirmwareInfo.h"
+#include "LogManager.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
@@ -44,6 +45,10 @@ enum class UiState {
 };
 UiState uiState = UiState::HOME;
 
+enum class LogsViewState { SELECT_TYPE, SHOW_NORMAL, SHOW_CRITICAL, SHOW_STATS };
+LogsViewState logsViewState = LogsViewState::SELECT_TYPE;
+uint8_t logsTypeSelection = 0; // 0=Zwykle, 1=Krytyczne, 2=Statystyki
+
 bool lastUpPressed = false;
 bool lastSelectPressed = false;
 bool lastDownPressed = false;
@@ -52,12 +57,59 @@ bool manualFeedComboTriggered = false;
 bool feedingUiActive = false;
 UiState uiStateBeforeFeeding = UiState::HOME;
 unsigned long lastUiInteractionMs = 0;
+unsigned long logsDeleteHoldStartMs = 0;
+bool logsDeleteHoldTriggered = false;
+bool logsDeleteHoldActive = false;
+uint8_t logsDeleteHoldProgress = 0;
+uint16_t todayFeedingsCount = 0;
+uint8_t feedingsCounterDay = 1;
+uint8_t feedingsCounterMonth = 1;
+uint16_t feedingsCounterYear = 2025;
+
+#ifndef RELAY_HEATER_PIN
+#define RELAY_HEATER_PIN 4
+#endif
+#ifndef RELAY_FILTER_PIN
+#define RELAY_FILTER_PIN 2
+#endif
+#ifndef RELAY_LIGHT_PIN
+#define RELAY_LIGHT_PIN 5
+#endif
+#ifndef RELAY_FEEDER_PIN
+#define RELAY_FEEDER_PIN 3
+#endif
 
 #define BUTTON_UP_PIN 15
 #define BUTTON_SELECT_PIN 16
 #define BUTTON_DOWN_PIN 14
 #define MANUAL_FEED_HOLD_MS 1000UL
 #define UI_IDLE_RETURN_HOME_MS 30000UL
+#define LOGS_DELETE_HOLD_MS 3000UL
+
+static void clampRelayPinsAtBoot() {
+  // Szybkie "usztywnienie" pinow po restarcie, aby ograniczyc przypadkowe
+  // klikniecia przekaznikow podczas normalnego programowania i bootowania.
+  // Dla restartu po OTA/BLE odtwarzamy poziomy zapisane tuz przed restartem.
+  uint8_t lightLevel = HIGH;
+  uint8_t filterLevel = HIGH;
+  uint8_t heaterLevel = HIGH;
+  uint8_t feederLevel = HIGH;
+  const bool hasSavedLevels = OtaManager::takeBootRelayLevels(
+      lightLevel, filterLevel, heaterLevel, feederLevel);
+
+  const uint8_t relayPins[] = {RELAY_LIGHT_PIN, RELAY_FILTER_PIN,
+                               RELAY_HEATER_PIN, RELAY_FEEDER_PIN};
+  const uint8_t relayLevels[] = {lightLevel, filterLevel, heaterLevel,
+                                 feederLevel};
+
+  for (size_t i = 0; i < (sizeof(relayPins) / sizeof(relayPins[0])); i++) {
+    const uint8_t pin = relayPins[i];
+    const uint8_t level = hasSavedLevels ? relayLevels[i] : HIGH;
+    digitalWrite(pin, level); // Preload latch (najpierw poziom, potem OUTPUT).
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, level);
+  }
+}
 
 static bool shouldApplyUiIdleHomeTimeout(UiState state) {
   if (state == UiState::HOME)
@@ -69,12 +121,31 @@ static bool shouldApplyUiIdleHomeTimeout(UiState state) {
   return true;
 }
 
+static void resetLogsDeleteHoldState() {
+  logsDeleteHoldStartMs = 0;
+  logsDeleteHoldTriggered = false;
+  logsDeleteHoldActive = false;
+  logsDeleteHoldProgress = 0;
+}
+
+static void syncDailyFeedingsCounterDate() {
+  SharedStateData snap = SharedState::getSnapshot();
+  if (snap.day != feedingsCounterDay || snap.month != feedingsCounterMonth ||
+      snap.year != feedingsCounterYear) {
+    todayFeedingsCount = 0;
+    feedingsCounterDay = snap.day;
+    feedingsCounterMonth = snap.month;
+    feedingsCounterYear = snap.year;
+  }
+}
+
 static void syncBleSessionWithUiState() {
-  // BLE nie moze juz startowac tylko dlatego, ze OLED jest aktywny.
-  // Reklamowanie jest dozwolone tylko na ekranie Bluetooth, a aktywne
-  // polaczenie moze tymczasowo utrzymac sesje po wyjsciu z tego widoku.
+  // BLE ma byc wlaczane tylko z funkcji "Bluetooth".
+  // Wyjatek: podczas ekranu karmienia utrzymujemy sesje, jesli wejsciem
+  // byl ekran Bluetooth.
   const bool shouldEnableBle =
-      (uiState == UiState::BLUETOOTH) || BleManager::isConnected();
+      (uiState == UiState::BLUETOOTH) ||
+      (uiState == UiState::FEEDING && uiStateBeforeFeeding == UiState::BLUETOOTH);
 
   if (shouldEnableBle) {
     BleManager::start();
@@ -120,6 +191,33 @@ static volatile bool hasPendingScheduleUpdate = false;
 static volatile bool hasPendingTimeUpdate = false;
 static PendingScheduleUpdate pendingScheduleUpdate = {};
 static PendingTimeUpdate pendingTimeUpdate = {};
+static unsigned long suppressUiTimeSyncUntilMs = 0;
+
+static bool isUiTimeSyncSuppressed(unsigned long nowMs) {
+  if (suppressUiTimeSyncUntilMs == 0) {
+    return false;
+  }
+  return static_cast<long>(suppressUiTimeSyncUntilMs - nowMs) > 0;
+}
+
+static void suppressUiTimeSyncForManualFeed(unsigned long nowMs) {
+  // Krótkie okno ochronne: kombinacja 3 przycisków ma uruchamiać karmienie,
+  // bez jakiejkolwiek ingerencji w RTC.
+  suppressUiTimeSyncUntilMs = nowMs + 3000UL;
+
+  portENTER_CRITICAL(&pendingUiMux);
+  hasPendingTimeUpdate = false;
+  pendingTimeUpdate = {};
+  portEXIT_CRITICAL(&pendingUiMux);
+
+  if (animation) {
+    // Wyczyść ewentualne "pending" z edycji daty/czasu.
+    if (uiState == UiState::SETTINGS_DATETIME && animation->isEditingActive()) {
+      animation->cancelEditing();
+    }
+    animation->hasTimeChanged();
+  }
+}
 
 static void queueScheduleUpdateFromAnimation() {
   if (!animation)
@@ -182,7 +280,18 @@ static void captureUiChanges() {
     queueScheduleUpdateFromAnimation();
   }
 
-  if (animation->hasTimeChanged()) {
+  unsigned long nowMs = millis();
+  if (isUiTimeSyncSuppressed(nowMs)) {
+    if (animation->hasTimeChanged()) {
+      LogManager::logWarn(
+          "Pominieto zapis czasu z UI podczas recznego karmienia.");
+    }
+    return;
+  }
+
+  // Accept RTC time changes only from Date/Time screen to avoid accidental
+  // writes when leaving other views (for example Tests).
+  if (uiState == UiState::SETTINGS_DATETIME && animation->hasTimeChanged()) {
     queueTimeUpdateFromAnimation();
   }
 }
@@ -222,55 +331,35 @@ static void applyPendingUiChanges() {
   portEXIT_CRITICAL(&pendingUiMux);
 
   if (applySchedule) {
-    ConfigPatch patch = {};
-    patch.hasLightMode = true;
-    patch.lightMode = localSchedule.lightMode;
-    patch.hasDayStartHour = true;
-    patch.dayStartHour = localSchedule.dayStartHour;
-    patch.hasDayStartMinute = true;
-    patch.dayStartMinute = localSchedule.dayStartMinute;
-    patch.hasDayEndHour = true;
-    patch.dayEndHour = localSchedule.dayEndHour;
-    patch.hasDayEndMinute = true;
-    patch.dayEndMinute = localSchedule.dayEndMinute;
-
-    patch.hasAerationMode = true;
-    patch.aerationMode = localSchedule.aerationMode;
-    patch.hasAerationHourOn = true;
-    patch.aerationHourOn = localSchedule.aerationHourOn;
-    patch.hasAerationMinuteOn = true;
-    patch.aerationMinuteOn = localSchedule.aerationMinuteOn;
-    patch.hasAerationHourOff = true;
-    patch.aerationHourOff = localSchedule.aerationHourOff;
-    patch.hasAerationMinuteOff = true;
-    patch.aerationMinuteOff = localSchedule.aerationMinuteOff;
-
-    patch.hasFilterMode = true;
-    patch.filterMode = localSchedule.filterMode;
-    patch.hasFilterHourOn = true;
-    patch.filterHourOn = localSchedule.filterHourOn;
-    patch.hasFilterMinuteOn = true;
-    patch.filterMinuteOn = localSchedule.filterMinuteOn;
-    patch.hasFilterHourOff = true;
-    patch.filterHourOff = localSchedule.filterHourOff;
-    patch.hasFilterMinuteOff = true;
-    patch.filterMinuteOff = localSchedule.filterMinuteOff;
-
-    patch.hasHeaterMode = true;
-    patch.heaterMode = localSchedule.heaterMode;
-    patch.hasTargetTemp = true;
-    patch.targetTemp = localSchedule.targetTemp;
-    patch.hasFeedHour = true;
-    patch.feedHour = localSchedule.feedHour;
-    patch.hasFeedMinute = true;
-    patch.feedMinute = localSchedule.feedMinute;
-    patch.hasFeedMode = true;
-    patch.feedMode = localSchedule.feedMode;
-
     Config cfg = ConfigManager::getCopy();
-    ConfigValidationResult validation = {};
-    if (ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
-      ConfigManager::updateAndSave(cfg);
+    cfg.lightMode = constrain(localSchedule.lightMode, 0, 2);
+    cfg.dayStartHour = constrain(localSchedule.dayStartHour, 0, 23);
+    cfg.dayStartMinute = constrain(localSchedule.dayStartMinute, 0, 59);
+    cfg.dayEndHour = constrain(localSchedule.dayEndHour, 0, 23);
+    cfg.dayEndMinute = constrain(localSchedule.dayEndMinute, 0, 59);
+
+    cfg.aerationMode = constrain(localSchedule.aerationMode, 0, 2);
+    cfg.aerationHourOn = constrain(localSchedule.aerationHourOn, 0, 23);
+    cfg.aerationMinuteOn = constrain(localSchedule.aerationMinuteOn, 0, 59);
+    cfg.aerationHourOff = constrain(localSchedule.aerationHourOff, 0, 23);
+    cfg.aerationMinuteOff = constrain(localSchedule.aerationMinuteOff, 0, 59);
+
+    cfg.filterMode = constrain(localSchedule.filterMode, 0, 2);
+    cfg.filterHourOn = constrain(localSchedule.filterHourOn, 0, 23);
+    cfg.filterMinuteOn = constrain(localSchedule.filterMinuteOn, 0, 59);
+    cfg.filterHourOff = constrain(localSchedule.filterHourOff, 0, 23);
+    cfg.filterMinuteOff = constrain(localSchedule.filterMinuteOff, 0, 59);
+
+    cfg.heaterMode = constrain(localSchedule.heaterMode, 0, 1);
+    cfg.targetTemp = constrain(localSchedule.targetTemp, 18.0f, 30.0f);
+    cfg.feedHour = constrain(localSchedule.feedHour, 0, 23);
+    cfg.feedMinute = constrain(localSchedule.feedMinute, 0, 59);
+    cfg.feedMode = constrain(localSchedule.feedMode, 0, 3);
+
+    if (ConfigManager::updateAndSave(cfg)) {
+      LogManager::logInfo("Zapisano harmonogramy.");
+    } else {
+      LogManager::logWarn("Blad zapisu harmonogramow.");
     }
   }
 
@@ -294,6 +383,7 @@ void updateUiState() {
   if (lastUiInteractionMs == 0) {
     lastUiInteractionMs = nowMs;
   }
+  syncDailyFeedingsCounterDate();
 
   bool isUpPressed = (digitalRead(BUTTON_UP_PIN) == LOW);
   bool isSelectPressed = (digitalRead(BUTTON_SELECT_PIN) == LOW);
@@ -302,10 +392,23 @@ void updateUiState() {
   bool upJustPressed = isUpPressed && !lastUpPressed;
   bool selectJustPressed = isSelectPressed && !lastSelectPressed;
   bool downJustPressed = isDownPressed && !lastDownPressed;
+  const bool oledWasSleeping = (PowerManager::getCurrentMode() != MODE_ACTIVE);
+
+  // Pierwsze klikniecie po wygaszeniu ekranu tylko wybudza OLED.
+  // Zabezpiecza to przed przypadkowym wejsciem do menu z HOME.
+  if (oledWasSleeping && (upJustPressed || selectJustPressed || downJustPressed)) {
+    PowerManager::registerActivity();
+    lastUiInteractionMs = nowMs;
+    lastUpPressed = isUpPressed;
+    lastSelectPressed = isSelectPressed;
+    lastDownPressed = isDownPressed;
+    return;
+  }
 
   if (allButtonsPressed) {
     if (allButtonsHoldStartMs == 0) {
       allButtonsHoldStartMs = millis();
+      suppressUiTimeSyncForManualFeed(nowMs);
     } else if (!manualFeedComboTriggered &&
                (millis() - allButtonsHoldStartMs >= MANUAL_FEED_HOLD_MS)) {
       SystemController::feedNow();
@@ -320,6 +423,7 @@ void updateUiState() {
 
   bool feedingNow = SystemController::isFeedingNow();
   if (feedingNow && !feedingUiActive) {
+    todayFeedingsCount++;
     uiStateBeforeFeeding = uiState;
     uiState = UiState::FEEDING;
     feedingUiActive = true;
@@ -340,6 +444,7 @@ void updateUiState() {
   }
 
   if (allButtonsPressed || manualFeedComboTriggered) {
+    resetLogsDeleteHoldState();
     lastUpPressed = isUpPressed;
     lastSelectPressed = isSelectPressed;
     lastDownPressed = isDownPressed;
@@ -373,8 +478,12 @@ void updateUiState() {
       if (sel == 0) {
         uiState = UiState::SCHEDULE_LIGHT;
         animation->setActiveScheduleId(0);
-      } else if (sel == 1)
+      } else if (sel == 1) {
         uiState = UiState::LOGS;
+        logsViewState = LogsViewState::SELECT_TYPE;
+        logsTypeSelection = 0;
+        animation->setLogsCriticalMode(false);
+      }
       else if (sel == 2) {
         uiState = UiState::SETTINGS_DATETIME;
         animation->setActiveScheduleId(5);
@@ -386,9 +495,11 @@ void updateUiState() {
         uiState = UiState::MENU;
       } else if (sel == 5) {
         AkwariumWifi::startAP();
+        LogManager::logInfo("WiFi AP wlaczony z menu.");
         uiState = UiState::ACCESS_POINT;
       } else if (sel == 6) {
         BleManager::start();
+        LogManager::logInfo("Bluetooth wlaczony z menu.");
         uiState = UiState::BLUETOOTH;
       }
     }
@@ -411,6 +522,7 @@ void updateUiState() {
         lastClientSeenMs > 0 &&
         (millis() - lastClientSeenMs >= AP_CLIENT_GRACE_MS)) {
       AkwariumWifi::stopAP();
+      LogManager::logInfo("WiFi AP wylaczony automatycznie.");
       uiState = UiState::HOME;
       maxClients = 0;
       lastClientSeenMs = 0;
@@ -419,6 +531,7 @@ void updateUiState() {
     // Manual exit
     if (upJustPressed) {
       AkwariumWifi::stopAP();
+      LogManager::logInfo("WiFi AP wylaczony z menu.");
       uiState = UiState::MENU;
       maxClients = 0;
       lastClientSeenMs = 0;
@@ -427,20 +540,116 @@ void updateUiState() {
   }
 
   case UiState::BLUETOOTH: {
-    // Ekran Bluetooth jest tylko widokiem statusu. Reklamowanie BLE jest teraz
-    // sprzezone globalnie z aktywnym OLED, a aktywne polaczenie blokuje
-    // wygaszenie ekranu.
+    static uint8_t maxClients = 0;
+    static unsigned long lastClientSeenMs = 0;
+    constexpr unsigned long BLE_CLIENT_GRACE_MS = 60000UL;
+    uint8_t currentClients = BleManager::getConnectedClients();
+    if (currentClients > maxClients) {
+      maxClients = currentClients;
+    }
+    if (currentClients > 0) {
+      lastClientSeenMs = millis();
+    }
+
+    // Auto-disconnect analogicznie do AP: po wyjsciu ostatniego klienta
+    // czekamy chwile i zamykamy sesje BLE.
+    if (maxClients > 0 && currentClients == 0 && lastClientSeenMs > 0 &&
+        (millis() - lastClientSeenMs >= BLE_CLIENT_GRACE_MS)) {
+      BleManager::stop();
+      LogManager::logInfo("Bluetooth wylaczony automatycznie.");
+      uiState = UiState::HOME;
+      maxClients = 0;
+      lastClientSeenMs = 0;
+    }
+
     if (upJustPressed) {
+      BleManager::stop();
+      LogManager::logInfo("Bluetooth wylaczony z menu.");
       uiState = UiState::MENU;
+      maxClients = 0;
+      lastClientSeenMs = 0;
     }
     break;
   }
 
   case UiState::LOGS:
-    if (upJustPressed)
-      uiState = UiState::MENU;
-    if (downJustPressed)
-      animation->logScrollNext();
+    if (logsViewState == LogsViewState::SELECT_TYPE) {
+      resetLogsDeleteHoldState();
+      if (upJustPressed)
+        uiState = UiState::MENU;
+      if (downJustPressed) {
+        logsTypeSelection = (logsTypeSelection + 1) % 3;
+      }
+      if (selectJustPressed) {
+        if (logsTypeSelection == 0) {
+          logsViewState = LogsViewState::SHOW_NORMAL;
+          animation->setLogsCriticalMode(false);
+        } else if (logsTypeSelection == 1) {
+          logsViewState = LogsViewState::SHOW_CRITICAL;
+          animation->setLogsCriticalMode(true);
+        } else {
+          logsViewState = LogsViewState::SHOW_STATS;
+        }
+      }
+    } else if (logsViewState == LogsViewState::SHOW_STATS) {
+      resetLogsDeleteHoldState();
+      if (upJustPressed) {
+        logsViewState = LogsViewState::SELECT_TYPE;
+      }
+      if (selectJustPressed) {
+        logsViewState = LogsViewState::SHOW_NORMAL;
+        logsTypeSelection = 0;
+        animation->setLogsCriticalMode(false);
+      }
+    } else {
+      if (upJustPressed) {
+        logsViewState = LogsViewState::SELECT_TYPE;
+        resetLogsDeleteHoldState();
+      }
+      if (downJustPressed) {
+        animation->logScrollNext();
+      }
+
+      if (isSelectPressed) {
+        if (logsDeleteHoldStartMs == 0) {
+          logsDeleteHoldStartMs = nowMs;
+          logsDeleteHoldTriggered = false;
+        }
+
+        if (!logsDeleteHoldTriggered) {
+          unsigned long heldMs = nowMs - logsDeleteHoldStartMs;
+          logsDeleteHoldActive = true;
+          logsDeleteHoldProgress =
+              static_cast<uint8_t>(min(100UL, (heldMs * 100UL) / LOGS_DELETE_HOLD_MS));
+
+          if (heldMs >= LOGS_DELETE_HOLD_MS) {
+            if (logsViewState == LogsViewState::SHOW_NORMAL) {
+              LogManager::clearNormalLogs();
+            } else {
+              LogManager::clearCriticalLogs();
+            }
+            logsDeleteHoldTriggered = true;
+            logsDeleteHoldActive = false;
+            logsDeleteHoldProgress = 0;
+          }
+        }
+      } else {
+        if (logsDeleteHoldStartMs != 0 && !logsDeleteHoldTriggered) {
+          if (logsViewState == LogsViewState::SHOW_NORMAL) {
+            logsViewState = LogsViewState::SHOW_CRITICAL;
+            logsTypeSelection = 1;
+            animation->setLogsCriticalMode(true);
+          } else if (logsViewState == LogsViewState::SHOW_CRITICAL) {
+            logsViewState = LogsViewState::SHOW_STATS;
+            logsTypeSelection = 2;
+          }
+        }
+        logsDeleteHoldStartMs = 0;
+        logsDeleteHoldTriggered = false;
+        logsDeleteHoldActive = false;
+        logsDeleteHoldProgress = 0;
+      }
+    }
     break;
 
   case UiState::TESTS:
@@ -487,8 +696,8 @@ void updateUiState() {
     if (downJustPressed) {
       if (!animation->isEditingActive()) {
         if (animation->getScheduleSelection() == 2) {
-          uiState = UiState::SCHEDULE_AERATION;
-          animation->setActiveScheduleId(1);
+          uiState = UiState::SCHEDULE_FILTER;
+          animation->setActiveScheduleId(2);
         } else
           animation->scheduleNext();
       } else
@@ -510,8 +719,8 @@ void updateUiState() {
     if (downJustPressed) {
       if (!animation->isEditingActive()) {
         if (animation->getScheduleSelection() == 2) {
-          uiState = UiState::SCHEDULE_FILTER;
-          animation->setActiveScheduleId(2);
+          uiState = UiState::SCHEDULE_TEMP;
+          animation->setActiveScheduleId(3);
         } else
           animation->scheduleNext();
       } else
@@ -533,8 +742,8 @@ void updateUiState() {
     if (downJustPressed) {
       if (!animation->isEditingActive()) {
         if (animation->getScheduleSelection() == 2) {
-          uiState = UiState::SCHEDULE_TEMP;
-          animation->setActiveScheduleId(3);
+          uiState = UiState::SCHEDULE_AERATION;
+          animation->setActiveScheduleId(1);
         } else
           animation->scheduleNext();
       } else
@@ -593,6 +802,10 @@ void updateUiState() {
   case UiState::FEEDING:
     // exit logic handled elswhere or just exit
     break;
+  }
+
+  if (uiState != UiState::LOGS) {
+    resetLogsDeleteHoldState();
   }
 
   lastUpPressed = isUpPressed;
@@ -668,7 +881,19 @@ void VideoTask(void *pvParameters) {
           animation->drawScheduleFeeding(isUp, isSel, isDn);
           break;
         case UiState::LOGS:
-          animation->drawLogs(isUp, isSel, isDn);
+          if (logsViewState == LogsViewState::SELECT_TYPE) {
+            animation->drawLogsCategoryMenu(logsTypeSelection, isUp, isSel,
+                                            isDn);
+          } else if (logsViewState == LogsViewState::SHOW_STATS) {
+            animation->drawLogsStats(AQUARIUM_FIRMWARE_VERSION,
+                                     SystemController::getResetCount(),
+                                     SystemController::getUptimeSeconds(),
+                                     todayFeedingsCount,
+                                     isUp, isSel, isDn);
+          } else {
+            animation->drawLogs(isUp, isSel, isDn, logsDeleteHoldActive,
+                                logsDeleteHoldProgress);
+          }
           break;
         case UiState::SETTINGS_DATETIME:
           animation->drawSettingsDateTime(isUp, isSel, isDn);
@@ -707,6 +932,8 @@ void VideoTask(void *pvParameters) {
 }
 
 void setup() {
+  clampRelayPinsAtBoot();
+
   Serial.begin(115200);
 
   // ESP32-S3 Zero: stabilna magistrala I2C dla OLED/RTC na GPIO8(GPIO SDA) i GPIO9(GPIO SCL)
@@ -718,8 +945,57 @@ void setup() {
   display.setContrast(255);
   display.setPowerSave(0);
   display.clearBuffer();
-  display.setFont(u8g2_font_6x10_tr);
-  display.drawStr(0, 12, "Wybudzanie...");
+  display.setFont(u8g2_font_4x6_tr);
+
+  const char *rawVersion = AQUARIUM_FIRMWARE_VERSION;
+  char versionLabel[40] = {0};
+  if (!rawVersion || rawVersion[0] == '\0') {
+    rawVersion = "dev";
+  }
+
+  if (rawVersion[0] == 'v' || rawVersion[0] == 'V') {
+    snprintf(versionLabel, sizeof(versionLabel), "%s", rawVersion);
+  } else {
+    snprintf(versionLabel, sizeof(versionLabel), "V%s", rawVersion);
+  }
+
+  char versionVisible[40] = {0};
+  snprintf(versionVisible, sizeof(versionVisible), "%s", versionLabel);
+
+  char startupTitle[64] = {0};
+  bool wasTrimmed = false;
+  while (true) {
+    snprintf(startupTitle, sizeof(startupTitle), "Sterownik Akwarium (%s%s)",
+             versionVisible, wasTrimmed ? "..." : "");
+
+    if (display.getStrWidth(startupTitle) <= display.getDisplayWidth()) {
+      break;
+    }
+
+    size_t visibleLen = strlen(versionVisible);
+    if (visibleLen <= 1) {
+      snprintf(startupTitle, sizeof(startupTitle), "Sterownik Akwarium");
+      break;
+    }
+
+    versionVisible[visibleLen - 1] = '\0';
+    wasTrimmed = true;
+  }
+
+  int16_t titleX = (display.getDisplayWidth() - display.getStrWidth(startupTitle)) / 2;
+  if (titleX < 0) {
+    titleX = 0;
+  }
+  display.drawStr(titleX, 9, startupTitle);
+
+  display.setFont(u8g2_font_5x7_tr);
+  const char *authorLine = "by Bartosz Wolny";
+  int16_t authorX =
+      (display.getDisplayWidth() - display.getStrWidth(authorLine)) / 2;
+  if (authorX < 0) {
+    authorX = 0;
+  }
+  display.drawStr(authorX, 23, authorLine);
   display.sendBuffer();
 
   // Inicjalizacja sprzetu, pamieci (CRC NVS), baterii i logow

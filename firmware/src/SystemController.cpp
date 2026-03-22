@@ -130,6 +130,10 @@ static const uint32_t RTC_PERSIST_EPOCH_INTERVAL_SEC = 3600UL;
 static const unsigned long RTC_PERSIST_INITIAL_DELAY_MS = 60000UL;
 static const unsigned long RTC_PERSIST_RETRY_DELAY_MS = 300000UL;
 static const uint8_t RTC_PERSIST_MAX_FAILS = 1;
+static Preferences systemStatsPrefs;
+static bool systemStatsReady = false;
+static uint32_t systemResetCount = 0;
+static unsigned long systemBootStartMs = 0;
 
 static bool isDeadlineReached(unsigned long nowMs, unsigned long deadlineMs) {
   return static_cast<long>(nowMs - deadlineMs) >= 0;
@@ -292,10 +296,16 @@ void SystemController::hardwareSetup() {
            FEEDER_PIN);
   LogManager::logInfo(pinMapMsg);
 
+  // Preload poziomu zanim przelaczymy pin na OUTPUT, aby zminimalizowac
+  // pojedyncze "klikniecia" przekaznikow przy starcie.
+  writeManagedOutput(LIGHT_PIN, false, LIGHT_OUTPUT_ACTIVE_HIGH);
   pinMode(LIGHT_PIN, OUTPUT);
   writeManagedOutput(LIGHT_PIN, false, LIGHT_OUTPUT_ACTIVE_HIGH);
+  writeManagedOutput(PUMP_PIN, false, PUMP_OUTPUT_ACTIVE_HIGH);
   pinMode(PUMP_PIN, OUTPUT);
   writeManagedOutput(PUMP_PIN, false, PUMP_OUTPUT_ACTIVE_HIGH);
+  // Grzalka pozostaje podlaczona (failsafe) az do decyzji runtime.
+  writeManagedOutput(HEATER_PIN, true, HEATER_OUTPUT_ACTIVE_HIGH);
   pinMode(HEATER_PIN, OUTPUT);
   writeManagedOutput(HEATER_PIN, true, HEATER_OUTPUT_ACTIVE_HIGH);
 
@@ -342,10 +352,31 @@ void SystemController::hardwareSetup() {
     }
   }
 }
+
+uint32_t SystemController::getResetCount() { return systemResetCount; }
+
+uint32_t SystemController::getUptimeSeconds() {
+  const unsigned long nowMs = millis();
+  return static_cast<uint32_t>((nowMs - systemBootStartMs) / 1000UL);
+}
 void SystemController::init() {
   SharedState::init();
   ConfigManager::init();
   LogManager::init();
+
+  systemBootStartMs = millis();
+  systemStatsReady = systemStatsPrefs.begin("SysStats", false);
+  if (systemStatsReady) {
+    uint32_t storedResetCount = systemStatsPrefs.getUInt("rstCount", 0UL);
+    if (storedResetCount < 0xFFFFFFFFUL) {
+      storedResetCount++;
+    }
+    systemResetCount = storedResetCount;
+    systemStatsPrefs.putUInt("rstCount", systemResetCount);
+  } else {
+    systemResetCount = 0;
+    LogManager::logWarn("SysStats: brak dostepu do namespace Preferences.");
+  }
 
   hardwareSetup();
   logWakeupCauseOnBoot();
@@ -538,14 +569,22 @@ void SystemController::updateDecisions() {
 
 void SystemController::applyOutputs() {
   if (OtaManager::isOtaInProgress()) {
-    // OTA wymusza bezpieczny stan fizycznych wyjsc i odciecie grzalki.
-    writeManagedOutput(LIGHT_PIN, false, LIGHT_OUTPUT_ACTIVE_HIGH);
-    writeManagedOutput(PUMP_PIN, false, PUMP_OUTPUT_ACTIVE_HIGH);
-    writeManagedOutput(HEATER_PIN, false, HEATER_OUTPUT_ACTIVE_HIGH);
-    if (tempController.isHeaterOn()) {
-      tempController.forceHeaterOff();
+    // Podczas OTA zamrazamy wyjscia na ostatnim stanie, aby uniknac "klikania"
+    // przekaznikow w trakcie programowania.
+    bool heldHeater = false;
+    bool heldFilter = false;
+    bool heldLight = false;
+    if (OtaManager::getHeldRelayState(heldHeater, heldFilter, heldLight)) {
+      writeManagedOutput(LIGHT_PIN, heldLight, LIGHT_OUTPUT_ACTIVE_HIGH);
+      writeManagedOutput(PUMP_PIN, heldFilter, PUMP_OUTPUT_ACTIVE_HIGH);
+      writeManagedOutput(HEATER_PIN, heldHeater, HEATER_OUTPUT_ACTIVE_HIGH);
+    } else {
+      SharedStateData locked = SharedState::getSnapshot();
+      writeManagedOutput(LIGHT_PIN, locked.isLightOn, LIGHT_OUTPUT_ACTIVE_HIGH);
+      writeManagedOutput(PUMP_PIN, locked.isFilterOn, PUMP_OUTPUT_ACTIVE_HIGH);
+      writeManagedOutput(HEATER_PIN, locked.isHeaterOn,
+                         HEATER_OUTPUT_ACTIVE_HIGH);
     }
-    feederController.forceStop();
     servoController.update();
     return;
   }

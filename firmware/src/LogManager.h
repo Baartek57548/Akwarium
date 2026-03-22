@@ -15,7 +15,16 @@ public:
   static void logError(const char *msg);
 
   static void clearCriticalLogs();
+  static void clearNormalLogs();
   static String getLogsAsJson();
+  static uint8_t getNormalLogsCount();
+  static uint8_t getCriticalLogsCount();
+  static bool getNormalLogAt(uint8_t indexFromOldest, char *messageOut,
+                             size_t messageOutSize, char *timeOut,
+                             size_t timeOutSize);
+  static bool getCriticalLogAt(uint8_t indexFromOldest, char *messageOut,
+                               size_t messageOutSize, char *timeOut,
+                               size_t timeOutSize);
 
 private:
   static void appendWebLog(const char *msg);

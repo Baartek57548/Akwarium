@@ -60,19 +60,19 @@ float TemperatureController::readTemperature() {
   }
   lastTempRead = now;
 
-  if (!sensorPresent) {
-    refreshSensorPresence();
-    if (!sensorPresent) {
-      hasValidTemperature = false;
-      invalidSampleCount = MAX_INVALID_SAMPLES;
-      return DEVICE_DISCONNECTED_C;
+  // Nie polegamy wyłącznie na getDeviceCount() - przy zakłóceniach 1-Wire
+  // potrafi chwilowo raportować 0 mimo dostępnego sensora.
+  float t = DEVICE_DISCONNECTED_C;
+  for (uint8_t attempt = 0; attempt < 2; attempt++) {
+    sensors.requestTemperatures();
+    t = sensors.getTempCByIndex(0);
+    if (isValidTempSample(t)) {
+      break;
     }
   }
 
-  sensors.requestTemperatures();
-  float t = sensors.getTempCByIndex(0);
-
   if (isValidTempSample(t)) {
+    sensorPresent = true;
     lastTemperature = t;
     hasValidTemperature = true;
     invalidSampleCount = 0;
@@ -88,9 +88,13 @@ float TemperatureController::readTemperature() {
     if (invalidSampleCount < 255) {
       invalidSampleCount++;
     }
-    if (!sensorPresent || t == DEVICE_DISCONNECTED_C ||
-        invalidSampleCount >= MAX_INVALID_SAMPLES) {
+
+    // Przy pojedynczych błędnych próbkach trzymamy ostatni poprawny odczyt.
+    if (t == DEVICE_DISCONNECTED_C || invalidSampleCount >= MAX_INVALID_SAMPLES) {
       hasValidTemperature = false;
+      if (!sensorPresent) {
+        invalidSampleCount = MAX_INVALID_SAMPLES;
+      }
       return DEVICE_DISCONNECTED_C;
     }
   }

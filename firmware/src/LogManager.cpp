@@ -99,7 +99,9 @@ void LogManager::appendWebLog(const char *msg) {
 void LogManager::logInfo(const char *msg) {
   Serial.print("[INFO] ");
   Serial.println(msg);
-  appendWebLog(msg);
+  char normalized[96];
+  snprintf(normalized, sizeof(normalized), "INFO: %s", msg);
+  appendWebLog(normalized);
 
   // Legacy support for animation
   if (animation != nullptr) {
@@ -114,7 +116,9 @@ void LogManager::logInfo(const char *msg) {
 void LogManager::logWarn(const char *msg) {
   Serial.print("[WARN] ");
   Serial.println(msg);
-  appendWebLog(msg);
+  char normalized[96];
+  snprintf(normalized, sizeof(normalized), "WARN: %s", msg);
+  appendWebLog(normalized);
 }
 
 void LogManager::logError(const char *msg) {
@@ -145,6 +149,88 @@ void LogManager::clearCriticalLogs() {
   logPrefs.putInt("critCount", 0);
   logPrefs.putInt("critHead", 0);
   Serial.println("[LOGS] WICZYSZCZONO LOGI KRYTYCZNE");
+}
+
+void LogManager::clearNormalLogs() {
+  webLogsCount = 0;
+  webLogsHead = 0;
+  Serial.println("[LOGS] WYCZYSZCZONO LOGI ZWYKLE");
+}
+
+uint8_t LogManager::getNormalLogsCount() {
+  return static_cast<uint8_t>(webLogsCount);
+}
+
+uint8_t LogManager::getCriticalLogsCount() {
+  return static_cast<uint8_t>(criticalLogsCount);
+}
+
+bool LogManager::getNormalLogAt(uint8_t indexFromOldest, char *messageOut,
+                                size_t messageOutSize, char *timeOut,
+                                size_t timeOutSize) {
+  if (indexFromOldest >= webLogsCount) {
+    return false;
+  }
+
+  const int startIdx = (webLogsCount < WEB_MAX_LOGS) ? 0 : webLogsHead;
+  const int idx = (startIdx + indexFromOldest) % WEB_MAX_LOGS;
+  const String entry = webLogs[idx];
+
+  char parsedTime[6] = "--:--";
+  if (entry.length() >= 7 && entry[0] == '[' && entry[3] == ':' &&
+      entry[6] == ':') {
+    parsedTime[0] = entry[1];
+    parsedTime[1] = entry[2];
+    parsedTime[2] = ':';
+    parsedTime[3] = entry[4];
+    parsedTime[4] = entry[5];
+    parsedTime[5] = '\0';
+  }
+
+  String message = entry;
+  const int closeBracket = entry.indexOf(']');
+  if (closeBracket >= 0 && closeBracket + 2 < static_cast<int>(entry.length())) {
+    message = entry.substring(closeBracket + 2);
+  } else if (closeBracket >= 0 && closeBracket + 1 < static_cast<int>(entry.length())) {
+    message = entry.substring(closeBracket + 1);
+  }
+
+  if (messageOut != nullptr && messageOutSize > 0) {
+    snprintf(messageOut, messageOutSize, "%s", message.c_str());
+  }
+  if (timeOut != nullptr && timeOutSize > 0) {
+    snprintf(timeOut, timeOutSize, "%s", parsedTime);
+  }
+
+  return true;
+}
+
+bool LogManager::getCriticalLogAt(uint8_t indexFromOldest, char *messageOut,
+                                  size_t messageOutSize, char *timeOut,
+                                  size_t timeOutSize) {
+  if (indexFromOldest >= criticalLogsCount) {
+    return false;
+  }
+
+  const int startCritIdx =
+      (criticalLogsCount < MAX_CRITICAL_LOGS) ? 0 : criticalLogsHead;
+  const int idx = (startCritIdx + indexFromOldest) % MAX_CRITICAL_LOGS;
+  const CriticalLog &entry = criticalLogs[idx];
+
+  if (messageOut != nullptr && messageOutSize > 0) {
+    snprintf(messageOut, messageOutSize, "%s", entry.message);
+  }
+  if (timeOut != nullptr && timeOutSize > 0) {
+    if (entry.epoch > 0) {
+      const DateTime logTime(entry.epoch);
+      snprintf(timeOut, timeOutSize, "%02d:%02d", logTime.hour(),
+               logTime.minute());
+    } else {
+      snprintf(timeOut, timeOutSize, "%s", "--:--");
+    }
+  }
+
+  return true;
 }
 
 String LogManager::getLogsAsJson() {

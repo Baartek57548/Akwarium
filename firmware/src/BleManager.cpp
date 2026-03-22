@@ -1520,6 +1520,7 @@ void BleManager::update() {
   if (bleOtaRestartPending &&
       static_cast<long>(millis() - bleOtaRestartAtMs) >= 0) {
     Serial.println("[BLE OTA] Restart po zakonczonej aktualizacji.");
+    OtaManager::prepareOutputsForRestart();
     delay(40);
     ESP.restart();
     return;
