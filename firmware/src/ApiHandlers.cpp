@@ -1,11 +1,10 @@
 #include "ApiHandlers.h"
 
 #include "AkwariumWifi.h"
+#include "BleManager.h"
 #include "ConfigManager.h"
 #include "ConfigValidation.h"
-#include "FirmwareInfo.h"
 #include "LogManager.h"
-#include "OtaManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
 #include "SystemController.h"
@@ -80,46 +79,16 @@ static bool parseBoolArg(const String &raw, bool &out) {
   return false;
 }
 
-static void populateValidationJson(JsonObject validation) {
-  const ValidationProfileSnapshot profile = ConfigValidation::getValidationProfile();
-
-  validation["minuteStep"] = profile.minuteStep;
-  validation["scheduleModes"] = "schedule|always_on|always_off";
-  validation["heaterModes"] = "threshold|off";
-  validation["timeFieldsRequireScheduleMode"] = true;
-
-  JsonObject temperature = validation.createNestedObject("temperature");
-  temperature["min"] = profile.minTemperature;
-  temperature["max"] = profile.maxTemperature;
-  temperature["step"] = profile.temperatureStep;
-  temperature["supportsOff"] = true;
-
-  JsonObject hysteresis = validation.createNestedObject("hysteresis");
-  hysteresis["min"] = profile.hysteresisMin;
-  hysteresis["max"] = profile.hysteresisMax;
-  hysteresis["step"] = profile.hysteresisStep;
-
-  JsonObject servoPreOff = validation.createNestedObject("servoPreOffMinutes");
-  servoPreOff["min"] = profile.servoPreOffMin;
-  servoPreOff["max"] = profile.servoPreOffMax;
-  servoPreOff["step"] = 1;
-
-  JsonObject feeding = validation.createNestedObject("feeding");
-  feeding["modeMin"] = profile.feedModeMin;
-  feeding["modeMax"] = profile.feedModeMax;
-}
-
 static String buildStatusJson() {
   const SharedStateData snap = SharedState::getSnapshot();
   const Config cfg = ConfigManager::getCopy();
-  const FirmwareRuntimeInfo firmwareInfo = FirmwareInfo::getRuntimeInfo();
 
   float voltage = PowerManager::getBatteryVoltage();
   if (isnan(voltage)) {
     voltage = 0.0f;
   }
 
-  StaticJsonDocument<2048> doc;
+  DynamicJsonDocument doc(4096);
 
   JsonObject temperature = doc.createNestedObject("temperature");
   temperature["current"] = isnan(snap.temperature) ? -99.9f : snap.temperature;
@@ -129,6 +98,16 @@ static String buildStatusJson() {
   temperature["hysteresis"] = cfg.tempHysteresis;
   temperature["min"] = isnan(snap.minTemp) ? -99.9f : snap.minTemp;
   temperature["minTimeEpoch"] = snap.minTempEpoch;
+  JsonArray history = temperature.createNestedArray("history");
+  for (uint8_t i = 0; i < snap.temperatureHistoryCount; ++i) {
+    const TemperatureHistoryEntry &entry = snap.temperatureHistory[i];
+    if (isnan(entry.value)) {
+      continue;
+    }
+    JsonObject item = history.createNestedObject();
+    item["value"] = entry.value;
+    item["epoch"] = entry.epoch;
+  }
 
   JsonObject battery = doc.createNestedObject("battery");
   battery["voltage"] = voltage;
@@ -138,9 +117,7 @@ static String buildStatusJson() {
   relays["light"] = snap.isLightOn;
   relays["pump"] = snap.isFilterOn;
   relays["heater"] = snap.isHeaterOn;
-
-  JsonObject servo = doc.createNestedObject("servo");
-  servo["angle"] = SystemController::getServoPosition();
+  relays["aerationPercent"] = snap.aerationPercent;
 
   JsonObject schedule = doc.createNestedObject("schedule");
   schedule["lightMode"] = cfg.lightMode;
@@ -166,31 +143,21 @@ static String buildStatusJson() {
   feeding["minute"] = cfg.feedMinute;
   feeding["freq"] = cfg.feedMode;
   feeding["lastFeedEpoch"] = cfg.lastFeedEpoch;
+  feeding["active"] = SystemController::isFeedingNow();
 
   JsonObject network = doc.createNestedObject("network");
   network["ip"] = AkwariumWifi::getIP();
   network["apMode"] = AkwariumWifi::getIsAPMode();
   network["ssid"] = AkwariumWifi::getAPName();
   network["clients"] = AkwariumWifi::getConnectedClients();
-
-  JsonObject system = doc.createNestedObject("system");
-  system["firmwareName"] = firmwareInfo.firmwareName;
-  system["firmwareVersion"] = firmwareInfo.firmwareVersion;
-  system["buildRef"] = firmwareInfo.buildRef;
-  system["buildDate"] = firmwareInfo.buildDate;
-  system["buildTime"] = firmwareInfo.buildTime;
-  system["idfVersion"] = firmwareInfo.idfVersion;
-  system["runningPartition"] = firmwareInfo.runningPartitionLabel;
-  system["bootPartition"] = firmwareInfo.bootPartitionLabel;
-  system["nextPartition"] = firmwareInfo.nextPartitionLabel;
-  system["otaPartitionSize"] = firmwareInfo.nextPartitionSizeBytes;
-  system["otaInProgress"] = OtaManager::isOtaInProgress();
-  system["otaTransport"] = OtaManager::getActiveTransport();
-  system["bleOtaSupported"] = FirmwareInfo::supportsBleOta();
-  system["httpOtaSupported"] = FirmwareInfo::supportsHttpOta();
-  system["uptimeSec"] = static_cast<uint32_t>(millis() / 1000UL);
-  system["resetReason"] = SystemController::getLastResetLabel();
-  populateValidationJson(system.createNestedObject("validation"));
+  network["staConnected"] = AkwariumWifi::isStaConnected();
+  network["staSsid"] = AkwariumWifi::getStaSsid();
+  network["staLastConnectedEpoch"] = AkwariumWifi::getStaLastConnectedEpoch();
+  const bool bleAdvertising = BleManager::isAdvertising();
+  const bool bleConnected = BleManager::isConnected();
+  network["bleAdvertising"] = bleAdvertising;
+  network["bleConnected"] = bleConnected;
+  network["bleActive"] = bleAdvertising || bleConnected;
 
   JsonObject clock = doc.createNestedObject("clock");
   clock["hour"] = snap.hour;
@@ -201,6 +168,7 @@ static String buildStatusJson() {
   clock["year"] = snap.year;
 
   String json;
+  json.reserve(3072);
   serializeJson(doc, json);
   return json;
 }

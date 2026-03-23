@@ -43,6 +43,9 @@ static volatile bool staIsOff = false;
 static unsigned long lastStaReconnectAttemptMs = 0;
 static unsigned long staDisconnectedSinceMs = 0;
 static uint8_t staReconnectAttempts = 0;
+static bool staConnected = false;
+static uint32_t staLastConnectedEpoch = 0;
+static String staLastConnectedSsid;
 static const unsigned long STA_RECONNECT_INTERVAL_MS = 15000UL;
 static const unsigned long STA_FALLBACK_TO_AP_MS = 180000UL;
 static const unsigned long WIFI_MODE_SWITCH_DELAY_MS = 25UL;
@@ -50,6 +53,44 @@ static const unsigned long WIFI_MODE_SWITCH_DELAY_MS = 25UL;
 WebServer &AkwariumWifi::getServer() { return server; }
 static void startAPInternal();
 static void sendCaptiveRedirect();
+
+static uint32_t getBestEffortEpoch() {
+  const time_t now = time(nullptr);
+  if (now > 1700000000) {
+    return static_cast<uint32_t>(now);
+  }
+
+  if (SystemController::isRtcReady()) {
+    return static_cast<uint32_t>(SystemController::rtc.now().unixtime());
+  }
+
+  return 0;
+}
+
+static void syncStaStatus() {
+  const bool connected = !staIsOff && WiFi.status() == WL_CONNECTED;
+  if (connected) {
+    String ssid = WiFi.SSID();
+    if (ssid.length() == 0) {
+      ssid = String(STA_SSID);
+    }
+
+    if (!staConnected || staLastConnectedSsid != ssid) {
+      const uint32_t currentEpoch = getBestEffortEpoch();
+      if (currentEpoch > 0) {
+        staLastConnectedEpoch = currentEpoch;
+      }
+    }
+
+    staLastConnectedSsid = ssid;
+  }
+
+  if (!connected && staLastConnectedSsid.length() == 0) {
+    staLastConnectedSsid = String(STA_SSID);
+  }
+
+  staConnected = connected;
+}
 
 static void setupNetwork() {
   WiFi.mode(WIFI_STA);
@@ -72,20 +113,26 @@ static void setupNetwork() {
     Serial.println(
         "\n[WIFI] Timeout. Polaczenie STA nieudane. Projekt dziala offline.");
   }
+
+  syncStaStatus();
 }
 
 static void maintainStaConnection() {
   if (isAPMode || staIsOff) {
+    syncStaStatus();
     staDisconnectedSinceMs = 0;
     staReconnectAttempts = 0;
     return;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    syncStaStatus();
     staDisconnectedSinceMs = 0;
     staReconnectAttempts = 0;
     return;
   }
+
+  syncStaStatus();
 
   const unsigned long nowMs = millis();
   if (staDisconnectedSinceMs == 0) {
@@ -502,6 +549,8 @@ void AkwariumWifi::requestStaOn() {
 
 bool AkwariumWifi::isStaOff() { return staIsOff; }
 
+bool AkwariumWifi::isStaConnected() { return staConnected; }
+
 String AkwariumWifi::getAPName() {
   return isAPMode ? String(apSSID) : String(STA_SSID);
 }
@@ -514,6 +563,15 @@ String AkwariumWifi::getConfiguredAPName() { return String(apSSID); }
 
 String AkwariumWifi::getConfiguredAPPassword() { return String(apPassword); }
 
+String AkwariumWifi::getStaSsid() {
+  return staLastConnectedSsid.length() > 0 ? staLastConnectedSsid
+                                           : String(STA_SSID);
+}
+
+uint32_t AkwariumWifi::getStaLastConnectedEpoch() {
+  return staLastConnectedEpoch;
+}
+
 String AkwariumWifi::getIP() {
   return isAPMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
 }
@@ -521,5 +579,4 @@ String AkwariumWifi::getIP() {
 uint8_t AkwariumWifi::getConnectedClients() {
   return isAPMode ? WiFi.softAPgetStationNum() : 0;
 }
-
 

@@ -412,19 +412,20 @@ void SystemController::updateSensors() {
     lastTempCheckMs = nowMs;
     float tempVal = tempController.readTemperature();
     bool disconnected = (tempVal <= -127.0f);
+    const uint32_t currentEpoch = static_cast<uint32_t>(getCurrentDateTime().unixtime());
 
     if (!disconnected && tempVal > -50.0f && tempVal < 100.0f) {
       tempInvalidReadCount = 0;
       // Aktualizacja mutex-protected
       SharedState::updateTemperature(tempVal, tempController.getDailyMin(), 0,
-                                     tempController.getDailyMax());
+                                     tempController.getDailyMax(), currentEpoch);
       if (tempSensorErrorLogged) {
         LogManager::logInfo("Czujnik temp. powrocil.");
         tempSensorErrorLogged = false;
       }
     } else {
       SharedState::updateTemperature(NAN, tempController.getDailyMin(), 0,
-                                     tempController.getDailyMax());
+                                     tempController.getDailyMax(), currentEpoch);
       if (tempInvalidReadCount < 255)
         tempInvalidReadCount++;
       if (tempInvalidReadCount >= 3 && !tempSensorErrorLogged) {

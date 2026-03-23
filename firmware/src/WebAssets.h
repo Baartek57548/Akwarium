@@ -8,7 +8,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aquarium Controller ESP32</title>
-    <link rel="stylesheet" href="style.css?v=20260323b">
+    <link rel="stylesheet" href="style.css?v=20260323d">
     <style>
         /* Custom Time Inputs (Pills) */
         input[type="time"].time-pill {
@@ -169,30 +169,24 @@ const char web_index_html[] PROGMEM = R"AQWEB(
         <main class="main-content">
             <!-- Topbar -->
             <header class="topbar">
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 1px; margin-right: 5px;">AKTYWNE SIECI:</span>
-                    <div id="ap-badge" class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
-                        <span class="pulse-dot" style="width: 8px; height: 8px;"></span>
-                        Access Point (AP)
-                    </div>
-                    <div id="sta-badge" class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
-                        <span class="pulse-dot" style="width: 8px; height: 8px;"></span>
-                        Station (STA)
-                    </div>
-                    <div id="ble-badge" class="status-badge" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.3); color: var(--accent-cyan); padding: 6px 14px; font-size: 13px;">
-                        <span class="pulse-dot-cyan"></span>
-                        Bluetooth (BLE)
+                <div class="topbar-activity">
+                    <span class="topbar-label">AKTYWNE MODUŁY</span>
+                    <div id="topbar-active-list" class="topbar-active-list">
+                        <div class="status-badge status-badge-muted">
+                            <span class="pulse-dot pulse-dot-muted"></span>
+                            Oczekiwanie na dane sterownika
+                        </div>
                     </div>
                 </div>
-                
+
                 <div class="topbar-widgets">
-                    <div class="info-pill" title="Bateria RTC (DS3231)">
+                    <div class="info-pill battery-pill" title="Aktualne napięcie baterii">
                         <i class="fa-solid fa-battery-three-quarters"></i>
-                        <span id="rtc-battery">2.9V</span>
+                        <span id="rtc-battery">--.--V</span>
                     </div>
                     <div class="time-widget">
                         <span id="current-time">00:00:00</span>
-                        <span id="current-date">01 Sty 2026</span>
+                        <span id="current-date">01 sty 2026</span>
                     </div>
                 </div>
             </header>
@@ -203,128 +197,136 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                     <h2>Przegląd Systemu</h2>
                     <p>Bieżący status wszystkich urządzeń i sensorów.</p>
                 </div>
-                <!-- Dashboard Grid -->
+
                 <div class="dashboard-grid">
-                    <!-- Wiersz 1: Temperatura, Bateria, Siec -->
-                    <div class="card glass" style="padding: 16px;">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">TEMPERATURA</span>
-                        <div class="temp-value" style="font-size: 36px; font-weight: 600; text-shadow: none;">--.-<span class="unit" style="font-size: 24px; color: var(--text-main);"> C</span></div>
-                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Cel 25 C | Histereza 0,5 C</div>
-                    </div>
-
-                    <div class="card glass" style="padding: 16px;">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">BATERIA</span>
-                        <div class="temp-value" style="font-size: 36px; font-weight: 600; text-shadow: none; margin-bottom: 12px;">0%</div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" style="height: 4px; background: rgba(255,255,255,0.05);"></div>
+                    <div class="card glass dashboard-card metric-card">
+                        <span class="eyebrow">TEMPERATURA</span>
+                        <div class="metric-value">
+                            <span id="dashboard-temp-current">--.-</span>
+                            <span class="unit">&deg;C</span>
+                        </div>
+                        <div class="metric-subline">
+                            <span>Cel <strong id="dashboard-temp-target">25.0&deg;C</strong></span>
+                            <span>Histereza <strong id="dashboard-temp-hysteresis">0.5&deg;C</strong></span>
                         </div>
                     </div>
 
-                    <div class="card glass" style="padding: 16px;">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">SIEC</span>
-                        <div class="temp-value" style="font-size: 30px; font-weight: 600; text-shadow: none;">OFFLINE</div>
-                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">STA -</div>
+                    <div class="card glass dashboard-card metric-card">
+                        <span class="eyebrow">BATERIA</span>
+                        <div class="metric-value">
+                            <span id="dashboard-battery-percent">0</span>
+                            <span class="unit">%</span>
+                        </div>
+                        <div class="metric-subline">
+                            <span>Napięcie <strong id="dashboard-battery-voltage">--.--V</strong></span>
+                            <span id="dashboard-battery-state">Brak pomiaru</span>
+                        </div>
+                        <div class="progress-bar battery-progress">
+                            <div id="dashboard-battery-fill" class="progress-fill battery-fill" style="width: 0%;"></div>
+                        </div>
                     </div>
 
-                    <!-- Wiersz 2: Przekazniki, Harmonogram dzisiaj, Karmnik -->
-                    <div class="card glass" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Przekazniki</span>
-                            <span style="font-size: 11px; color: var(--text-muted);">1 / 4</span>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Swiatlo</div>
-                                <div style="font-size: 11px; color: var(--text-muted);">Off</div>
+                    <div id="network-card" class="card glass dashboard-card network-card network-offline">
+                        <span class="eyebrow">SIEĆ</span>
+                        <div id="network-status" class="metric-value network-status">OFFLINE</div>
+                        <div class="network-details">
+                            <div class="network-detail-row">
+                                <span>SSID STA</span>
+                                <strong id="network-ssid">-</strong>
                             </div>
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Filtr</div>
-                                <div style="font-size: 11px; color: var(--text-muted);">Off</div>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Grzalka</div>
-                                <div style="font-size: 11px; color: var(--text-muted);">Standby</div>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Napowietrzanie</div>
-                                <div style="font-size: 11px; color: var(--text-muted);">Open</div>
+                            <div class="network-detail-row">
+                                <span>Ostatnie połączenie</span>
+                                <strong id="network-last-seen">Brak historii</strong>
                             </div>
                         </div>
                     </div>
 
-                    <div class="card glass" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Harmonogram dzisiaj</span>
-                            <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 12px; padding: 6px 16px; border-radius: 16px; color: var(--accent-cyan); border-color: rgba(6, 182, 212, 0.3);">Edytuj</button>
+                    <div class="card glass dashboard-card relay-panel">
+                        <div class="card-header compact-header">
+                            <span class="card-heading">Przekaźniki</span>
+                            <span id="relay-count" class="card-chip">0 / 4 aktywne</span>
                         </div>
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Swiatlo</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">10:00 - 21:30</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Filtr</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">10:30 - 20:30</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Napowietrzanie</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">10:00 - 19:00</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
+                        <div class="relay-grid">
+                            <article id="relay-light" class="relay-status relay-standby">
+                                <div class="relay-status-top">
+                                    <span class="relay-icon-shell"><i class="fa-solid fa-lightbulb"></i></span>
+                                    <span id="relay-light-state" class="relay-state-badge">STANDBY</span>
+                                </div>
+                                <div class="relay-name">Światło</div>
+                                <div id="relay-light-meta" class="relay-meta">Harmonogram</div>
+                            </article>
+
+                            <article id="relay-filter" class="relay-status relay-standby">
+                                <div class="relay-status-top">
+                                    <span class="relay-icon-shell"><i class="fa-solid fa-filter"></i></span>
+                                    <span id="relay-filter-state" class="relay-state-badge">STANDBY</span>
+                                </div>
+                                <div class="relay-name">Filtr</div>
+                                <div id="relay-filter-meta" class="relay-meta">Harmonogram</div>
+                            </article>
+
+                            <article id="relay-heater" class="relay-status relay-standby">
+                                <div class="relay-status-top">
+                                    <span class="relay-icon-shell"><i class="fa-solid fa-temperature-half"></i></span>
+                                    <span id="relay-heater-state" class="relay-state-badge">STANDBY</span>
+                                </div>
+                                <div class="relay-name">Grzałka</div>
+                                <div id="relay-heater-meta" class="relay-meta">Czeka na próg</div>
+                            </article>
+
+                            <article id="relay-aeration" class="relay-status relay-standby">
+                                <div class="relay-status-top">
+                                    <span class="relay-icon-shell"><i class="fa-solid fa-wind"></i></span>
+                                    <span id="relay-aeration-state" class="relay-state-badge">STANDBY</span>
+                                </div>
+                                <div class="relay-name">Napowietrzanie</div>
+                                <div id="relay-aeration-meta" class="relay-meta">Harmonogram</div>
+                            </article>
+                        </div>
+                    </div>
+
+                    <div class="card glass dashboard-card schedule-panel">
+                        <div class="card-header compact-header">
+                            <span class="card-heading">Harmonogram dzisiaj</span>
+                            <button class="btn btn-secondary btn-pill" onclick="switchTab('harmonogramy')">Edytuj</button>
+                        </div>
+                        <div id="today-schedule-list" class="schedule-summary-list">
+                            <div class="schedule-summary-item">
+                                <span>Ładowanie danych</span>
+                                <strong>...</strong>
                             </div>
                         </div>
                     </div>
 
-                    <div class="card glass" style="padding: 20px; align-items: center;">
-                        <span style="font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 25px; align-self: flex-start;">Karmnik</span>
-                        
-                        <div style="position: relative; width: 140px; height: 140px; border-radius: 50%; border: 2px solid #8B2E67; display: flex; align-items: center; justify-content: center; background: #1C1120; margin-bottom: 20px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
-                            <button onclick="triggerFeed()" style="width: 110px; height: 110px; border-radius: 50%; background: #32142D; border: none; color: #F472B6; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#4a1e43'" onmouseout="this.style.background='#32142D'">Karm teraz</button>
+                    <div class="card glass dashboard-card feeder-card">
+                        <span class="card-heading">Karmnik</span>
+                        <div class="feeder-orb">
+                            <button id="feed-now-btn" class="feed-now-btn" onclick="triggerFeed()">Karm teraz</button>
                         </div>
-                        
-                        <span style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Codziennie 18:00</span>
-                        <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 13px; padding: 10px 24px; border-radius: 16px; background: rgba(255,255,255,0.03);">Zarzadzaj</button>
+                        <span id="feed-next-label" class="feeder-note">Codziennie 18:00</span>
+                        <span id="feed-last-label" class="feeder-subnote">Ostatnie karmienie: brak danych</span>
+                        <button class="btn btn-secondary feeder-manage-btn" onclick="switchTab('harmonogramy')">Zarządzaj</button>
                     </div>
 
-                    <!-- Wiersz 3: Zakres temperatury (Wykres 20 bar) -->
-                    <div class="card glass" style="grid-column: 1 / -1; padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Zakres temperatury</span>
-                            <span style="font-size: 11px; color: var(--text-muted); padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 10px;">Ostatnie 3 godz. (20 odczytów)</span>
+                    <div class="card glass dashboard-card chart-wide temp-history-card">
+                        <div class="temp-chart-header">
+                            <span class="card-heading">Zakres temperatury</span>
+                            <span id="temperature-chart-meta" class="card-chip card-chip-accent">20 ostatnich pomiarów</span>
                         </div>
-                        
-                        <div class="temp-chart">
-                            <!-- Histereza i cel -->
-                            <div class="hysteresis-zone" style="height: 30%; bottom: 40%;"></div>
-                            <div class="target-temp-line" style="bottom: 55%;"><span class="target-temp-label">25.0°C Docelowa</span></div>
-                            
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 30%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 35%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 32%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 45%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 42%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 38%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 46%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 55%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 60%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 68%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 64%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 70%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 80%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar hot" style="height: 90%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 75%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar active" style="height: 55%;"></div></div>
-                        </div>
-                        
-                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 10px; color: var(--text-muted);">
-                            <span>-190 min</span>
-                            <span>Teraz</span>
+
+                        <div class="temp-chart-shell">
+                            <div class="temp-chart-legend">
+                                <span><span class="legend-line legend-line-live"></span>Temperatura</span>
+                                <span><span class="legend-line legend-line-target"></span>Docelowa</span>
+                                <span><span class="legend-line legend-line-hysteresis"></span>Histereza</span>
+                            </div>
+                            <div id="temperature-chart-empty" class="temp-chart-empty">Oczekiwanie na historię temperatur ze sterownika...</div>
+                            <svg id="temperature-chart-svg" class="temp-line-chart" viewBox="0 0 960 320" preserveAspectRatio="none" aria-label="Wykres temperatury"></svg>
+                            <div id="temperature-chart-tooltip" class="temp-chart-tooltip" hidden></div>
+                            <div class="temp-chart-axis">
+                                <span id="temperature-chart-start">Najstarszy pomiar</span>
+                                <span id="temperature-chart-end">Teraz</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -647,13 +649,13 @@ const char web_index_html[] PROGMEM = R"AQWEB(
         </div>
     </div>
 
-    <script src="script.js?v=20260323b"></script>
+    <script src="script.js?v=20260323d"></script>
 </body>
 </html>
 
 )AQWEB";
 
-const char web_style_css[] PROGMEM = R"AQWEB(
+const char web_style_css[] PROGMEM = R"AQSTYLE(
 :root {
     /* Color Palette */
     --bg-dark: #030712;
@@ -680,7 +682,7 @@ const char web_style_css[] PROGMEM = R"AQWEB(
     --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.4);
     
     /* Layout */
-    --sidebar-width: 280px;
+    --sidebar-width: 304px;
     --border-radius-lg: 24px;
     --border-radius-md: 16px;
 }
@@ -977,8 +979,9 @@ body::after {
 /* Grid Layout */
 .dashboard-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-    gap: 32px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+    align-items: start;
 }
 
 .card.span-2 {
@@ -1566,14 +1569,649 @@ input:checked + .slider:before {
     margin-top: 20px;
 }
 
+.inline-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    flex: 0 0 auto;
+}
+
+.inline-icon svg {
+    width: 100%;
+    height: 100%;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.topbar {
+    gap: 24px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.topbar-activity {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    flex: 1 1 540px;
+}
+
+.topbar-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 1.4px;
+}
+
+.topbar-active-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.status-badge-muted {
+    background: rgba(148, 163, 184, 0.08);
+    border-color: rgba(148, 163, 184, 0.18);
+    color: #cbd5e1;
+}
+
+.status-badge-success {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.28);
+    color: #6ee7b7;
+}
+
+.status-badge-cyan {
+    background: rgba(34, 211, 238, 0.12);
+    border-color: rgba(34, 211, 238, 0.28);
+    color: #67e8f9;
+}
+
+.status-badge-blue {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.28);
+    color: #93c5fd;
+}
+
+.status-badge-orange {
+    background: rgba(249, 115, 22, 0.12);
+    border-color: rgba(249, 115, 22, 0.28);
+    color: #fdba74;
+}
+
+.pulse-dot-muted {
+    background: #94a3b8;
+    box-shadow: 0 0 10px rgba(148, 163, 184, 0.45);
+}
+
+.battery-pill {
+    color: var(--text-main);
+}
+
+.battery-pill i {
+    color: var(--accent-cyan);
+}
+
+.dashboard-card {
+    min-height: 210px;
+    gap: 16px;
+}
+
+.compact-header {
+    margin-bottom: 2px;
+}
+
+.eyebrow {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 700;
+    letter-spacing: 1.4px;
+}
+
+.metric-card .metric-value {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1;
+    margin-top: 4px;
+}
+
+.metric-card .metric-value .unit {
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.metric-subline {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: auto;
+}
+
+.metric-subline strong {
+    color: var(--text-main);
+}
+
+.battery-progress {
+    height: 8px;
+    border-radius: 999px;
+}
+
+.battery-fill {
+    width: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #10b981, #34d399);
+    box-shadow: 0 0 16px rgba(52, 211, 153, 0.4);
+}
+
+.network-card .network-status {
+    font-size: 34px;
+    line-height: 1;
+}
+
+.network-card.network-online .network-status {
+    color: #6ee7b7;
+}
+
+.network-card.network-aponly .network-status {
+    color: #67e8f9;
+}
+
+.network-card.network-offline .network-status {
+    color: #e5e7eb;
+}
+
+.network-details {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: auto;
+}
+
+.network-detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 13px;
+}
+
+.network-detail-row span {
+    color: var(--text-muted);
+}
+
+.network-detail-row strong {
+    color: var(--text-main);
+    text-align: right;
+}
+
+.card-heading {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.card-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.card-chip-accent {
+    color: var(--accent-cyan);
+    border-color: rgba(34, 211, 238, 0.22);
+    background: rgba(34, 211, 238, 0.08);
+}
+
+.btn-pill {
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+}
+
+.relay-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.relay-status {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.relay-status:hover {
+    transform: translateY(-2px);
+}
+
+.relay-status-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.relay-icon-shell {
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 18px;
+}
+
+.relay-state-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+.relay-name {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.relay-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.relay-on {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0.08));
+    border-color: rgba(16, 185, 129, 0.32);
+}
+
+.relay-on .relay-icon-shell {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, 0.14);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.relay-on .relay-state-badge {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, 0.16);
+    border: 1px solid rgba(16, 185, 129, 0.26);
+}
+
+.relay-off {
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.05));
+    border-color: rgba(239, 68, 68, 0.24);
+}
+
+.relay-off .relay-icon-shell {
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.24);
+}
+
+.relay-off .relay-state-badge {
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
+.relay-standby {
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.08), rgba(148, 163, 184, 0.03));
+    border-color: rgba(148, 163, 184, 0.2);
+}
+
+.relay-standby .relay-icon-shell {
+    color: #cbd5e1;
+}
+
+.relay-standby .relay-state-badge {
+    color: #cbd5e1;
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.schedule-summary-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.schedule-summary-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    font-size: 13px;
+}
+
+.schedule-summary-item span {
+    color: var(--text-main);
+    font-weight: 500;
+}
+
+.schedule-summary-item strong {
+    color: var(--text-muted);
+    text-align: right;
+}
+
+.feeder-card {
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.feeder-card .card-heading {
+    align-self: flex-start;
+}
+
+.feeder-orb {
+    width: 152px;
+    height: 152px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(16, 185, 129, 0.18), rgba(5, 15, 12, 0.96));
+    border: 1px solid rgba(16, 185, 129, 0.34);
+    box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.45), 0 0 30px rgba(16, 185, 129, 0.14);
+}
+
+.feed-now-btn {
+    width: 116px;
+    height: 116px;
+    border: none;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #16a34a, #15803d);
+    color: #ecfdf5;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    box-shadow: 0 10px 30px rgba(21, 128, 61, 0.34);
+}
+
+.feed-now-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    filter: brightness(1.05);
+    box-shadow: 0 12px 32px rgba(21, 128, 61, 0.42);
+}
+
+.feed-now-btn:active {
+    transform: scale(0.98);
+}
+
+.feed-now-btn:disabled {
+    cursor: wait;
+    opacity: 0.8;
+    filter: saturate(0.85);
+}
+
+.feeder-note {
+    font-size: 13px;
+    color: var(--text-main);
+}
+
+.feeder-subnote {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.5;
+}
+
+.feeder-manage-btn {
+    min-width: 132px;
+    border-radius: 16px;
+}
+
+.chart-wide {
+    grid-column: 1 / -1;
+}
+
+.temp-history-card {
+    min-height: auto;
+}
+
+.temp-chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.temp-chart-shell {
+    position: relative;
+    min-height: 360px;
+    padding: 18px;
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(5, 11, 22, 0.68), rgba(8, 14, 28, 0.9));
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.temp-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+}
+
+.legend-line {
+    display: inline-block;
+    width: 22px;
+    margin-right: 8px;
+    vertical-align: middle;
+    border-top: 2px solid currentColor;
+}
+
+.legend-line-live {
+    color: var(--accent-cyan);
+}
+
+.legend-line-target {
+    color: #f8fafc;
+    border-top-style: dashed;
+}
+
+.legend-line-hysteresis {
+    color: var(--accent-orange);
+    border-top-style: dashed;
+}
+
+.temp-chart-empty {
+    position: absolute;
+    inset: 64px 18px 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18px;
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    color: var(--text-muted);
+    font-size: 14px;
+    text-align: center;
+    padding: 16px;
+}
+
+.temp-line-chart {
+    width: 100%;
+    height: 270px;
+    display: block;
+}
+
+.temp-chart-tooltip {
+    position: absolute;
+    min-width: 132px;
+    max-width: 180px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(3, 7, 18, 0.94);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    color: var(--text-main);
+    font-size: 12px;
+    line-height: 1.45;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
+    pointer-events: none;
+    z-index: 3;
+}
+
+.temp-chart-tooltip strong {
+    display: block;
+    color: var(--accent-cyan);
+    font-size: 13px;
+    margin-bottom: 2px;
+}
+
+.chart-grid-line {
+    stroke: rgba(148, 163, 184, 0.16);
+    stroke-width: 1;
+}
+
+.chart-grid-label {
+    fill: rgba(203, 213, 225, 0.72);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.chart-line {
+    fill: none;
+    stroke: var(--accent-cyan);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.3));
+}
+
+.chart-area {
+    fill: url(#chart-area-gradient);
+    opacity: 0.95;
+}
+
+.chart-target-line {
+    fill: none;
+    stroke: rgba(248, 250, 252, 0.85);
+    stroke-width: 2;
+    stroke-dasharray: 10 8;
+}
+
+.chart-hysteresis-line {
+    fill: none;
+    stroke: rgba(251, 146, 60, 0.8);
+    stroke-width: 2;
+    stroke-dasharray: 6 8;
+}
+
+.chart-guide-label {
+    fill: rgba(248, 250, 252, 0.85);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.chart-guide-label.hysteresis {
+    fill: rgba(251, 191, 36, 0.95);
+}
+
+.chart-point {
+    fill: #0f172a;
+    stroke: var(--accent-cyan);
+    stroke-width: 3;
+}
+
+.chart-point-hit {
+    cursor: pointer;
+    fill: transparent;
+}
+
+.temp-chart-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+@media (max-width: 1200px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .topbar-widgets {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+
+@media (max-width: 900px) {
+    .topbar {
+        flex-direction: column;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .relay-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .metric-card .metric-value {
+        font-size: 38px;
+    }
+
+    .network-card .network-status {
+        font-size: 30px;
+    }
+
+    .temp-chart-shell {
+        min-height: 320px;
+        padding: 14px;
+    }
+
+    .temp-line-chart {
+        height: 230px;
+    }
+}
+
 [data-target] { cursor: pointer; }
 
+)AQSTYLE";
 
-
-
-)AQWEB";
-
-const char web_script_js[] PROGMEM = R"AQWEB(
+const char web_script_js[] PROGMEM = R"AQSCRIPT(
 const API_STATUS = '/api/status';
 const API_ACTION = '/api/action';
 const API_LOGS = '/api/logs';
@@ -1582,6 +2220,9 @@ const API_OTA = '/update';
 let backendConnected = false;
 let activeLogType = 'normal';
 let cachedLogs = { normal: [], critical: [] };
+let deviceClockBaseDate = null;
+let deviceClockSyncedAtMs = 0;
+let lastStatusData = null;
 
 function makeLocalIcon(paths) {
     return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
@@ -1678,6 +2319,11 @@ const LOCAL_ICON_SVGS = {
         <circle cx="18" cy="6" r="2" fill="none"/>
         <path fill="none" d="M11 20l2-6 6-2"/>
     `),
+    'fa-bluetooth-b': makeLocalIcon(`
+        <path fill="none" d="M9 4v16l7-6-5-4 5-4-7-6z"/>
+        <path fill="none" d="M9 12 16 6"/>
+        <path fill="none" d="M9 12 16 18"/>
+    `),
     'fa-temperature-half': makeLocalIcon(`
         <path fill="none" d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0Z"/>
         <path fill="none" d="M12 11v5"/>
@@ -1731,9 +2377,141 @@ function initLocalIcons() {
     document.querySelectorAll('i[class*="fa-"]').forEach(renderLocalIcon);
 }
 
+function getLocalIconMarkup(iconClass, extraClass = '') {
+    const svg = LOCAL_ICON_SVGS[iconClass] || '';
+    const className = extraClass ? `inline-icon ${extraClass}` : 'inline-icon';
+    return `<span class="${className}" data-icon-name="${iconClass}" aria-hidden="true">${svg}</span>`;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function toFiniteNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+}
+
+function isValidTemperature(value) {
+    const num = toFiniteNumber(value);
+    return num !== null && num > -50 && num < 100;
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function formatTwoDigits(value) {
+    const num = Math.max(0, Math.trunc(Number(value) || 0));
+    return String(num).padStart(2, '0');
+}
+
+function formatTime(hour, minute) {
+    return `${formatTwoDigits(hour)}:${formatTwoDigits(minute)}`;
+}
+
+function formatRange(startHour, startMinute, endHour, endMinute) {
+    return `${formatTime(startHour, startMinute)} - ${formatTime(endHour, endMinute)}`;
+}
+
+function formatTemperature(value, digits = 1, fallback = '--.-°C') {
+    if (!isValidTemperature(value)) {
+        return fallback;
+    }
+    return `${Number(value).toFixed(digits)}°C`;
+}
+
+function formatEpoch(epoch, options = {}) {
+    const { fallback = 'Brak historii', includeDate = true, includeSeconds = false } = options;
+    const num = toFiniteNumber(epoch);
+    if (num === null || num < 946684800) {
+        return fallback;
+    }
+
+    const date = new Date(num * 1000);
+    if (Number.isNaN(date.getTime())) {
+        return fallback;
+    }
+
+    const datePart = includeDate
+        ? date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '';
+    const timePart = date.toLocaleTimeString('pl-PL', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: includeSeconds ? '2-digit' : undefined
+    });
+
+    return includeDate ? `${datePart} ${timePart}` : timePart;
+}
+
+function formatFeedFrequency(freq) {
+    switch (Number(freq)) {
+        case 1:
+            return 'Codziennie';
+        case 2:
+            return 'Co 2 dni';
+        case 3:
+            return 'Co 3 dni';
+        default:
+            return 'Wyłączone';
+    }
+}
+
+function syncClockFromController(clock) {
+    if (!clock) return;
+
+    const year = Number(clock.year);
+    const month = Number(clock.month);
+    const day = Number(clock.day);
+    const hour = Number(clock.hour);
+    const minute = Number(clock.minute);
+    const second = Number(clock.second);
+
+    if (
+        !Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day) ||
+        !Number.isInteger(hour) || !Number.isInteger(minute) || !Number.isInteger(second) ||
+        year < 2024 || month < 1 || month > 12 || day < 1 || day > 31
+    ) {
+        return;
+    }
+
+    deviceClockBaseDate = new Date(year, month - 1, day, hour, minute, second, 0);
+    deviceClockSyncedAtMs = Date.now();
+}
+
+function getCurrentClockDate() {
+    if (deviceClockBaseDate) {
+        return new Date(deviceClockBaseDate.getTime() + (Date.now() - deviceClockSyncedAtMs));
+    }
+    return new Date();
+}
+
+function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.textContent = value;
+    }
+}
+
+function createSvgEl(tag, attrs = {}) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attrs).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+            el.setAttribute(key, String(value));
+        }
+    });
+    return el;
+}
+
 // Clock Logic
 function updateClock() {
-    const now = new Date();
+    const now = getCurrentClockDate();
     
     const timeEl = document.getElementById('current-time');
     const dateEl = document.getElementById('current-date');
@@ -1785,25 +2563,458 @@ function renderLogs() {
         .join('');
 }
 
+function buildActiveBadge(iconClass, label, tone) {
+    return `
+        <div class="status-badge status-badge-${tone}">
+            ${getLocalIconMarkup(iconClass)}
+            <span>${escapeHtml(label)}</span>
+        </div>`;
+}
+
+function buildModuleBadge(iconClass, label, active, activeTone) {
+    return buildActiveBadge(iconClass, label, active ? activeTone : 'muted');
+}
+
+function renderTopbarActiveModules(data) {
+    const container = document.getElementById('topbar-active-list');
+    if (!container) return;
+
+    const network = data.network || {};
+    const bleActive = !!network.bleActive || !!network.bleAdvertising || !!network.bleConnected;
+
+    container.innerHTML = [
+        buildModuleBadge('fa-satellite-dish', 'AP', !!network.apMode, 'success'),
+        buildModuleBadge('fa-wifi', 'STA', !!network.staConnected, 'success'),
+        buildModuleBadge('fa-bluetooth-b', 'BLE', bleActive, 'blue')
+    ].join('');
+}
+
+function renderTemperatureCard(temperature) {
+    const currentValue = isValidTemperature(temperature?.current)
+        ? Number(temperature.current).toFixed(1)
+        : '--.-';
+
+    setText('dashboard-temp-current', currentValue);
+    setText('dashboard-temp-target', formatTemperature(temperature?.target));
+    setText('dashboard-temp-hysteresis', formatTemperature(temperature?.hysteresis));
+}
+
+function renderBatteryWidgets(battery) {
+    const voltage = toFiniteNumber(battery?.voltage);
+    const percentRaw = toFiniteNumber(battery?.percent);
+    const percent = percentRaw === null ? null : clamp(Math.round(percentRaw), 0, 100);
+    const voltageText = voltage === null ? '--.--V' : `${voltage.toFixed(2)}V`;
+
+    setText('rtc-battery', voltageText);
+    setText('dashboard-battery-voltage', voltageText);
+    setText('dashboard-battery-percent', percent === null ? '--' : String(percent));
+
+    const fill = document.getElementById('dashboard-battery-fill');
+    if (fill) {
+        fill.style.width = `${percent === null ? 0 : percent}%`;
+        if (percent !== null && percent <= 15) {
+            fill.style.background = 'linear-gradient(90deg, #dc2626, #f87171)';
+        } else if (percent !== null && percent <= 35) {
+            fill.style.background = 'linear-gradient(90deg, #f59e0b, #fbbf24)';
+        } else {
+            fill.style.background = 'linear-gradient(90deg, #10b981, #34d399)';
+        }
+    }
+
+    let stateLabel = 'Brak pomiaru';
+    if (percent !== null) {
+        if (percent <= 15) {
+            stateLabel = 'Niski poziom';
+        } else if (percent <= 35) {
+            stateLabel = 'Warto obserwować';
+        } else {
+            stateLabel = 'Poziom stabilny';
+        }
+    }
+    setText('dashboard-battery-state', stateLabel);
+}
+
+function renderNetworkCard(network) {
+    const card = document.getElementById('network-card');
+    if (!card) return;
+
+    const staConnected = !!network?.staConnected;
+    const apMode = !!network?.apMode;
+    const statusText = staConnected && apMode ? 'AP + STA' : (staConnected ? 'STA ONLINE' : (apMode ? 'TYLKO AP' : 'OFFLINE'));
+
+    setText('network-status', statusText);
+    setText('network-ssid', network?.staSsid || '-');
+    setText('network-last-seen', formatEpoch(network?.staLastConnectedEpoch, { fallback: 'Brak historii' }));
+
+    card.classList.remove('network-online', 'network-aponly', 'network-offline');
+    card.classList.add(staConnected ? 'network-online' : (apMode ? 'network-aponly' : 'network-offline'));
+}
+
+function modeValue(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+}
+
+function setRelayCard(relayId, state, meta) {
+    const card = document.getElementById(`relay-${relayId}`);
+    const stateEl = document.getElementById(`relay-${relayId}-state`);
+    const metaEl = document.getElementById(`relay-${relayId}-meta`);
+    if (!card || !stateEl || !metaEl) return;
+
+    card.classList.remove('relay-on', 'relay-off', 'relay-standby');
+    card.classList.add(`relay-${state}`);
+    stateEl.textContent = state.toUpperCase();
+    metaEl.textContent = meta;
+}
+
+function renderRelays(data) {
+    const schedule = data.schedule || {};
+    const relays = data.relays || {};
+    const aerationPercent = clamp(Number(relays.aerationPercent || 0), 0, 100);
+
+    const lightMode = modeValue(schedule.lightMode);
+    const filterMode = modeValue(schedule.filterMode);
+    const airMode = modeValue(schedule.airMode);
+    const heaterMode = modeValue(schedule.heaterMode);
+
+    const lightState = relays.light ? 'on' : (lightMode === 2 ? 'off' : 'standby');
+    const filterState = relays.pump ? 'on' : (filterMode === 2 ? 'off' : 'standby');
+    const heaterState = relays.heater ? 'on' : (heaterMode === 1 ? 'off' : 'standby');
+    const aerationState = aerationPercent > 0 ? 'on' : (airMode === 2 ? 'off' : 'standby');
+
+    setRelayCard(
+        'light',
+        lightState,
+        lightMode === 1 ? 'Zawsze włączone' : (lightMode === 2 ? 'Ręcznie wyłączone' : formatRange(schedule.dayStartHour, schedule.dayStartMin, schedule.dayEndHour, schedule.dayEndMin))
+    );
+    setRelayCard(
+        'filter',
+        filterState,
+        filterMode === 1 ? 'Zawsze włączony' : (filterMode === 2 ? 'Ręcznie wyłączony' : formatRange(schedule.filterStartHour, schedule.filterStartMin, schedule.filterEndHour, schedule.filterEndMin))
+    );
+    setRelayCard(
+        'heater',
+        heaterState,
+        heaterState === 'on' ? 'Dogrzewanie aktywne' : (heaterMode === 1 ? 'Tryb OFF' : `Cel ${formatTemperature(data.temperature?.target)}`)
+    );
+    setRelayCard(
+        'aeration',
+        aerationState,
+        aerationState === 'on' ? `Otwarcie ${aerationPercent}%` : (airMode === 1 ? 'Zawsze aktywne' : (airMode === 2 ? 'Ręcznie zamknięte' : formatRange(schedule.airStartHour, schedule.airStartMin, schedule.airEndHour, schedule.airEndMin)))
+    );
+
+    const activeCount = [lightState, filterState, heaterState, aerationState].filter((state) => state === 'on').length;
+    setText('relay-count', `${activeCount} / 4 aktywne`);
+}
+
+function describeFeedSchedule(feeding) {
+    const freqLabel = formatFeedFrequency(feeding?.freq);
+    if (freqLabel === 'Wyłączone') {
+        return 'Automatyczne karmienie wyłączone';
+    }
+    return `${freqLabel} ${formatTime(feeding?.hour, feeding?.minute)}`;
+}
+
+function renderTodaySchedule(data) {
+    const list = document.getElementById('today-schedule-list');
+    if (!list) return;
+
+    const schedule = data.schedule || {};
+    const feeding = data.feeding || {};
+    const items = [
+        {
+            label: 'Światło',
+            value: modeValue(schedule.lightMode) === 1
+                ? 'Zawsze włączone'
+                : (modeValue(schedule.lightMode) === 2
+                    ? 'Wyłączone'
+                    : formatRange(schedule.dayStartHour, schedule.dayStartMin, schedule.dayEndHour, schedule.dayEndMin))
+        },
+        {
+            label: 'Filtr',
+            value: modeValue(schedule.filterMode) === 1
+                ? 'Zawsze włączony'
+                : (modeValue(schedule.filterMode) === 2
+                    ? 'Wyłączony'
+                    : formatRange(schedule.filterStartHour, schedule.filterStartMin, schedule.filterEndHour, schedule.filterEndMin))
+        },
+        {
+            label: 'Napowietrzanie',
+            value: modeValue(schedule.airMode) === 1
+                ? 'Zawsze aktywne'
+                : (modeValue(schedule.airMode) === 2
+                    ? 'Wyłączone'
+                    : formatRange(schedule.airStartHour, schedule.airStartMin, schedule.airEndHour, schedule.airEndMin))
+        },
+        {
+            label: 'Karmienie',
+            value: describeFeedSchedule(feeding)
+        }
+    ];
+
+    list.innerHTML = items.map((item) => `
+        <div class="schedule-summary-item">
+            <span>${escapeHtml(item.label)}</span>
+            <strong>${escapeHtml(item.value)}</strong>
+        </div>`).join('');
+}
+
+function renderFeederCard(data) {
+    const feeding = data.feeding || {};
+    setText('feed-next-label', describeFeedSchedule(feeding));
+
+    const lastFeedText = formatEpoch(feeding.lastFeedEpoch, {
+        fallback: 'brak danych',
+        includeDate: true,
+        includeSeconds: false
+    });
+    setText('feed-last-label', `Ostatnie karmienie: ${lastFeedText}`);
+
+    const button = document.getElementById('feed-now-btn');
+    if (button) {
+        button.disabled = !!feeding.active;
+        button.textContent = feeding.active ? 'Trwa...' : 'Karm teraz';
+    }
+}
+
+function showChartTooltip(clientX, clientY, point) {
+    const tooltip = document.getElementById('temperature-chart-tooltip');
+    const shell = document.querySelector('.temp-chart-shell');
+    if (!tooltip || !shell) return;
+
+    tooltip.innerHTML = `<strong>${escapeHtml(point.valueLabel)}</strong><span>${escapeHtml(point.timeLabel)}</span>`;
+    tooltip.hidden = false;
+
+    const rect = shell.getBoundingClientRect();
+    const width = tooltip.offsetWidth || 148;
+    const height = tooltip.offsetHeight || 56;
+    let left = clientX - rect.left - width / 2;
+    let top = clientY - rect.top - height - 14;
+
+    left = clamp(left, 10, rect.width - width - 10);
+    top = clamp(top, 10, rect.height - height - 10);
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+}
+
+function hideChartTooltip() {
+    const tooltip = document.getElementById('temperature-chart-tooltip');
+    if (tooltip) {
+        tooltip.hidden = true;
+    }
+}
+
+function renderTemperatureChart(temperature) {
+    const svg = document.getElementById('temperature-chart-svg');
+    const empty = document.getElementById('temperature-chart-empty');
+    if (!svg || !empty) return;
+
+    const rawHistory = Array.isArray(temperature?.history) ? temperature.history : [];
+    const points = rawHistory
+        .map((item, index) => ({
+            value: toFiniteNumber(item?.value),
+            epoch: toFiniteNumber(item?.epoch),
+            index
+        }))
+        .filter((item) => isValidTemperature(item.value))
+        .slice(-20)
+        .map((item, index, arr) => ({
+            value: item.value,
+            epoch: item.epoch,
+            valueLabel: `${Number(item.value).toFixed(2)}°C`,
+            timeLabel: formatEpoch(item.epoch, {
+                fallback: `Pomiar ${index + 1} z ${arr.length}`,
+                includeDate: false,
+                includeSeconds: true
+            })
+        }));
+
+    setText('temperature-chart-meta', `${points.length || 0} / 20 ostatnich pomiarów`);
+    setText('temperature-chart-start', points.length ? points[0].timeLabel : 'Najstarszy pomiar');
+    setText('temperature-chart-end', points.length ? points[points.length - 1].timeLabel : 'Teraz');
+    svg.innerHTML = '';
+    hideChartTooltip();
+
+    if (points.length === 0) {
+        empty.hidden = false;
+        return;
+    }
+
+    empty.hidden = true;
+
+    const width = 960;
+    const height = 320;
+    const padding = { top: 20, right: 96, bottom: 34, left: 52 };
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+    const target = toFiniteNumber(temperature?.target);
+    const hysteresis = Math.abs(toFiniteNumber(temperature?.hysteresis) ?? 0);
+
+    const rangeValues = points.map((point) => point.value);
+    if (target !== null) {
+        rangeValues.push(target);
+        if (hysteresis > 0) {
+            rangeValues.push(target + hysteresis, target - hysteresis);
+        }
+    }
+
+    let minValue = Math.min(...rangeValues);
+    let maxValue = Math.max(...rangeValues);
+    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+        minValue = 20;
+        maxValue = 30;
+    }
+    if (Math.abs(maxValue - minValue) < 0.8) {
+        maxValue += 0.4;
+        minValue -= 0.4;
+    }
+    const pad = Math.max(0.2, (maxValue - minValue) * 0.12);
+    maxValue += pad;
+    minValue -= pad;
+
+    const xFor = (index) => padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
+    const yFor = (value) => padding.top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
+
+    const gridSteps = 4;
+    for (let i = 0; i <= gridSteps; i += 1) {
+        const ratio = i / gridSteps;
+        const y = padding.top + ratio * plotHeight;
+        const value = maxValue - ratio * (maxValue - minValue);
+        svg.appendChild(createSvgEl('line', {
+            x1: padding.left,
+            y1: y,
+            x2: padding.left + plotWidth,
+            y2: y,
+            class: 'chart-grid-line'
+        }));
+        const label = createSvgEl('text', {
+            x: 6,
+            y: y + 4,
+            class: 'chart-grid-label'
+        });
+        label.textContent = `${value.toFixed(1)}°C`;
+        svg.appendChild(label);
+    }
+
+    if (target !== null) {
+        const targetY = yFor(target);
+        svg.appendChild(createSvgEl('line', {
+            x1: padding.left,
+            y1: targetY,
+            x2: padding.left + plotWidth,
+            y2: targetY,
+            class: 'chart-target-line'
+        }));
+        const targetLabel = createSvgEl('text', {
+            x: padding.left + plotWidth + 10,
+            y: targetY + 4,
+            class: 'chart-guide-label'
+        });
+        targetLabel.textContent = `Cel ${target.toFixed(1)}°C`;
+        svg.appendChild(targetLabel);
+
+        if (hysteresis > 0) {
+            const upper = target + hysteresis;
+            const lower = target - hysteresis;
+            [upper, lower].forEach((value, index) => {
+                const lineY = yFor(value);
+                svg.appendChild(createSvgEl('line', {
+                    x1: padding.left,
+                    y1: lineY,
+                    x2: padding.left + plotWidth,
+                    y2: lineY,
+                    class: 'chart-hysteresis-line'
+                }));
+                const guide = createSvgEl('text', {
+                    x: padding.left + plotWidth + 10,
+                    y: lineY + 4,
+                    class: 'chart-guide-label hysteresis'
+                });
+                guide.textContent = `${index === 0 ? 'H +' : 'H -'} ${value.toFixed(1)}°C`;
+                svg.appendChild(guide);
+            });
+        }
+    }
+
+    const defs = createSvgEl('defs');
+    const gradient = createSvgEl('linearGradient', {
+        id: 'chart-area-gradient',
+        x1: '0%',
+        y1: '0%',
+        x2: '0%',
+        y2: '100%'
+    });
+    const startStop = createSvgEl('stop', { offset: '0%', 'stop-color': '#22d3ee', 'stop-opacity': '0.28' });
+    const endStop = createSvgEl('stop', { offset: '100%', 'stop-color': '#22d3ee', 'stop-opacity': '0.02' });
+    gradient.appendChild(startStop);
+    gradient.appendChild(endStop);
+    defs.appendChild(gradient);
+    svg.appendChild(defs);
+
+    const pathData = points.map((point, index) => {
+        const x = xFor(index);
+        const y = yFor(point.value);
+        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    }).join(' ');
+    const areaData = `${pathData} L ${xFor(points.length - 1).toFixed(2)} ${(padding.top + plotHeight).toFixed(2)} L ${xFor(0).toFixed(2)} ${(padding.top + plotHeight).toFixed(2)} Z`;
+    svg.appendChild(createSvgEl('path', { d: areaData, class: 'chart-area' }));
+    svg.appendChild(createSvgEl('path', { d: pathData, class: 'chart-line' }));
+
+    points.forEach((point, index) => {
+        const x = xFor(index);
+        const y = yFor(point.value);
+
+        const circle = createSvgEl('circle', {
+            cx: x,
+            cy: y,
+            r: 5,
+            class: 'chart-point'
+        });
+        const title = createSvgEl('title');
+        title.textContent = `${point.valueLabel} - ${point.timeLabel}`;
+        circle.appendChild(title);
+        svg.appendChild(circle);
+
+        const hit = createSvgEl('circle', {
+            cx: x,
+            cy: y,
+            r: 13,
+            tabindex: 0,
+            class: 'chart-point-hit'
+        });
+        hit.addEventListener('mouseenter', (event) => showChartTooltip(event.clientX, event.clientY, point));
+        hit.addEventListener('mousemove', (event) => showChartTooltip(event.clientX, event.clientY, point));
+        hit.addEventListener('mouseleave', hideChartTooltip);
+        hit.addEventListener('focus', () => {
+            const rect = svg.getBoundingClientRect();
+            showChartTooltip(rect.left + x, rect.top + y, point);
+        });
+        hit.addEventListener('blur', hideChartTooltip);
+        svg.appendChild(hit);
+    });
+}
+
+function renderDashboard(data) {
+    lastStatusData = data;
+    renderTopbarActiveModules(data);
+    renderTemperatureCard(data.temperature || {});
+    renderBatteryWidgets(data.battery || {});
+    renderNetworkCard(data.network || {});
+    renderRelays(data);
+    renderTodaySchedule(data);
+    renderFeederCard(data);
+    renderTemperatureChart(data.temperature || {});
+}
+
 async function fetchStatus() {
     try {
         const response = await fetch(API_STATUS, { cache: 'no-store' });
         if (!response.ok) throw new Error('status http');
         const data = await response.json();
         setBackendState(true);
-
-        const apBadge = document.getElementById('ap-badge');
-        const staBadge = document.getElementById('sta-badge');
-        if (apBadge && staBadge && data.network) {
-            const apMode = !!data.network.apMode;
-            apBadge.style.opacity = apMode ? '1' : '0.45';
-            staBadge.style.opacity = apMode ? '0.45' : '1';
-        }
-
-        const rtcBattery = document.getElementById('rtc-battery');
-        if (rtcBattery && data.battery?.voltage !== undefined) {
-            rtcBattery.textContent = `${Number(data.battery.voltage).toFixed(2)}V`;
-        }
+        syncClockFromController(data.clock);
+        renderDashboard(data);
     } catch (e) {
         setBackendState(false);
     }
@@ -2137,6 +3348,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-)AQWEB";
+)AQSCRIPT";
 
 #endif // WEB_ASSETS_H

@@ -1,5 +1,8 @@
 #include "SharedState.h"
 
+#include <cmath>
+#include <cstring>
+
 SemaphoreHandle_t SharedState::mutex = NULL;
 SharedStateData SharedState::state = {};
 
@@ -23,6 +26,11 @@ void SharedState::init() {
   state.day = 1;
   state.month = 1;
   state.year = 2025;
+  state.temperatureHistoryCount = 0;
+  for (uint8_t i = 0; i < TEMP_HISTORY_SIZE; ++i) {
+    state.temperatureHistory[i].value = NAN;
+    state.temperatureHistory[i].epoch = 0;
+  }
 }
 
 SharedStateData SharedState::getSnapshot() {
@@ -41,12 +49,27 @@ SharedStateData SharedState::getSnapshot() {
 }
 
 void SharedState::updateTemperature(float current, float min, uint32_t minEp,
-                                    float max) {
+                                    float max, uint32_t currentEpoch) {
   if (mutex != NULL && xSemaphoreTake(mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
     state.temperature = current;
     state.minTemp = min;
     state.minTempEpoch = minEp;
     state.maxTemp = max;
+
+    const bool validTemperature = !isnan(current) && current > -50.0f && current < 100.0f;
+    if (validTemperature) {
+      if (state.temperatureHistoryCount >= TEMP_HISTORY_SIZE) {
+        memmove(&state.temperatureHistory[0], &state.temperatureHistory[1],
+                sizeof(TemperatureHistoryEntry) * (TEMP_HISTORY_SIZE - 1));
+        state.temperatureHistoryCount = TEMP_HISTORY_SIZE - 1;
+      }
+
+      TemperatureHistoryEntry &entry =
+          state.temperatureHistory[state.temperatureHistoryCount++];
+      entry.value = current;
+      entry.epoch = currentEpoch;
+    }
+
     xSemaphoreGive(mutex);
   }
 }
