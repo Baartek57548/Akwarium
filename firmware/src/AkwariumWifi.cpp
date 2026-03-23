@@ -131,13 +131,17 @@ static void setupWebServer() {
 
   server.on("/style.css", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
-    server.sendHeader("Cache-Control", "public, max-age=60");
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "0");
     server.send_P(200, "text/css; charset=utf-8", web_style_css);
   });
 
   server.on("/script.js", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
-    server.sendHeader("Cache-Control", "public, max-age=60");
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "0");
     server.send_P(200, "application/javascript; charset=utf-8", web_script_js);
   });
 

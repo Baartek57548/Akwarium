@@ -54,6 +54,8 @@ bool lastSelectPressed = false;
 bool lastDownPressed = false;
 unsigned long allButtonsHoldStartMs = 0;
 bool manualFeedComboTriggered = false;
+unsigned long singleButtonGuardStartMs = 0;
+uint8_t singleButtonGuardMask = 0;
 bool feedingUiActive = false;
 UiState uiStateBeforeFeeding = UiState::HOME;
 unsigned long lastUiInteractionMs = 0;
@@ -83,8 +85,13 @@ uint16_t feedingsCounterYear = 2025;
 #define BUTTON_SELECT_PIN 16
 #define BUTTON_DOWN_PIN 14
 #define MANUAL_FEED_HOLD_MS 1000UL
+#define MANUAL_FEED_SINGLE_GUARD_MS 140UL
 #define UI_IDLE_RETURN_HOME_MS 30000UL
 #define LOGS_DELETE_HOLD_MS 3000UL
+
+static constexpr uint8_t BUTTON_MASK_UP = (1U << 0);
+static constexpr uint8_t BUTTON_MASK_SELECT = (1U << 1);
+static constexpr uint8_t BUTTON_MASK_DOWN = (1U << 2);
 
 static void clampRelayPinsAtBoot() {
   // Szybkie "usztywnienie" pinow po restarcie, aby ograniczyc przypadkowe
@@ -280,19 +287,27 @@ static void captureUiChanges() {
     queueScheduleUpdateFromAnimation();
   }
 
+  const bool timeChanged = animation->hasTimeChanged();
   unsigned long nowMs = millis();
   if (isUiTimeSyncSuppressed(nowMs)) {
-    if (animation->hasTimeChanged()) {
+    if (timeChanged) {
       LogManager::logWarn(
           "Pominieto zapis czasu z UI podczas recznego karmienia.");
     }
     return;
   }
 
-  // Accept RTC time changes only from Date/Time screen to avoid accidental
-  // writes when leaving other views (for example Tests).
-  if (uiState == UiState::SETTINGS_DATETIME && animation->hasTimeChanged()) {
+  if (!timeChanged) {
+    return;
+  }
+
+  // Accept RTC time changes only from Date/Time screen. Any pending flag seen
+  // in other views is treated as stale and must be dropped.
+  if (uiState == UiState::SETTINGS_DATETIME) {
     queueTimeUpdateFromAnimation();
+  } else {
+    LogManager::logWarn(
+        "Odrzucono zalegla zmiane czasu poza ekranem daty/czasu.");
   }
 }
 
@@ -388,10 +403,20 @@ void updateUiState() {
   bool isUpPressed = (digitalRead(BUTTON_UP_PIN) == LOW);
   bool isSelectPressed = (digitalRead(BUTTON_SELECT_PIN) == LOW);
   bool isDownPressed = (digitalRead(BUTTON_DOWN_PIN) == LOW);
+  const uint8_t buttonMask =
+      (isUpPressed ? BUTTON_MASK_UP : 0U) |
+      (isSelectPressed ? BUTTON_MASK_SELECT : 0U) |
+      (isDownPressed ? BUTTON_MASK_DOWN : 0U);
+  const uint8_t pressedButtonsCount =
+      (isUpPressed ? 1U : 0U) + (isSelectPressed ? 1U : 0U) +
+      (isDownPressed ? 1U : 0U);
   bool allButtonsPressed = isUpPressed && isSelectPressed && isDownPressed;
-  bool upJustPressed = isUpPressed && !lastUpPressed;
-  bool selectJustPressed = isSelectPressed && !lastSelectPressed;
-  bool downJustPressed = isDownPressed && !lastDownPressed;
+  bool upJustPressedRaw = isUpPressed && !lastUpPressed;
+  bool selectJustPressedRaw = isSelectPressed && !lastSelectPressed;
+  bool downJustPressedRaw = isDownPressed && !lastDownPressed;
+  bool upJustPressed = upJustPressedRaw;
+  bool selectJustPressed = selectJustPressedRaw;
+  bool downJustPressed = downJustPressedRaw;
   const bool oledWasSleeping = (PowerManager::getCurrentMode() != MODE_ACTIVE);
 
   // Pierwsze klikniecie po wygaszeniu ekranu tylko wybudza OLED.
@@ -399,6 +424,41 @@ void updateUiState() {
   if (oledWasSleeping && (upJustPressed || selectJustPressed || downJustPressed)) {
     PowerManager::registerActivity();
     lastUiInteractionMs = nowMs;
+    lastUpPressed = isUpPressed;
+    lastSelectPressed = isSelectPressed;
+    lastDownPressed = isDownPressed;
+    return;
+  }
+
+  // Delay single-button edges briefly so a 3-button chord can form without
+  // firing intermediate UI actions (e.g. toggles in Tests).
+  if (singleButtonGuardMask != 0) {
+    const bool guardedButtonStillPressed =
+        (buttonMask & singleButtonGuardMask) == singleButtonGuardMask;
+    if (pressedButtonsCount >= 2) {
+      singleButtonGuardMask = 0;
+      singleButtonGuardStartMs = 0;
+      upJustPressed = false;
+      selectJustPressed = false;
+      downJustPressed = false;
+    } else if (!guardedButtonStillPressed ||
+               static_cast<long>(nowMs - singleButtonGuardStartMs) >=
+                   MANUAL_FEED_SINGLE_GUARD_MS) {
+      upJustPressed = (singleButtonGuardMask & BUTTON_MASK_UP) != 0U;
+      selectJustPressed = (singleButtonGuardMask & BUTTON_MASK_SELECT) != 0U;
+      downJustPressed = (singleButtonGuardMask & BUTTON_MASK_DOWN) != 0U;
+      singleButtonGuardMask = 0;
+      singleButtonGuardStartMs = 0;
+    } else {
+      lastUpPressed = isUpPressed;
+      lastSelectPressed = isSelectPressed;
+      lastDownPressed = isDownPressed;
+      return;
+    }
+  } else if (pressedButtonsCount == 1 &&
+             (upJustPressedRaw || selectJustPressedRaw || downJustPressedRaw)) {
+    singleButtonGuardMask = buttonMask;
+    singleButtonGuardStartMs = nowMs;
     lastUpPressed = isUpPressed;
     lastSelectPressed = isSelectPressed;
     lastDownPressed = isDownPressed;
@@ -419,6 +479,14 @@ void updateUiState() {
   } else {
     allButtonsHoldStartMs = 0;
     manualFeedComboTriggered = false;
+  }
+
+  if (pressedButtonsCount >= 2 && !allButtonsPressed) {
+    resetLogsDeleteHoldState();
+    lastUpPressed = isUpPressed;
+    lastSelectPressed = isSelectPressed;
+    lastDownPressed = isDownPressed;
+    return;
   }
 
   bool feedingNow = SystemController::isFeedingNow();

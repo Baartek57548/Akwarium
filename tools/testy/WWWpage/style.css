@@ -36,18 +36,92 @@
     font-family: 'Inter', sans-serif;
 }
 
+
+i.fa-solid,
+i.fa-regular {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    font-style: normal;
+    line-height: 1;
+    vertical-align: -0.125em;
+}
+
+i.fa-solid svg,
+i.fa-regular svg {
+    width: 100%;
+    height: 100%;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    overflow: visible;
+}
+
+.fa-2x { font-size: 2em; }
+.fa-2xl { font-size: 2.35em; }
+.fa-spin { animation: fa-local-spin 1.2s linear infinite; }
+.fa-bounce {
+    transform-origin: center bottom;
+    animation: fa-local-bounce 1.8s ease infinite;
+}
+
+@keyframes fa-local-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes fa-local-bounce {
+    0%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-18%); }
+    45% { transform: translateY(0); }
+    60% { transform: translateY(-8%); }
+}
+
 body {
+    position: relative;
     background-color: var(--bg-dark);
-    /* Deep ocean background with a heavy gradient overlay to ensure perfect contrast and readability */
-    background-image: 
-        linear-gradient(to bottom right, rgba(3, 7, 18, 0.85), rgba(3, 7, 18, 0.95)),
-        url('https://images.unsplash.com/photo-1518837695005-2083093ee35b?q=80&w=2560&auto=format&fit=crop');
+    background-image:
+        radial-gradient(circle at 18% 12%, rgba(34, 211, 238, 0.1), transparent 24%),
+        radial-gradient(circle at 82% 18%, rgba(59, 130, 246, 0.12), transparent 28%),
+        linear-gradient(180deg, rgba(15, 28, 46, 0.92) 0%, rgba(7, 14, 24, 0.92) 45%, rgba(3, 7, 18, 1) 100%);
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
     color: var(--text-main);
     min-height: 100vh;
     overflow-x: hidden;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(circle at 72% 64%, rgba(203, 213, 225, 0.1), transparent 18%),
+        radial-gradient(circle at 40% 78%, rgba(34, 211, 238, 0.12), transparent 20%),
+        linear-gradient(180deg, transparent 52%, rgba(7, 14, 24, 0.06) 58%, rgba(7, 14, 24, 0.65) 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+body::after {
+    content: "";
+    position: fixed;
+    left: -10vw;
+    right: -10vw;
+    bottom: -12vh;
+    height: 46vh;
+    background:
+        radial-gradient(120% 110% at 50% 100%, rgba(12, 21, 36, 0.98) 34%, rgba(12, 21, 36, 0.92) 47%, rgba(12, 21, 36, 0) 48%),
+        radial-gradient(60% 38% at 50% 64%, rgba(148, 163, 184, 0.16) 0, rgba(148, 163, 184, 0.03) 36%, rgba(148, 163, 184, 0) 60%),
+        linear-gradient(180deg, rgba(24, 42, 68, 0.6), rgba(5, 12, 22, 0.92));
+    filter: blur(14px);
+    opacity: 0.95;
+    pointer-events: none;
+    z-index: 0;
 }
 
 /* Glassmorphism utility */
@@ -63,6 +137,8 @@ body {
 .app-container {
     display: flex;
     min-height: 100vh;
+    position: relative;
+    z-index: 1;
 }
 
 /* Sidebar */
@@ -165,8 +241,11 @@ body {
 .main-content {
     flex: 1;
     margin-left: var(--sidebar-width);
-    padding: 32px 48px;
-    max-width: 1400px;
+    padding: 32px 48px 48px;
+    width: calc(100vw - var(--sidebar-width));
+    max-width: none;
+    position: relative;
+    z-index: 2;
 }
 
 /* Topbar */
@@ -695,7 +774,8 @@ input:checked + .slider:before {
 
 /* Timeline Container (Harmonogramy) */
 .timeline-container {
-    max-width: 800px;
+    max-width: none;
+    width: 100%;
 }
 .p-4 { padding: 24px; }
 .mh-2 { font-size: 18px; font-weight: 600; }
@@ -765,7 +845,8 @@ input:checked + .slider:before {
 
 /* Terminal Layout (Logi) */
 .terminal {
-    max-width: 1000px;
+    max-width: none;
+    width: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -831,5 +912,5 @@ input:checked + .slider:before {
 
 [data-target] { cursor: pointer; }
 
- 
- 
+
+

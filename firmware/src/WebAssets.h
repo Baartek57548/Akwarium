@@ -1,21 +1,14 @@
-#ifndef WEBASSETS_H
-#define WEBASSETS_H
+#ifndef WEB_ASSETS_H
+#define WEB_ASSETS_H
 
-#include <Arduino.h>
-
-// ==========================================================
-// WYGENEROWANO AUTOMATYCZNIE - WebAssets.h
-// Zawiera najnowsze wersje: index.html, style.css, script.js
-// ==========================================================
-
-const char web_index_html[] PROGMEM = R"rawliteral(
+const char web_index_html[] PROGMEM = R"AQWEB(
 <!DOCTYPE html>
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aquarium Controller ESP32</title>
-    <link rel="stylesheet" href="style.css?v=3">
+    <link rel="stylesheet" href="style.css?v=20260323b">
     <style>
         /* Custom Time Inputs (Pills) */
         input[type="time"].time-pill {
@@ -654,13 +647,13 @@ const char web_index_html[] PROGMEM = R"rawliteral(
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=20260323b"></script>
 </body>
 </html>
 
-)rawliteral";
+)AQWEB";
 
-const char web_style_css[] PROGMEM = R"rawliteral(
+const char web_style_css[] PROGMEM = R"AQWEB(
 :root {
     /* Color Palette */
     --bg-dark: #030712;
@@ -699,18 +692,92 @@ const char web_style_css[] PROGMEM = R"rawliteral(
     font-family: 'Inter', sans-serif;
 }
 
+
+i.fa-solid,
+i.fa-regular {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    font-style: normal;
+    line-height: 1;
+    vertical-align: -0.125em;
+}
+
+i.fa-solid svg,
+i.fa-regular svg {
+    width: 100%;
+    height: 100%;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    overflow: visible;
+}
+
+.fa-2x { font-size: 2em; }
+.fa-2xl { font-size: 2.35em; }
+.fa-spin { animation: fa-local-spin 1.2s linear infinite; }
+.fa-bounce {
+    transform-origin: center bottom;
+    animation: fa-local-bounce 1.8s ease infinite;
+}
+
+@keyframes fa-local-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes fa-local-bounce {
+    0%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-18%); }
+    45% { transform: translateY(0); }
+    60% { transform: translateY(-8%); }
+}
+
 body {
+    position: relative;
     background-color: var(--bg-dark);
-    /* Deep ocean background with a heavy gradient overlay to ensure perfect contrast and readability */
-    background-image: 
-        linear-gradient(to bottom right, rgba(3, 7, 18, 0.85), rgba(3, 7, 18, 0.95)),
-        url('https://images.unsplash.com/photo-1518837695005-2083093ee35b?q=80&w=2560&auto=format&fit=crop');
+    background-image:
+        radial-gradient(circle at 18% 12%, rgba(34, 211, 238, 0.1), transparent 24%),
+        radial-gradient(circle at 82% 18%, rgba(59, 130, 246, 0.12), transparent 28%),
+        linear-gradient(180deg, rgba(15, 28, 46, 0.92) 0%, rgba(7, 14, 24, 0.92) 45%, rgba(3, 7, 18, 1) 100%);
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
     color: var(--text-main);
     min-height: 100vh;
     overflow-x: hidden;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(circle at 72% 64%, rgba(203, 213, 225, 0.1), transparent 18%),
+        radial-gradient(circle at 40% 78%, rgba(34, 211, 238, 0.12), transparent 20%),
+        linear-gradient(180deg, transparent 52%, rgba(7, 14, 24, 0.06) 58%, rgba(7, 14, 24, 0.65) 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+body::after {
+    content: "";
+    position: fixed;
+    left: -10vw;
+    right: -10vw;
+    bottom: -12vh;
+    height: 46vh;
+    background:
+        radial-gradient(120% 110% at 50% 100%, rgba(12, 21, 36, 0.98) 34%, rgba(12, 21, 36, 0.92) 47%, rgba(12, 21, 36, 0) 48%),
+        radial-gradient(60% 38% at 50% 64%, rgba(148, 163, 184, 0.16) 0, rgba(148, 163, 184, 0.03) 36%, rgba(148, 163, 184, 0) 60%),
+        linear-gradient(180deg, rgba(24, 42, 68, 0.6), rgba(5, 12, 22, 0.92));
+    filter: blur(14px);
+    opacity: 0.95;
+    pointer-events: none;
+    z-index: 0;
 }
 
 /* Glassmorphism utility */
@@ -726,6 +793,8 @@ body {
 .app-container {
     display: flex;
     min-height: 100vh;
+    position: relative;
+    z-index: 1;
 }
 
 /* Sidebar */
@@ -828,8 +897,11 @@ body {
 .main-content {
     flex: 1;
     margin-left: var(--sidebar-width);
-    padding: 32px 48px;
-    max-width: 1400px;
+    padding: 32px 48px 48px;
+    width: calc(100vw - var(--sidebar-width));
+    max-width: none;
+    position: relative;
+    z-index: 2;
 }
 
 /* Topbar */
@@ -1210,7 +1282,6 @@ input:checked + .slider:before {
     left: -50%;
     animation: rotate 6s linear infinite;
 }
-.water-info b { color: var(--accent-cyan); }
 
 .wave2 {
     background: rgba(59, 130, 246, 0.2);
@@ -1359,7 +1430,8 @@ input:checked + .slider:before {
 
 /* Timeline Container (Harmonogramy) */
 .timeline-container {
-    max-width: 800px;
+    max-width: none;
+    width: 100%;
 }
 .p-4 { padding: 24px; }
 .mh-2 { font-size: 18px; font-weight: 600; }
@@ -1429,7 +1501,8 @@ input:checked + .slider:before {
 
 /* Terminal Layout (Logi) */
 .terminal {
-    max-width: 1000px;
+    max-width: none;
+    width: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1496,9 +1569,11 @@ input:checked + .slider:before {
 [data-target] { cursor: pointer; }
 
 
-)rawliteral";
 
-const char web_script_js[] PROGMEM = R"rawliteral(
+
+)AQWEB";
+
+const char web_script_js[] PROGMEM = R"AQWEB(
 const API_STATUS = '/api/status';
 const API_ACTION = '/api/action';
 const API_LOGS = '/api/logs';
@@ -1507,6 +1582,154 @@ const API_OTA = '/update';
 let backendConnected = false;
 let activeLogType = 'normal';
 let cachedLogs = { normal: [], critical: [] };
+
+function makeLocalIcon(paths) {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
+}
+
+const LOCAL_ICON_SVGS = {
+    'fa-water': makeLocalIcon(`
+        <path fill="none" d="M3 7c2 2 4 2 6 0s4-2 6 0 4 2 6 0"/>
+        <path fill="none" d="M3 12c2 2 4 2 6 0s4-2 6 0 4 2 6 0"/>
+        <path fill="none" d="M3 17c2 2 4 2 6 0s4-2 6 0 4 2 6 0"/>
+    `),
+    'fa-gauge-high': makeLocalIcon(`
+        <path fill="none" d="M4 14a8 8 0 1 1 16 0"/>
+        <path fill="none" d="M12 14l4-4"/>
+        <circle cx="12" cy="14" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-calendar-days': makeLocalIcon(`
+        <rect x="3" y="5" width="18" height="16" rx="2" fill="none"/>
+        <path fill="none" d="M8 3v4M16 3v4M3 10h18"/>
+        <circle cx="8" cy="14" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="12" cy="14" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="16" cy="14" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="8" cy="18" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="12" cy="18" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="16" cy="18" r="0.9" fill="currentColor" stroke="none"/>
+    `),
+    'fa-terminal': makeLocalIcon(`
+        <path fill="none" d="M4 7l4 4-4 4"/>
+        <path fill="none" d="M12 15h8"/>
+        <path fill="none" d="M3 20h18"/>
+    `),
+    'fa-cloud-arrow-up': makeLocalIcon(`
+        <path fill="none" d="M7 18a4 4 0 0 1 .9-7.9A5 5 0 0 1 17.5 12H18a3 3 0 0 1 0 6H7z"/>
+        <path fill="none" d="M12 16V9"/>
+        <path fill="none" d="m9.5 11.5 2.5-2.5 2.5 2.5"/>
+    `),
+    'fa-gear': makeLocalIcon(`
+        <circle cx="12" cy="12" r="3.5" fill="none"/>
+        <path fill="none" d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>
+    `),
+    'fa-battery-three-quarters': makeLocalIcon(`
+        <rect x="2.5" y="7" width="18" height="10" rx="2" fill="none"/>
+        <path fill="none" d="M22 10v4"/>
+        <path fill="none" d="M6 10v4M10 10v4M14 10v4"/>
+    `),
+    'fa-lightbulb': makeLocalIcon(`
+        <path fill="none" d="M8 14a5 5 0 1 1 8 0c-.7.7-1.2 1.5-1.5 2.5h-5C9.2 15.5 8.7 14.7 8 14z"/>
+        <path fill="none" d="M9 18h6M10 21h4"/>
+    `),
+    'fa-wind': makeLocalIcon(`
+        <path fill="none" d="M4 9h10a2.5 2.5 0 1 0-2.2-3.7"/>
+        <path fill="none" d="M3 13h15a2.5 2.5 0 1 1-2.2 3.7"/>
+        <path fill="none" d="M5 17h8"/>
+    `),
+    'fa-filter': makeLocalIcon(`
+        <path fill="none" d="M4 5h16l-6 7v5l-4 2v-7L4 5z"/>
+    `),
+    'fa-fish': makeLocalIcon(`
+        <path fill="none" d="M3 12c3-4 7-5 11-4l4-3v4l3 3-3 3v4l-4-3c-4 1-8 0-11-4z"/>
+        <circle cx="9" cy="10.5" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-download': makeLocalIcon(`
+        <path fill="none" d="M12 4v11"/>
+        <path fill="none" d="m7 11 5 5 5-5"/>
+        <path fill="none" d="M4 20h16"/>
+    `),
+    'fa-file-arrow-up': makeLocalIcon(`
+        <path fill="none" d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/>
+        <path fill="none" d="M14 2v5h5"/>
+        <path fill="none" d="M12 17V10"/>
+        <path fill="none" d="m9.5 12.5 2.5-2.5 2.5 2.5"/>
+    `),
+    'fa-circle-notch': makeLocalIcon(`
+        <path fill="none" d="M20 12a8 8 0 1 1-3.2-6.4"/>
+    `),
+    'fa-triangle-exclamation': makeLocalIcon(`
+        <path fill="none" d="M12 4 3.5 19h17L12 4z"/>
+        <path fill="none" d="M12 9.5v4.5"/>
+        <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-microchip': makeLocalIcon(`
+        <rect x="7" y="7" width="10" height="10" rx="1.5" fill="none"/>
+        <path fill="none" d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>
+    `),
+    'fa-wifi': makeLocalIcon(`
+        <path fill="none" d="M5 10a12 12 0 0 1 14 0"/>
+        <path fill="none" d="M8 13a7 7 0 0 1 8 0"/>
+        <path fill="none" d="M11 16a3 3 0 0 1 2 0"/>
+        <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-satellite-dish': makeLocalIcon(`
+        <path fill="none" d="M4 20a10 10 0 0 1 10-10"/>
+        <path fill="none" d="M7 17a6 6 0 0 1 6-6"/>
+        <circle cx="18" cy="6" r="2" fill="none"/>
+        <path fill="none" d="M11 20l2-6 6-2"/>
+    `),
+    'fa-temperature-half': makeLocalIcon(`
+        <path fill="none" d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0Z"/>
+        <path fill="none" d="M12 11v5"/>
+    `),
+    'fa-floppy-disk': makeLocalIcon(`
+        <path fill="none" d="M5 3h11l3 3v15H5z"/>
+        <path fill="none" d="M8 3v6h8V3"/>
+        <path fill="none" d="M9 18h6"/>
+    `),
+    'fa-circle-info': makeLocalIcon(`
+        <circle cx="12" cy="12" r="9" fill="none"/>
+        <path fill="none" d="M12 11.5v4.5"/>
+        <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-clock': makeLocalIcon(`
+        <circle cx="12" cy="12" r="9" fill="none"/>
+        <path fill="none" d="M12 7v5l3 2"/>
+    `),
+    'fa-arrows-rotate': makeLocalIcon(`
+        <path fill="none" d="M4 12a8 8 0 0 1 13.7-5.7"/>
+        <path fill="none" d="M18 3v5h-5"/>
+        <path fill="none" d="M20 12a8 8 0 0 1-13.7 5.7"/>
+        <path fill="none" d="M6 21v-5h5"/>
+    `),
+    'fa-laptop': makeLocalIcon(`
+        <rect x="5" y="5" width="14" height="10" rx="1.5" fill="none"/>
+        <path fill="none" d="M3 19h18"/>
+    `),
+    'fa-rotate-right': makeLocalIcon(`
+        <path fill="none" d="M20 12a8 8 0 1 1-2.3-5.7"/>
+        <path fill="none" d="M20 4v6h-6"/>
+    `),
+    'fa-spinner': makeLocalIcon(`
+        <path fill="none" d="M20 12a8 8 0 1 1-3.2-6.4"/>
+    `),
+    'fa-check-circle': makeLocalIcon(`
+        <circle cx="12" cy="12" r="9" fill="none"/>
+        <path fill="none" d="m8.5 12.5 2.2 2.2 4.8-5.2"/>
+    `)
+};
+
+function renderLocalIcon(el) {
+    if (!el) return;
+    const iconClass = Array.from(el.classList).find((cls) => LOCAL_ICON_SVGS[cls]);
+    if (!iconClass) return;
+    el.innerHTML = LOCAL_ICON_SVGS[iconClass];
+    el.setAttribute('aria-hidden', 'true');
+}
+
+function initLocalIcons() {
+    document.querySelectorAll('i[class*="fa-"]').forEach(renderLocalIcon);
+}
 
 // Clock Logic
 function updateClock() {
@@ -1745,6 +1968,7 @@ function triggerFeed() {
     // Simulate feeding process
     setTimeout(() => {
         icon.className = 'fa-solid fa-check-circle fa-2xl';
+        renderLocalIcon(icon);
         icon.style.color = 'var(--success-color)';
         text.textContent = 'Sukces';
         p.textContent = 'Karmienie zakończone pomyślnie. Status sensora: OK.';
@@ -1754,6 +1978,7 @@ function triggerFeed() {
             // Reset for next time
             setTimeout(() => {
                 icon.className = 'fa-solid fa-spinner fa-spin fa-2xl';
+                renderLocalIcon(icon);
                 icon.style.color = 'var(--accent-cyan)';
                 text.textContent = 'Trwa karmienie...';
                 p.textContent = 'Sensor położenia w trakcie odczytu';
@@ -1853,6 +2078,7 @@ function simulateOTA() {
 
 // Init Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
+    initLocalIcons();
     updateClock();
     setInterval(updateClock, 1000);
     
@@ -1911,6 +2137,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-)rawliteral";
+)AQWEB";
 
-#endif
+#endif // WEB_ASSETS_H
