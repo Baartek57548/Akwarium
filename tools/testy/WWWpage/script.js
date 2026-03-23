@@ -7,6 +7,154 @@ let backendConnected = false;
 let activeLogType = 'normal';
 let cachedLogs = { normal: [], critical: [] };
 
+function makeLocalIcon(paths) {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
+}
+
+const LOCAL_ICON_SVGS = {
+    'fa-water': makeLocalIcon(`
+        <path fill="none" d="M3 7c2 2 4 2 6 0s4-2 6 0 4 2 6 0"/>
+        <path fill="none" d="M3 12c2 2 4 2 6 0s4-2 6 0 4 2 6 0"/>
+        <path fill="none" d="M3 17c2 2 4 2 6 0s4-2 6 0 4 2 6 0"/>
+    `),
+    'fa-gauge-high': makeLocalIcon(`
+        <path fill="none" d="M4 14a8 8 0 1 1 16 0"/>
+        <path fill="none" d="M12 14l4-4"/>
+        <circle cx="12" cy="14" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-calendar-days': makeLocalIcon(`
+        <rect x="3" y="5" width="18" height="16" rx="2" fill="none"/>
+        <path fill="none" d="M8 3v4M16 3v4M3 10h18"/>
+        <circle cx="8" cy="14" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="12" cy="14" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="16" cy="14" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="8" cy="18" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="12" cy="18" r="0.9" fill="currentColor" stroke="none"/>
+        <circle cx="16" cy="18" r="0.9" fill="currentColor" stroke="none"/>
+    `),
+    'fa-terminal': makeLocalIcon(`
+        <path fill="none" d="M4 7l4 4-4 4"/>
+        <path fill="none" d="M12 15h8"/>
+        <path fill="none" d="M3 20h18"/>
+    `),
+    'fa-cloud-arrow-up': makeLocalIcon(`
+        <path fill="none" d="M7 18a4 4 0 0 1 .9-7.9A5 5 0 0 1 17.5 12H18a3 3 0 0 1 0 6H7z"/>
+        <path fill="none" d="M12 16V9"/>
+        <path fill="none" d="m9.5 11.5 2.5-2.5 2.5 2.5"/>
+    `),
+    'fa-gear': makeLocalIcon(`
+        <circle cx="12" cy="12" r="3.5" fill="none"/>
+        <path fill="none" d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>
+    `),
+    'fa-battery-three-quarters': makeLocalIcon(`
+        <rect x="2.5" y="7" width="18" height="10" rx="2" fill="none"/>
+        <path fill="none" d="M22 10v4"/>
+        <path fill="none" d="M6 10v4M10 10v4M14 10v4"/>
+    `),
+    'fa-lightbulb': makeLocalIcon(`
+        <path fill="none" d="M8 14a5 5 0 1 1 8 0c-.7.7-1.2 1.5-1.5 2.5h-5C9.2 15.5 8.7 14.7 8 14z"/>
+        <path fill="none" d="M9 18h6M10 21h4"/>
+    `),
+    'fa-wind': makeLocalIcon(`
+        <path fill="none" d="M4 9h10a2.5 2.5 0 1 0-2.2-3.7"/>
+        <path fill="none" d="M3 13h15a2.5 2.5 0 1 1-2.2 3.7"/>
+        <path fill="none" d="M5 17h8"/>
+    `),
+    'fa-filter': makeLocalIcon(`
+        <path fill="none" d="M4 5h16l-6 7v5l-4 2v-7L4 5z"/>
+    `),
+    'fa-fish': makeLocalIcon(`
+        <path fill="none" d="M3 12c3-4 7-5 11-4l4-3v4l3 3-3 3v4l-4-3c-4 1-8 0-11-4z"/>
+        <circle cx="9" cy="10.5" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-download': makeLocalIcon(`
+        <path fill="none" d="M12 4v11"/>
+        <path fill="none" d="m7 11 5 5 5-5"/>
+        <path fill="none" d="M4 20h16"/>
+    `),
+    'fa-file-arrow-up': makeLocalIcon(`
+        <path fill="none" d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/>
+        <path fill="none" d="M14 2v5h5"/>
+        <path fill="none" d="M12 17V10"/>
+        <path fill="none" d="m9.5 12.5 2.5-2.5 2.5 2.5"/>
+    `),
+    'fa-circle-notch': makeLocalIcon(`
+        <path fill="none" d="M20 12a8 8 0 1 1-3.2-6.4"/>
+    `),
+    'fa-triangle-exclamation': makeLocalIcon(`
+        <path fill="none" d="M12 4 3.5 19h17L12 4z"/>
+        <path fill="none" d="M12 9.5v4.5"/>
+        <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-microchip': makeLocalIcon(`
+        <rect x="7" y="7" width="10" height="10" rx="1.5" fill="none"/>
+        <path fill="none" d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>
+    `),
+    'fa-wifi': makeLocalIcon(`
+        <path fill="none" d="M5 10a12 12 0 0 1 14 0"/>
+        <path fill="none" d="M8 13a7 7 0 0 1 8 0"/>
+        <path fill="none" d="M11 16a3 3 0 0 1 2 0"/>
+        <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-satellite-dish': makeLocalIcon(`
+        <path fill="none" d="M4 20a10 10 0 0 1 10-10"/>
+        <path fill="none" d="M7 17a6 6 0 0 1 6-6"/>
+        <circle cx="18" cy="6" r="2" fill="none"/>
+        <path fill="none" d="M11 20l2-6 6-2"/>
+    `),
+    'fa-temperature-half': makeLocalIcon(`
+        <path fill="none" d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0Z"/>
+        <path fill="none" d="M12 11v5"/>
+    `),
+    'fa-floppy-disk': makeLocalIcon(`
+        <path fill="none" d="M5 3h11l3 3v15H5z"/>
+        <path fill="none" d="M8 3v6h8V3"/>
+        <path fill="none" d="M9 18h6"/>
+    `),
+    'fa-circle-info': makeLocalIcon(`
+        <circle cx="12" cy="12" r="9" fill="none"/>
+        <path fill="none" d="M12 11.5v4.5"/>
+        <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/>
+    `),
+    'fa-clock': makeLocalIcon(`
+        <circle cx="12" cy="12" r="9" fill="none"/>
+        <path fill="none" d="M12 7v5l3 2"/>
+    `),
+    'fa-arrows-rotate': makeLocalIcon(`
+        <path fill="none" d="M4 12a8 8 0 0 1 13.7-5.7"/>
+        <path fill="none" d="M18 3v5h-5"/>
+        <path fill="none" d="M20 12a8 8 0 0 1-13.7 5.7"/>
+        <path fill="none" d="M6 21v-5h5"/>
+    `),
+    'fa-laptop': makeLocalIcon(`
+        <rect x="5" y="5" width="14" height="10" rx="1.5" fill="none"/>
+        <path fill="none" d="M3 19h18"/>
+    `),
+    'fa-rotate-right': makeLocalIcon(`
+        <path fill="none" d="M20 12a8 8 0 1 1-2.3-5.7"/>
+        <path fill="none" d="M20 4v6h-6"/>
+    `),
+    'fa-spinner': makeLocalIcon(`
+        <path fill="none" d="M20 12a8 8 0 1 1-3.2-6.4"/>
+    `),
+    'fa-check-circle': makeLocalIcon(`
+        <circle cx="12" cy="12" r="9" fill="none"/>
+        <path fill="none" d="m8.5 12.5 2.2 2.2 4.8-5.2"/>
+    `)
+};
+
+function renderLocalIcon(el) {
+    if (!el) return;
+    const iconClass = Array.from(el.classList).find((cls) => LOCAL_ICON_SVGS[cls]);
+    if (!iconClass) return;
+    el.innerHTML = LOCAL_ICON_SVGS[iconClass];
+    el.setAttribute('aria-hidden', 'true');
+}
+
+function initLocalIcons() {
+    document.querySelectorAll('i[class*="fa-"]').forEach(renderLocalIcon);
+}
+
 // Clock Logic
 function updateClock() {
     const now = new Date();
@@ -244,6 +392,7 @@ function triggerFeed() {
     // Simulate feeding process
     setTimeout(() => {
         icon.className = 'fa-solid fa-check-circle fa-2xl';
+        renderLocalIcon(icon);
         icon.style.color = 'var(--success-color)';
         text.textContent = 'Sukces';
         p.textContent = 'Karmienie zakończone pomyślnie. Status sensora: OK.';
@@ -253,6 +402,7 @@ function triggerFeed() {
             // Reset for next time
             setTimeout(() => {
                 icon.className = 'fa-solid fa-spinner fa-spin fa-2xl';
+                renderLocalIcon(icon);
                 icon.style.color = 'var(--accent-cyan)';
                 text.textContent = 'Trwa karmienie...';
                 p.textContent = 'Sensor położenia w trakcie odczytu';
@@ -352,6 +502,7 @@ function simulateOTA() {
 
 // Init Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
+    initLocalIcons();
     updateClock();
     setInterval(updateClock, 1000);
     

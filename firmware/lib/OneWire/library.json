@@ -1,0 +1,9 @@
+{
+  "name": "OneWire",
+  "description": "Local patched copy of OneWire 2.3.8 to keep builds deterministic and warning-free.",
+  "version": "2.3.8-local-patched",
+  "frameworks": "arduino",
+  "build": {
+    "srcDir": "src"
+  }
+}
