@@ -16,10 +16,13 @@ public:
   static void requestStaOffForSleep();
   static void requestStaOn();
   static bool isStaOff();
+  static bool isStaConnected();
   static String getAPName();
   static String getAPPassword();
   static String getConfiguredAPName();
   static String getConfiguredAPPassword();
+  static String getStaSsid();
+  static uint32_t getStaLastConnectedEpoch();
   static String getIP();
   static uint8_t getConnectedClients();
   static WebServer &getServer();

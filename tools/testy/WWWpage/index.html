@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aquarium Controller ESP32</title>
-    <link rel="stylesheet" href="style.css?v=20260323b">
+    <link rel="stylesheet" href="style.css?v=20260323d">
     <style>
         /* Custom Time Inputs (Pills) */
         input[type="time"].time-pill {
@@ -165,30 +165,24 @@
         <main class="main-content">
             <!-- Topbar -->
             <header class="topbar">
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 1px; margin-right: 5px;">AKTYWNE SIECI:</span>
-                    <div id="ap-badge" class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
-                        <span class="pulse-dot" style="width: 8px; height: 8px;"></span>
-                        Access Point (AP)
-                    </div>
-                    <div id="sta-badge" class="status-badge" style="background: rgba(39, 201, 63, 0.1); border-color: rgba(39, 201, 63, 0.3); color: #27c93f; padding: 6px 14px; font-size: 13px;">
-                        <span class="pulse-dot" style="width: 8px; height: 8px;"></span>
-                        Station (STA)
-                    </div>
-                    <div id="ble-badge" class="status-badge" style="background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.3); color: var(--accent-cyan); padding: 6px 14px; font-size: 13px;">
-                        <span class="pulse-dot-cyan"></span>
-                        Bluetooth (BLE)
+                <div class="topbar-activity">
+                    <span class="topbar-label">AKTYWNE MODUŁY</span>
+                    <div id="topbar-active-list" class="topbar-active-list">
+                        <div class="status-badge status-badge-muted">
+                            <span class="pulse-dot pulse-dot-muted"></span>
+                            Oczekiwanie na dane sterownika
+                        </div>
                     </div>
                 </div>
-                
+
                 <div class="topbar-widgets">
-                    <div class="info-pill" title="Bateria RTC (DS3231)">
+                    <div class="info-pill battery-pill" title="Aktualne napięcie baterii">
                         <i class="fa-solid fa-battery-three-quarters"></i>
-                        <span id="rtc-battery">2.9V</span>
+                        <span id="rtc-battery">--.--V</span>
                     </div>
                     <div class="time-widget">
                         <span id="current-time">00:00:00</span>
-                        <span id="current-date">01 Sty 2026</span>
+                        <span id="current-date">01 sty 2026</span>
                     </div>
                 </div>
             </header>
@@ -199,128 +193,136 @@
                     <h2>Przegląd Systemu</h2>
                     <p>Bieżący status wszystkich urządzeń i sensorów.</p>
                 </div>
-                <!-- Dashboard Grid -->
+
                 <div class="dashboard-grid">
-                    <!-- Wiersz 1: Temperatura, Bateria, Siec -->
-                    <div class="card glass" style="padding: 16px;">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">TEMPERATURA</span>
-                        <div class="temp-value" style="font-size: 36px; font-weight: 600; text-shadow: none;">--.-<span class="unit" style="font-size: 24px; color: var(--text-main);"> C</span></div>
-                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Cel 25 C | Histereza 0,5 C</div>
-                    </div>
-
-                    <div class="card glass" style="padding: 16px;">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">BATERIA</span>
-                        <div class="temp-value" style="font-size: 36px; font-weight: 600; text-shadow: none; margin-bottom: 12px;">0%</div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" style="height: 4px; background: rgba(255,255,255,0.05);"></div>
+                    <div class="card glass dashboard-card metric-card">
+                        <span class="eyebrow">TEMPERATURA</span>
+                        <div class="metric-value">
+                            <span id="dashboard-temp-current">--.-</span>
+                            <span class="unit">&deg;C</span>
+                        </div>
+                        <div class="metric-subline">
+                            <span>Cel <strong id="dashboard-temp-target">25.0&deg;C</strong></span>
+                            <span>Histereza <strong id="dashboard-temp-hysteresis">0.5&deg;C</strong></span>
                         </div>
                     </div>
 
-                    <div class="card glass" style="padding: 16px;">
-                        <span style="font-size: 10px; color: var(--text-muted); font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; display: block;">SIEC</span>
-                        <div class="temp-value" style="font-size: 30px; font-weight: 600; text-shadow: none;">OFFLINE</div>
-                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">STA -</div>
+                    <div class="card glass dashboard-card metric-card">
+                        <span class="eyebrow">BATERIA</span>
+                        <div class="metric-value">
+                            <span id="dashboard-battery-percent">0</span>
+                            <span class="unit">%</span>
+                        </div>
+                        <div class="metric-subline">
+                            <span>Napięcie <strong id="dashboard-battery-voltage">--.--V</strong></span>
+                            <span id="dashboard-battery-state">Brak pomiaru</span>
+                        </div>
+                        <div class="progress-bar battery-progress">
+                            <div id="dashboard-battery-fill" class="progress-fill battery-fill" style="width: 0%;"></div>
+                        </div>
                     </div>
 
-                    <!-- Wiersz 2: Przekazniki, Harmonogram dzisiaj, Karmnik -->
-                    <div class="card glass" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Przekazniki</span>
-                            <span style="font-size: 11px; color: var(--text-muted);">1 / 4</span>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Swiatlo</div>
-                                <div style="font-size: 11px; color: var(--text-muted);">Off</div>
+                    <div id="network-card" class="card glass dashboard-card network-card network-offline">
+                        <span class="eyebrow">SIEĆ</span>
+                        <div id="network-status" class="metric-value network-status">OFFLINE</div>
+                        <div class="network-details">
+                            <div class="network-detail-row">
+                                <span>SSID STA</span>
+                                <strong id="network-ssid">-</strong>
                             </div>
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Filtr</div>
-                                <div style="font-size: 11px; color: var(--text-muted);">Off</div>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Grzalka</div>
-                                <div style="font-size: 11px; color: var(--text-muted);">Standby</div>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 14px;">
-                                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Napowietrzanie</div>
-                                <div style="font-size: 11px; color: var(--text-muted);">Open</div>
+                            <div class="network-detail-row">
+                                <span>Ostatnie połączenie</span>
+                                <strong id="network-last-seen">Brak historii</strong>
                             </div>
                         </div>
                     </div>
 
-                    <div class="card glass" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Harmonogram dzisiaj</span>
-                            <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 12px; padding: 6px 16px; border-radius: 16px; color: var(--accent-cyan); border-color: rgba(6, 182, 212, 0.3);">Edytuj</button>
+                    <div class="card glass dashboard-card relay-panel">
+                        <div class="card-header compact-header">
+                            <span class="card-heading">Przekaźniki</span>
+                            <span id="relay-count" class="card-chip">0 / 4 aktywne</span>
                         </div>
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Swiatlo</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">10:00 - 21:30</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Filtr</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">10:30 - 20:30</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Napowietrzanie</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">10:00 - 19:00</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 14px 16px; border-radius: 16px; border: 1px solid var(--glass-border);">
-                                <span style="font-size: 12px; color: var(--text-main);">Karmienie</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">Codziennie 18:00</span>
+                        <div class="relay-grid">
+                            <article id="relay-light" class="relay-status relay-standby">
+                                <div class="relay-status-top">
+                                    <span class="relay-icon-shell"><i class="fa-solid fa-lightbulb"></i></span>
+                                    <span id="relay-light-state" class="relay-state-badge">STANDBY</span>
+                                </div>
+                                <div class="relay-name">Światło</div>
+                                <div id="relay-light-meta" class="relay-meta">Harmonogram</div>
+                            </article>
+
+                            <article id="relay-filter" class="relay-status relay-standby">
+                                <div class="relay-status-top">
+                                    <span class="relay-icon-shell"><i class="fa-solid fa-filter"></i></span>
+                                    <span id="relay-filter-state" class="relay-state-badge">STANDBY</span>
+                                </div>
+                                <div class="relay-name">Filtr</div>
+                                <div id="relay-filter-meta" class="relay-meta">Harmonogram</div>
+                            </article>
+
+                            <article id="relay-heater" class="relay-status relay-standby">
+                                <div class="relay-status-top">
+                                    <span class="relay-icon-shell"><i class="fa-solid fa-temperature-half"></i></span>
+                                    <span id="relay-heater-state" class="relay-state-badge">STANDBY</span>
+                                </div>
+                                <div class="relay-name">Grzałka</div>
+                                <div id="relay-heater-meta" class="relay-meta">Czeka na próg</div>
+                            </article>
+
+                            <article id="relay-aeration" class="relay-status relay-standby">
+                                <div class="relay-status-top">
+                                    <span class="relay-icon-shell"><i class="fa-solid fa-wind"></i></span>
+                                    <span id="relay-aeration-state" class="relay-state-badge">STANDBY</span>
+                                </div>
+                                <div class="relay-name">Napowietrzanie</div>
+                                <div id="relay-aeration-meta" class="relay-meta">Harmonogram</div>
+                            </article>
+                        </div>
+                    </div>
+
+                    <div class="card glass dashboard-card schedule-panel">
+                        <div class="card-header compact-header">
+                            <span class="card-heading">Harmonogram dzisiaj</span>
+                            <button class="btn btn-secondary btn-pill" onclick="switchTab('harmonogramy')">Edytuj</button>
+                        </div>
+                        <div id="today-schedule-list" class="schedule-summary-list">
+                            <div class="schedule-summary-item">
+                                <span>Ładowanie danych</span>
+                                <strong>...</strong>
                             </div>
                         </div>
                     </div>
 
-                    <div class="card glass" style="padding: 20px; align-items: center;">
-                        <span style="font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 25px; align-self: flex-start;">Karmnik</span>
-                        
-                        <div style="position: relative; width: 140px; height: 140px; border-radius: 50%; border: 2px solid #8B2E67; display: flex; align-items: center; justify-content: center; background: #1C1120; margin-bottom: 20px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);">
-                            <button onclick="triggerFeed()" style="width: 110px; height: 110px; border-radius: 50%; background: #32142D; border: none; color: #F472B6; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#4a1e43'" onmouseout="this.style.background='#32142D'">Karm teraz</button>
+                    <div class="card glass dashboard-card feeder-card">
+                        <span class="card-heading">Karmnik</span>
+                        <div class="feeder-orb">
+                            <button id="feed-now-btn" class="feed-now-btn" onclick="triggerFeed()">Karm teraz</button>
                         </div>
-                        
-                        <span style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px;">Codziennie 18:00</span>
-                        <button class="btn btn-secondary" onclick="switchTab('harmonogramy')" style="font-size: 13px; padding: 10px 24px; border-radius: 16px; background: rgba(255,255,255,0.03);">Zarzadzaj</button>
+                        <span id="feed-next-label" class="feeder-note">Codziennie 18:00</span>
+                        <span id="feed-last-label" class="feeder-subnote">Ostatnie karmienie: brak danych</span>
+                        <button class="btn btn-secondary feeder-manage-btn" onclick="switchTab('harmonogramy')">Zarządzaj</button>
                     </div>
 
-                    <!-- Wiersz 3: Zakres temperatury (Wykres 20 bar) -->
-                    <div class="card glass" style="grid-column: 1 / -1; padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-main);">Zakres temperatury</span>
-                            <span style="font-size: 11px; color: var(--text-muted); padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 10px;">Ostatnie 3 godz. (20 odczytów)</span>
+                    <div class="card glass dashboard-card chart-wide temp-history-card">
+                        <div class="temp-chart-header">
+                            <span class="card-heading">Zakres temperatury</span>
+                            <span id="temperature-chart-meta" class="card-chip card-chip-accent">20 ostatnich pomiarów</span>
                         </div>
-                        
-                        <div class="temp-chart">
-                            <!-- Histereza i cel -->
-                            <div class="hysteresis-zone" style="height: 30%; bottom: 40%;"></div>
-                            <div class="target-temp-line" style="bottom: 55%;"><span class="target-temp-label">25.0°C Docelowa</span></div>
-                            
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 30%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 35%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 32%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 45%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 40%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 42%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 38%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 46%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 55%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 60%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 68%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 64%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 70%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 80%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar hot" style="height: 90%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 75%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar" style="height: 65%;"></div></div>
-                            <div class="temp-bar-wrap"><div class="temp-bar active" style="height: 55%;"></div></div>
-                        </div>
-                        
-                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 10px; color: var(--text-muted);">
-                            <span>-190 min</span>
-                            <span>Teraz</span>
+
+                        <div class="temp-chart-shell">
+                            <div class="temp-chart-legend">
+                                <span><span class="legend-line legend-line-live"></span>Temperatura</span>
+                                <span><span class="legend-line legend-line-target"></span>Docelowa</span>
+                                <span><span class="legend-line legend-line-hysteresis"></span>Histereza</span>
+                            </div>
+                            <div id="temperature-chart-empty" class="temp-chart-empty">Oczekiwanie na historię temperatur ze sterownika...</div>
+                            <svg id="temperature-chart-svg" class="temp-line-chart" viewBox="0 0 960 320" preserveAspectRatio="none" aria-label="Wykres temperatury"></svg>
+                            <div id="temperature-chart-tooltip" class="temp-chart-tooltip" hidden></div>
+                            <div class="temp-chart-axis">
+                                <span id="temperature-chart-start">Najstarszy pomiar</span>
+                                <span id="temperature-chart-end">Teraz</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -643,6 +645,6 @@
         </div>
     </div>
 
-    <script src="script.js?v=20260323b"></script>
+    <script src="script.js?v=20260323d"></script>
 </body>
 </html>
