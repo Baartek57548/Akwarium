@@ -11,12 +11,8 @@ ServoController::ServoController(int pin, int startAngle)
 }
 
 void ServoController::begin() {
-  servoMotor.attach(servoPin);
-  servoMotor.write(initialAngle);
-  delay(MOVE_TIME);
-  servoMotor.detach();
-  // Wymus LOW na pinie po odlaczeniu - zapobiega grzaniu serwomechanizmu
-  // (plywajacy stan PWM po detach() jest interpretowany przez servo jako ruch)
+  // Start pasywny: nie wymuszamy ruchu serwa podczas bootu, bo to potrafi
+  // powodowac duzy pik pradowy i niestabilny start sterownika.
   pinMode(servoPin, OUTPUT);
   digitalWrite(servoPin, LOW);
   currentPosition = initialAngle;

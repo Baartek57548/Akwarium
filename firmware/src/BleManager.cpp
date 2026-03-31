@@ -49,6 +49,7 @@ static bool bleInitialized = false;
 static volatile bool bleAdvertising = false;
 static volatile uint8_t connectedClientCount = 0;
 static volatile bool bleAdvertisingDesired = false;
+static volatile bool bleInitRequested = false;
 static volatile bool bleAuthenticated = false;
 static volatile bool blePostAuthSyncPending = false;
 static volatile bool resumeAdvertisingPending = false;
@@ -126,6 +127,20 @@ static void setBleAdvertisingDesired(bool desired) {
   portENTER_CRITICAL(&bleStateMux);
   bleAdvertisingDesired = desired;
   portEXIT_CRITICAL(&bleStateMux);
+}
+
+static void setBleInitRequested(bool requested) {
+  portENTER_CRITICAL(&bleStateMux);
+  bleInitRequested = requested;
+  portEXIT_CRITICAL(&bleStateMux);
+}
+
+static bool takeBleInitRequest() {
+  portENTER_CRITICAL(&bleStateMux);
+  const bool requested = bleInitRequested;
+  bleInitRequested = false;
+  portEXIT_CRITICAL(&bleStateMux);
+  return requested;
 }
 
 static bool getBleAdvertisingDesired() {
@@ -1016,7 +1031,15 @@ class SettingsCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    if (!ConfigManager::updateAndSave(cfg)) {
+    const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
+    if (!saveResult.ok) {
+      char msg[160];
+      snprintf(msg, sizeof(msg),
+               "BLE save failed (written=%u, read=%u, status=%u)",
+               static_cast<unsigned>(saveResult.bytesWritten),
+               static_cast<unsigned>(saveResult.bytesReadBack),
+               static_cast<unsigned>(saveResult.status));
+      LogManager::logError(msg);
       publishResult("err", "save_failed");
       return;
     }
@@ -1433,6 +1456,7 @@ void BleManager::init() {
   bleInitialized = true;
   setBleAdvertisingActive(false);
   setBleAdvertisingDesired(false);
+  setBleInitRequested(false);
   setBleAuthenticated(false);
   setBlePostAuthSyncPending(false);
   cacheConnectionCount(0);
@@ -1446,6 +1470,8 @@ void BleManager::init() {
 
 void BleManager::start() {
   if (!bleInitialized) {
+    setBleAdvertisingDesired(true);
+    setBleInitRequested(true);
     return;
   }
   setBleAdvertisingDesired(true);
@@ -1453,6 +1479,8 @@ void BleManager::start() {
 
 void BleManager::stop() {
   if (!bleInitialized) {
+    setBleAdvertisingDesired(false);
+    setBleInitRequested(false);
     return;
   }
   setBleAdvertisingDesired(false);
@@ -1478,6 +1506,17 @@ void BleManager::notifyStatus() {
 }
 
 void BleManager::update() {
+  if (!bleInitialized) {
+    if (takeBleInitRequest()) {
+      Serial.println("[BLE] Lazy init requested from UI.");
+      init();
+    }
+
+    if (!bleInitialized) {
+      return;
+    }
+  }
+
   // --- Deferred BLE command processing ---
   // Komendy odlozone z callbacku BLE sa teraz wykonywane na głównym wątku
   // z pelnym stosem, co zapobiega watchdog reset / stack overflow.

@@ -501,8 +501,8 @@
                 ]
             },
             "defines": [
-                "AQUARIUM_FIRMWARE_VERSION=\"v1.1.0-56-gca0c859b-dirty\"",
-                "AQUARIUM_FIRMWARE_BUILD_REF=\"ca0c859b\"",
+                "AQUARIUM_FIRMWARE_VERSION=\"v1.1.0-59-g00b7c8cc-dirty\"",
+                "AQUARIUM_FIRMWARE_BUILD_REF=\"00b7c8cc\"",
                 "PLATFORMIO=60119",
                 "ARDUINO_ESP32S3_DEV",
                 "ARDUINO_USB_MODE=1",

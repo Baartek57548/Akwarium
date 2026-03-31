@@ -1,58 +1,193 @@
 #include "AkwariumWifi.h"
+
+#include "ConfigManager.h"
+#include "LogManager.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
-#include "SecretConfig.h"
+#include "SharedState.h"
 #include "SystemController.h"
 #include "WebAssets.h"
+
 #include <DNSServer.h>
+#include <RTClib.h>
 #include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
-#include <uri/UriRegex.h>
-#include <cstring>
 #include <esp_err.h>
 #include <esp_wifi.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdarg.h>
 #include <sys/time.h>
 #include <time.h>
-#include <RTClib.h>
+#include <uri/UriRegex.h>
 
 // ==========================================
 // KONFIGURACJA SIECI
 // ==========================================
-static const char *STA_SSID = SECRET_SSID;
-static const char *STA_PASSWORD = SECRET_PASS;
 static const int WIFI_TIMEOUT = 6000;
 
-static const char *apSSID = AP_SSID;
-static const char *apPassword = AP_PASSWORD;
-
-// Stare wbudowane GUI zostalo przeniesione do zewnetrznych plikow w WebAssets.h
+static const char *NTP_TZ = "CET-1CEST,M3.5.0/2,M10.5.0/3";
+static const char *NTP_SERVER_1 = "pool.ntp.org";
+static const char *NTP_SERVER_2 = "time.google.com";
+static const char *NTP_SERVER_3 = "time.windows.com";
+static const uint8_t DAILY_SYNC_HOUR = 9;
+static const uint8_t DAILY_SYNC_WINDOW_MINUTES = 5;
+static const unsigned long NTP_SYNC_TIMEOUT_MS = 8000UL;
+static const unsigned long WIFI_MODE_SWITCH_DELAY_MS = 25UL;
 
 static WebServer server(80);
 static DNSServer dnsServer;
 static const byte DNS_PORT = 53;
+
 static bool isAPMode = false;
 static bool otaUploadActive = false;
 static bool otaUploadRejected = false;
 static String otaUploadRejectReason;
-static volatile bool apStartRequested = false;
-static volatile bool apStopRequested = false;
+
+static volatile bool serviceModeStartRequested = false;
+static volatile bool serviceModeStopRequested = false;
 static volatile bool staOffRequested = false;
 static volatile bool staOnRequested = false;
-static volatile bool staIsOff = false;
-static unsigned long lastStaReconnectAttemptMs = 0;
-static unsigned long staDisconnectedSinceMs = 0;
-static uint8_t staReconnectAttempts = 0;
+
+static volatile bool staIsOff = true;
+static bool staConnecting = false;
+static bool serviceModeActive = false;
+static bool timeSyncInProgress = false;
+static bool serviceStaWasConnected = false;
 static bool staConnected = false;
 static uint32_t staLastConnectedEpoch = 0;
 static String staLastConnectedSsid;
-static const unsigned long STA_RECONNECT_INTERVAL_MS = 15000UL;
-static const unsigned long STA_FALLBACK_TO_AP_MS = 180000UL;
-static const unsigned long WIFI_MODE_SWITCH_DELAY_MS = 25UL;
+static uint32_t lastTimeSyncEpoch = 0;
+static bool lastTimeSyncSuccessful = false;
+static String lastTimeSyncStatus = "Brak proby synchronizacji czasu.";
+static int lastDailySyncAttemptDateStamp = -1;
+static bool webServerConfigured = false;
+static bool webServerRunning = false;
 
 WebServer &AkwariumWifi::getServer() { return server; }
-static void startAPInternal();
+
+static void startAPInternal(const char *reason = nullptr);
+static void stopServiceModeInternal(const char *reason);
+static void startWebServerIfNeeded(const char *reason = nullptr);
+static void stopWebServerIfNeeded();
+static void processWifiRequests();
+static void maintainWifiState();
+static void maybeRunDailyTimeSync();
 static void sendCaptiveRedirect();
+static void loadConfiguredStaCredentials(char *ssidOut, size_t ssidOutSize,
+                                         char *passwordOut,
+                                         size_t passwordOutSize);
+static void loadConfiguredApCredentials(char *ssidOut, size_t ssidOutSize,
+                                        char *passwordOut,
+                                        size_t passwordOutSize);
+static String getConfiguredStaSsidString();
+static String getConfiguredApSsidString();
+static String getConfiguredApPasswordString();
+
+static void logWifiInfo(const char *format, ...) {
+  char buffer[192];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, sizeof(buffer), format, args);
+  va_end(args);
+  LogManager::logInfo(buffer);
+}
+
+static void logWifiWarn(const char *format, ...) {
+  char buffer[192];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, sizeof(buffer), format, args);
+  va_end(args);
+  LogManager::logWarn(buffer);
+}
+
+static void loadConfiguredStaCredentials(char *ssidOut, size_t ssidOutSize,
+                                         char *passwordOut,
+                                         size_t passwordOutSize) {
+  const Config cfg = ConfigManager::getCopy();
+  if (ssidOut != nullptr && ssidOutSize > 0) {
+    snprintf(ssidOut, ssidOutSize, "%s", cfg.staSsid);
+  }
+  if (passwordOut != nullptr && passwordOutSize > 0) {
+    snprintf(passwordOut, passwordOutSize, "%s", cfg.staPassword);
+  }
+}
+
+static void loadConfiguredApCredentials(char *ssidOut, size_t ssidOutSize,
+                                        char *passwordOut,
+                                        size_t passwordOutSize) {
+  const Config cfg = ConfigManager::getCopy();
+  if (ssidOut != nullptr && ssidOutSize > 0) {
+    snprintf(ssidOut, ssidOutSize, "%s", cfg.apSsid);
+  }
+  if (passwordOut != nullptr && passwordOutSize > 0) {
+    snprintf(passwordOut, passwordOutSize, "%s", cfg.apPassword);
+  }
+}
+
+static String getConfiguredStaSsidString() {
+  const Config cfg = ConfigManager::getCopy();
+  return String(cfg.staSsid);
+}
+
+static String getConfiguredApSsidString() {
+  const Config cfg = ConfigManager::getCopy();
+  return String(cfg.apSsid);
+}
+
+static String getConfiguredApPasswordString() {
+  const Config cfg = ConfigManager::getCopy();
+  return String(cfg.apPassword);
+}
+
+static bool hasReasonableDateTime(const DateTime &dt) {
+  return dt.year() >= 2024 && dt.year() <= 2099;
+}
+
+static bool getControllerClockNow(DateTime &out) {
+  const SharedStateData snap = SharedState::getSnapshot();
+  const DateTime now(snap.year, snap.month, snap.day, snap.hour, snap.minute,
+                     snap.second);
+  if (!hasReasonableDateTime(now)) {
+    return false;
+  }
+
+  out = now;
+  return true;
+}
+
+static int makeDateStamp(const DateTime &dt) {
+  return (dt.year() * 10000) + (dt.month() * 100) + dt.day();
+}
+
+static void formatDateTime(const DateTime &dt, char *buffer,
+                           size_t bufferSize) {
+  snprintf(buffer, bufferSize, "%04d-%02d-%02d %02d:%02d:%02d", dt.year(),
+           dt.month(), dt.day(), dt.hour(), dt.minute(), dt.second());
+}
+
+static const char *wifiStatusToString(wl_status_t status) {
+  switch (status) {
+  case WL_IDLE_STATUS:
+    return "idle";
+  case WL_NO_SSID_AVAIL:
+    return "ssid_not_found";
+  case WL_SCAN_COMPLETED:
+    return "scan_completed";
+  case WL_CONNECTED:
+    return "connected";
+  case WL_CONNECT_FAILED:
+    return "connect_failed";
+  case WL_CONNECTION_LOST:
+    return "connection_lost";
+  case WL_DISCONNECTED:
+    return "disconnected";
+  default:
+    return "unknown";
+  }
+}
 
 static uint32_t getBestEffortEpoch() {
   const time_t now = time(nullptr);
@@ -60,11 +195,20 @@ static uint32_t getBestEffortEpoch() {
     return static_cast<uint32_t>(now);
   }
 
-  if (SystemController::isRtcReady()) {
-    return static_cast<uint32_t>(SystemController::rtc.now().unixtime());
+  DateTime controllerNow;
+  if (getControllerClockNow(controllerNow)) {
+    return static_cast<uint32_t>(controllerNow.unixtime());
   }
 
   return 0;
+}
+
+static void setTimeSyncStatus(bool ok, uint32_t epoch, const char *status) {
+  lastTimeSyncSuccessful = ok;
+  if (epoch > 0) {
+    lastTimeSyncEpoch = epoch;
+  }
+  lastTimeSyncStatus = status != nullptr ? status : "";
 }
 
 static void syncStaStatus() {
@@ -72,7 +216,7 @@ static void syncStaStatus() {
   if (connected) {
     String ssid = WiFi.SSID();
     if (ssid.length() == 0) {
-      ssid = String(STA_SSID);
+      ssid = getConfiguredStaSsidString();
     }
 
     if (!staConnected || staLastConnectedSsid != ssid) {
@@ -83,78 +227,344 @@ static void syncStaStatus() {
     }
 
     staLastConnectedSsid = ssid;
-  }
-
-  if (!connected && staLastConnectedSsid.length() == 0) {
-    staLastConnectedSsid = String(STA_SSID);
+  } else if (staLastConnectedSsid.length() == 0) {
+    staLastConnectedSsid = getConfiguredStaSsidString();
   }
 
   staConnected = connected;
 }
 
-static void setupNetwork() {
-  WiFi.mode(WIFI_STA);
-  staIsOff = false;
-  WiFi.begin(STA_SSID, STA_PASSWORD);
-  unsigned long start = millis();
-
-  while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT) {
-    delay(500);
-    Serial.print(".");
+static void turnWifiOffInternal(const char *reason) {
+  dnsServer.stop();
+  stopWebServerIfNeeded();
+  if (isAPMode) {
+    WiFi.softAPdisconnect(true);
   }
+  WiFi.disconnect(false, false);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  WiFi.mode(WIFI_OFF);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
 
-  if (WiFi.status() == WL_CONNECTED) {
-    isAPMode = false;
-    staDisconnectedSinceMs = 0;
-    staReconnectAttempts = 0;
-    Serial.println("\n[WIFI] Polaczono. IP: " + WiFi.localIP().toString());
-  } else {
-    isAPMode = false;
-    Serial.println(
-        "\n[WIFI] Timeout. Polaczenie STA nieudane. Projekt dziala offline.");
+  isAPMode = false;
+  staIsOff = true;
+  staConnecting = false;
+  staConnected = false;
+  if (reason != nullptr && reason[0] != '\0') {
+    logWifiInfo("[WIFI] Radio wylaczone: %s", reason);
   }
-
-  syncStaStatus();
 }
 
-static void maintainStaConnection() {
-  if (isAPMode || staIsOff) {
-    syncStaStatus();
-    staDisconnectedSinceMs = 0;
-    staReconnectAttempts = 0;
-    return;
+static void applySynchronizedTime(uint32_t epoch, const char *source) {
+  DateTime oldTime(2000, 1, 1, 0, 0, 0);
+  const bool hadOldTime = getControllerClockNow(oldTime);
+
+  struct timeval tv;
+  tv.tv_sec = epoch;
+  tv.tv_usec = 0;
+  settimeofday(&tv, nullptr);
+  syncSystemTime(epoch);
+
+  const DateTime newTime(epoch);
+  char timeBuf[32];
+  formatDateTime(newTime, timeBuf, sizeof(timeBuf));
+
+  char statusBuf[96];
+  snprintf(statusBuf, sizeof(statusBuf), "%s: OK (%s)", source, timeBuf);
+  setTimeSyncStatus(true, epoch, statusBuf);
+
+  if (hadOldTime) {
+    const long diffSec =
+        static_cast<long>(epoch) - static_cast<long>(oldTime.unixtime());
+    logWifiInfo("[TIME] %s: ustawiono %s (delta %+lds).", source, timeBuf,
+                diffSec);
+  } else {
+    logWifiInfo("[TIME] %s: ustawiono %s.", source, timeBuf);
+  }
+}
+
+static bool syncTimeFromNtp(const char *source) {
+  timeSyncInProgress = true;
+  logWifiInfo("[TIME] %s: start synchronizacji NTP (%s, %s, %s).", source,
+              NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
+
+  configTzTime(NTP_TZ, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
+
+  struct tm timeinfo = {};
+  bool gotTime = false;
+  const unsigned long startedAtMs = millis();
+  while (millis() - startedAtMs < NTP_SYNC_TIMEOUT_MS) {
+    if (getLocalTime(&timeinfo, 1000)) {
+      gotTime = true;
+      break;
+    }
+    delay(150);
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
+  timeSyncInProgress = false;
+
+  if (!gotTime) {
+    setTimeSyncStatus(false, 0, "NTP: timeout odpowiedzi serwera.");
+    logWifiWarn("[TIME] %s: nie udalo sie pobrac czasu z NTP (timeout %lus).",
+                source, NTP_SYNC_TIMEOUT_MS / 1000UL);
+    return false;
+  }
+
+  time_t epoch = 0;
+  time(&epoch);
+  if (epoch < 1700000000) {
+    setTimeSyncStatus(false, 0, "NTP: odebrano nierozsadny epoch.");
+    logWifiWarn("[TIME] %s: odebrano nierozsadny epoch z NTP (%ld).", source,
+                static_cast<long>(epoch));
+    return false;
+  }
+
+  applySynchronizedTime(static_cast<uint32_t>(epoch), source);
+  return true;
+}
+
+static bool connectStaWithTimeout(const char *context) {
+  char staSsid[WIFI_SSID_MAX_LENGTH + 1] = {};
+  char staPassword[WIFI_PASSWORD_MAX_LENGTH + 1] = {};
+  loadConfiguredStaCredentials(staSsid, sizeof(staSsid), staPassword,
+                               sizeof(staPassword));
+
+  const size_t ssidLen = strlen(staSsid);
+  const size_t passLen = strlen(staPassword);
+  if (ssidLen == 0 || ssidLen > WIFI_SSID_MAX_LENGTH) {
+    logWifiWarn(
+        "[WIFI-STA] %s: brak poprawnego SSID STA w konfiguracji (len=%u).",
+        context, static_cast<unsigned>(ssidLen));
+    staConnecting = false;
+    staIsOff = true;
+    return false;
+  }
+  if (passLen > WIFI_PASSWORD_MAX_LENGTH || (passLen > 0 && passLen < 8)) {
+    logWifiWarn(
+        "[WIFI-STA] %s: haslo STA ma niepoprawna dlugosc (len=%u).",
+        context, static_cast<unsigned>(passLen));
+    staConnecting = false;
+    staIsOff = true;
+    return false;
+  }
+
+  staConnecting = true;
+  staIsOff = false;
+  isAPMode = false;
+  dnsServer.stop();
+
+  WiFi.disconnect(false, false);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  WiFi.mode(WIFI_STA);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  if (passLen > 0) {
+    WiFi.begin(staSsid, staPassword);
+  } else {
+    WiFi.begin(staSsid);
+  }
+
+  logWifiInfo(
+      "[WIFI-STA] %s: proba polaczenia z SSID '%s' (timeout %ds).", context,
+      staSsid, WIFI_TIMEOUT / 1000);
+
+  const unsigned long startedAtMs = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         (millis() - startedAtMs) < static_cast<unsigned long>(WIFI_TIMEOUT)) {
+    delay(100);
+  }
+
+  const wl_status_t status = WiFi.status();
+  staConnecting = false;
+
+  if (status == WL_CONNECTED) {
     syncStaStatus();
-    staDisconnectedSinceMs = 0;
-    staReconnectAttempts = 0;
-    return;
+    serviceStaWasConnected = serviceModeActive;
+    const String ssid =
+        WiFi.SSID().length() > 0 ? WiFi.SSID() : String(staSsid);
+    startWebServerIfNeeded("STA aktywne");
+    logWifiInfo("[WIFI-STA] %s: polaczono z '%s', IP=%s.", context,
+                ssid.c_str(), WiFi.localIP().toString().c_str());
+    return true;
   }
 
   syncStaStatus();
+  logWifiWarn("[WIFI-STA] %s: brak polaczenia po %ds, status=%s (%d).", context,
+              WIFI_TIMEOUT / 1000, wifiStatusToString(status),
+              static_cast<int>(status));
 
-  const unsigned long nowMs = millis();
-  if (staDisconnectedSinceMs == 0) {
-    staDisconnectedSinceMs = nowMs;
+  WiFi.disconnect(false, false);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  WiFi.mode(WIFI_OFF);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  staIsOff = true;
+  staConnected = false;
+  return false;
+}
+
+static void startAPInternal(const char *reason) {
+  if (isAPMode) {
+    return;
   }
 
-  if (nowMs - lastStaReconnectAttemptMs >= STA_RECONNECT_INTERVAL_MS) {
-    lastStaReconnectAttemptMs = nowMs;
-    if (staReconnectAttempts < 255) {
-      staReconnectAttempts++;
+  char apSsid[WIFI_SSID_MAX_LENGTH + 1] = {};
+  char apPassword[WIFI_PASSWORD_MAX_LENGTH + 1] = {};
+  loadConfiguredApCredentials(apSsid, sizeof(apSsid), apPassword,
+                              sizeof(apPassword));
+
+  const size_t ssidLen = strlen(apSsid);
+  const size_t passLen = strlen(apPassword);
+  if (ssidLen == 0 || ssidLen > 31) {
+    logWifiWarn("[WIFI-AP] BLAD: AP_SSID musi miec dlugosc 1..31 znakow.");
+    return;
+  }
+  if (passLen < 8 || passLen > 63) {
+    logWifiWarn("[WIFI-AP] BLAD: AP_PASSWORD musi miec dlugosc 8..63 znakow.");
+    return;
+  }
+
+  WiFi.disconnect(false, false);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  WiFi.mode(WIFI_OFF);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  WiFi.mode(WIFI_AP);
+  delay(WIFI_MODE_SWITCH_DELAY_MS);
+  staIsOff = true;
+
+  bool apStarted = WiFi.softAP(apSsid, apPassword);
+  if (!apStarted) {
+    WiFi.mode(WIFI_OFF);
+    delay(WIFI_MODE_SWITCH_DELAY_MS);
+    WiFi.mode(WIFI_AP);
+    delay(WIFI_MODE_SWITCH_DELAY_MS);
+    apStarted = WiFi.softAP(apSsid, apPassword);
+  }
+
+  if (!apStarted) {
+    logWifiWarn("[WIFI-AP] BLAD: nie udalo sie uruchomic AP.");
+    isAPMode = false;
+    staIsOff = true;
+    return;
+  }
+
+  wifi_config_t apCfg = {};
+  const esp_err_t cfgErr = esp_wifi_get_config(WIFI_IF_AP, &apCfg);
+  if (cfgErr == ESP_OK && apCfg.ap.authmode == WIFI_AUTH_OPEN) {
+    logWifiWarn(
+        "[WIFI-AP] BLAD: AP uruchomil sie jako OPEN mimo hasla. Wylaczam AP.");
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
+    isAPMode = false;
+    staIsOff = true;
+    return;
+  }
+  if (cfgErr != ESP_OK) {
+    logWifiWarn("[WIFI-AP] Ostrzezenie: esp_wifi_get_config(AP) failed: %s.",
+                esp_err_to_name(cfgErr));
+  }
+
+  dnsServer.stop();
+  dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+  isAPMode = true;
+  startWebServerIfNeeded("AP aktywne");
+
+  if (reason != nullptr && reason[0] != '\0') {
+    logWifiInfo("[WIFI-AP] Uruchomiono AP po zdarzeniu: %s", reason);
+  }
+  logWifiInfo("[WIFI-AP] AP aktywne. SSID='%s', IP=%s.", apSsid,
+              WiFi.softAPIP().toString().c_str());
+}
+
+static void startServiceModeInternal() {
+  serviceModeActive = true;
+  serviceStaWasConnected = false;
+
+  logWifiInfo("[WIFI] Menu WiFi: najpierw proba STA przez %ds, potem fallback do AP.",
+              WIFI_TIMEOUT / 1000);
+
+  if (connectStaWithTimeout("Menu WiFi")) {
+    if (!syncTimeFromNtp("Menu WiFi")) {
+      logWifiWarn(
+          "[TIME] Menu WiFi: pozostawiam polaczenie STA, ale synchronizacja NTP sie nie udala.");
     }
-    Serial.printf("[WIFI-STA] Ponowna proba laczenia (%u)\n",
-                  static_cast<unsigned>(staReconnectAttempts));
-    WiFi.reconnect();
+    return;
   }
 
-  if (nowMs - staDisconnectedSinceMs >= STA_FALLBACK_TO_AP_MS) {
-    Serial.println("[WIFI-STA] Brak lacznosci >3 min. Fallback do AP.");
-    staDisconnectedSinceMs = 0;
-    staReconnectAttempts = 0;
-    startAPInternal();
+  startAPInternal("Brak polaczenia STA z menu WiFi");
+}
+
+static void stopServiceModeInternal(const char *reason) {
+  serviceModeActive = false;
+  serviceStaWasConnected = false;
+  turnWifiOffInternal(reason);
+}
+
+static void runDailyTimeSync(const DateTime &now) {
+  const int dateStamp = makeDateStamp(now);
+  lastDailySyncAttemptDateStamp = dateStamp;
+
+  char nowBuf[32];
+  formatDateTime(now, nowBuf, sizeof(nowBuf));
+  logWifiInfo(
+      "[TIME] Harmonogram 09:00: start dziennej proby Wi-Fi + NTP (RTC=%s).",
+      nowBuf);
+
+  if (!connectStaWithTimeout("Harmonogram 09:00")) {
+    setTimeSyncStatus(false, 0,
+                      "09:00: brak polaczenia Wi-Fi, kolejna proba jutro.");
+    logWifiWarn(
+        "[TIME] Harmonogram 09:00: brak polaczenia Wi-Fi, kolejna proba jutro.");
+    turnWifiOffInternal("Zakonczenie nieudanej proby 09:00.");
+    return;
   }
+
+  if (syncTimeFromNtp("Harmonogram 09:00")) {
+    logWifiInfo("[TIME] Harmonogram 09:00: synchronizacja zakonczona powodzeniem.");
+  } else {
+    setTimeSyncStatus(false, 0,
+                      "09:00: brak odpowiedzi NTP, kolejna proba jutro.");
+    logWifiWarn(
+        "[TIME] Harmonogram 09:00: brak odpowiedzi NTP, kolejna proba jutro.");
+  }
+
+  turnWifiOffInternal("Zakonczono dzienna synchronizacje 09:00.");
+}
+
+static void maybeRunDailyTimeSync() {
+  if (serviceModeActive || isAPMode || staConnecting || timeSyncInProgress ||
+      OtaManager::isOtaInProgress()) {
+    return;
+  }
+
+  DateTime now(2000, 1, 1, 0, 0, 0);
+  if (!getControllerClockNow(now)) {
+    return;
+  }
+
+  const int dateStamp = makeDateStamp(now);
+  if (dateStamp == lastDailySyncAttemptDateStamp) {
+    return;
+  }
+
+  if (now.hour() == DAILY_SYNC_HOUR && now.minute() < DAILY_SYNC_WINDOW_MINUTES) {
+    runDailyTimeSync(now);
+  }
+}
+
+static void maintainWifiState() {
+  syncStaStatus();
+
+  if (serviceModeActive && !isAPMode && !staConnecting &&
+      WiFi.status() != WL_CONNECTED && serviceStaWasConnected) {
+    serviceStaWasConnected = false;
+    logWifiWarn(
+        "[WIFI-STA] Utracono polaczenie STA podczas sesji WiFi. Proba ponownego polaczenia przez %ds.",
+        WIFI_TIMEOUT / 1000);
+    if (!connectStaWithTimeout("Odzyskiwanie STA z menu WiFi")) {
+      startAPInternal("Utracono STA podczas sesji WiFi");
+    }
+    return;
+  }
+
+  maybeRunDailyTimeSync();
 }
 
 static void sendCaptiveRedirect() {
@@ -168,6 +578,10 @@ static void sendCaptiveRedirect() {
 }
 
 static void setupWebServer() {
+  if (webServerConfigured) {
+    return;
+  }
+
   server.on("/", HTTP_GET, []() {
     server.sendHeader("Connection", "close");
     server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -193,40 +607,41 @@ static void setupWebServer() {
   });
 
   server.on("/settime", HTTP_POST, []() {
-    if (server.hasArg("epoch")) {
-      PowerManager::registerActivity();
-      time_t epoch = server.arg("epoch").toInt();
-
-      if (!SystemController::isRtcReady()) {
-        server.send(503, "text/plain", "rtc_unavailable");
-        return;
-      }
-
-      // Sprawdz czy RTC jest dostepne i czy czas jest rozsadny
-      DateTime rtcTime = SystemController::rtc.now();
-      DateTime newTime(epoch);
-
-      // Aktualizuj RTC tylko jesli roznica jest wieksza niz 1 minuta
-      // lub jesli RTC ma niepoprawny czas
-      long diff = abs((long)newTime.unixtime() - (long)rtcTime.unixtime());
-      if (diff > 60 || rtcTime.year() < 2024 || rtcTime.year() > 2030) {
-        struct timeval tv;
-        tv.tv_sec = epoch;
-        tv.tv_usec = 0;
-        settimeofday(&tv, NULL);
-        syncSystemTime((uint32_t)epoch);
-
-        struct tm timeinfo;
-        getLocalTime(&timeinfo);
-        Serial.println(&timeinfo, "[RTC] Zsynchronizowano czas ukladu: %Y-%m-%d %H:%M:%S");
-      } else {
-        Serial.println("[RTC] Czas w RTC jest juz aktualny, pomijam synchronizacje");
-      }
-
-      server.send(200, "text/plain", "OK");
-    } else {
+    if (!server.hasArg("epoch")) {
       server.send(400, "text/plain", "Brak parametru epoch");
+      return;
     }
+
+    PowerManager::registerActivity();
+
+    const long rawEpoch = server.arg("epoch").toInt();
+    if (rawEpoch < 1700000000L) {
+      server.send(400, "text/plain", "invalid_epoch");
+      logWifiWarn("[TIME] HTTP /settime: odrzucono nierozsadny epoch=%ld.",
+                  rawEpoch);
+      return;
+    }
+
+    DateTime rtcTime(2000, 1, 1, 0, 0, 0);
+    const bool hasKnownClock = getControllerClockNow(rtcTime);
+    const DateTime newTime(rawEpoch);
+    const long diff = hasKnownClock
+                          ? labs(static_cast<long>(newTime.unixtime()) -
+                                 static_cast<long>(rtcTime.unixtime()))
+                          : LONG_MAX;
+
+    if (diff > 60 || !hasKnownClock) {
+      applySynchronizedTime(static_cast<uint32_t>(rawEpoch), "HTTP /settime");
+      server.send(200, "text/plain", "OK");
+      return;
+    }
+
+    setTimeSyncStatus(true, static_cast<uint32_t>(rawEpoch),
+                      "HTTP /settime: czas byl juz aktualny.");
+    logWifiInfo(
+        "[TIME] HTTP /settime: pomijam zapis, roznica z RTC wynosi tylko %lds.",
+        diff);
+    server.send(200, "text/plain", "OK");
   });
 
   server.onNotFound([]() {
@@ -320,12 +735,12 @@ static void setupWebServer() {
               otaUploadRejected = true;
               otaUploadRejectReason =
                   "Sterownik wykonuje juz aktualizacje OTA przez inny kanal.";
-              Serial.println("[OTA] Odrzucono HTTP OTA: inna sesja OTA aktywna.");
+              logWifiWarn("[OTA] Odrzucono HTTP OTA: inna sesja OTA aktywna.");
               return;
             }
             otaUploadActive = true;
           }
-          Serial.printf("[OTA] Pobieranie: %s\n", upload.filename.c_str());
+          logWifiInfo("[OTA] Pobieranie: %s", upload.filename.c_str());
           if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
             Update.printError(Serial);
             OtaManager::endOtaUpdate(false);
@@ -339,10 +754,10 @@ static void setupWebServer() {
             Update.printError(Serial);
           }
         } else if (upload.status == UPLOAD_FILE_END) {
-          bool ok = Update.end(true);
+          const bool ok = Update.end(true);
           if (ok) {
-            Serial.printf("[OTA] Zakonczono pomyslnie (%u bajtow)\n",
-                          upload.totalSize);
+            logWifiInfo("[OTA] Zakonczono pomyslnie (%u bajtow).",
+                        upload.totalSize);
           } else {
             Update.printError(Serial);
           }
@@ -350,7 +765,7 @@ static void setupWebServer() {
           Update.abort();
           OtaManager::endOtaUpdate(false);
           otaUploadActive = false;
-          Serial.println("[OTA] Upload przerwany.");
+          logWifiWarn("[OTA] Upload przerwany.");
         }
       });
 
@@ -363,184 +778,117 @@ static void setupWebServer() {
       server.send(404, "text/plain", "Error 404");
     }
   });
+  webServerConfigured = true;
+}
+
+static void startWebServerIfNeeded(const char *reason) {
+  setupWebServer();
+  if (webServerRunning) {
+    return;
+  }
 
   server.begin();
+  webServerRunning = true;
+  if (reason != nullptr && reason[0] != '\0') {
+    logWifiInfo("[WIFI] HTTP server start: %s.", reason);
+  }
 }
 
-static void startAPInternal() {
-  if (isAPMode) {
+static void stopWebServerIfNeeded() {
+  if (!webServerRunning) {
     return;
   }
 
-  const size_t ssidLen = strlen(apSSID);
-  const size_t passLen = strlen(apPassword);
-  if (ssidLen == 0 || ssidLen > 31) {
-    Serial.println(
-        "[WIFI-AP] BLAD: AP_SSID musi miec dlugosc 1..31 znakow.");
-    return;
-  }
-  if (passLen < 8 || passLen > 63) {
-    Serial.println(
-        "[WIFI-AP] BLAD: AP_PASSWORD musi miec dlugosc 8..63 znakow. AP nie zostal uruchomiony.");
-    return;
+  server.stop();
+  webServerRunning = false;
+}
+
+static void processWifiRequests() {
+  if (serviceModeStopRequested) {
+    serviceModeStopRequested = false;
+    serviceModeStartRequested = false;
+    stopServiceModeInternal("Sesja WiFi zakonczona z menu.");
   }
 
-  WiFi.disconnect(false, false);
-  delay(WIFI_MODE_SWITCH_DELAY_MS);
-  WiFi.mode(WIFI_AP_STA);
-  staIsOff = false;
-
-  bool apStarted = WiFi.softAP(apSSID, apPassword);
-  if (!apStarted) {
-    // Druga proba po pelnym restarcie interfejsu WiFi.
-    WiFi.mode(WIFI_OFF);
-    delay(WIFI_MODE_SWITCH_DELAY_MS);
-    WiFi.mode(WIFI_AP);
-    apStarted = WiFi.softAP(apSSID, apPassword);
-  }
-
-  if (apStarted) {
-    wifi_config_t apCfg = {};
-    const esp_err_t cfgErr = esp_wifi_get_config(WIFI_IF_AP, &apCfg);
-    if (cfgErr == ESP_OK) {
-      if (apCfg.ap.authmode == WIFI_AUTH_OPEN) {
-        Serial.println(
-            "[WIFI-AP] BLAD: AP uruchomil sie jako OPEN mimo hasla. Wylaczam AP.");
-        WiFi.softAPdisconnect(true);
-        isAPMode = false;
-        staIsOff = true;
-        return;
-      }
-      Serial.printf("[WIFI-AP] SSID=%s auth=%d passLen=%u\n", apSSID,
-                    static_cast<int>(apCfg.ap.authmode),
-                    static_cast<unsigned>(passLen));
-    } else {
-      Serial.printf("[WIFI-AP] Ostrzezenie: esp_wifi_get_config(AP) failed: %s\n",
-                    esp_err_to_name(cfgErr));
+  if (serviceModeStartRequested) {
+    serviceModeStartRequested = false;
+    if (!serviceModeActive) {
+      startServiceModeInternal();
     }
-
-    dnsServer.stop();
-    dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
-    isAPMode = true;
-    Serial.println("[WIFI-AP] Uruchomiono AP. IP: " +
-                   WiFi.softAPIP().toString());
-  } else {
-    Serial.printf(
-        "[WIFI-AP] BLAD: nie udalo sie uruchomic AP (mode=%d, passLen=%u).\n",
-        static_cast<int>(WiFi.getMode()), static_cast<unsigned>(passLen));
-    isAPMode = false;
-    staIsOff = true;
-  }
-}
-
-static void stopAPInternal() {
-  if (!isAPMode) {
-    return;
   }
 
-  dnsServer.stop();
-  WiFi.softAPdisconnect(true);
-  isAPMode = false;
-  staIsOff = true;
-  Serial.println("[WIFI-AP] Wylaczono AP.");
-  // UWAGA: Nie wywolujemy setupNetwork() - blokowaloby i mogloby powodowac WDT.
-}
-
-static void disableStaForSleepInternal() {
-  if (isAPMode) {
-    return;
-  }
-
-  WiFi.mode(WIFI_STA);
-  // Stabilniejsza sciezka na ESP32-S3:
-  // unikamy hard un-init (disconnect(..., true)), bo potrafi logowac
-  // "wifi:timeout when WiFi un-init, type=4".
-  WiFi.disconnect(false, false);
-  staIsOff = true;
-  staDisconnectedSinceMs = 0;
-  staReconnectAttempts = 0;
-  Serial.println("[WIFI-STA] Wylaczono STA dla nocnego sleep.");
-}
-
-static void enableStaAfterSleepInternal() {
-  if (isAPMode || !staIsOff) {
-    return;
-  }
-
-  setupNetwork();
-}
-
-static void processAPRequests() {
-  if (apStopRequested) {
-    apStopRequested = false;
-    apStartRequested = false;
-    stopAPInternal();
-  }
-
-  if (apStartRequested) {
-    apStartRequested = false;
-    startAPInternal();
-  }
-
-  if (staOffRequested && !isAPMode) {
+  if (staOffRequested) {
     staOffRequested = false;
     staOnRequested = false;
-    disableStaForSleepInternal();
+    if (!serviceModeActive && !timeSyncInProgress && !isAPMode && !staIsOff) {
+      turnWifiOffInternal("Nocny sleep.");
+    }
   }
 
-  if (staOnRequested && !isAPMode) {
+  if (staOnRequested) {
     staOnRequested = false;
-    enableStaAfterSleepInternal();
   }
 }
 
 static void WifiTask(void *parameter) {
+  (void)parameter;
+
+  setupWebServer();
   WiFi.persistent(false);
   WiFi.setAutoReconnect(false);
-  setupNetwork();
-  setupWebServer();
+  WiFi.mode(WIFI_OFF);
+  staIsOff = true;
+
+  logWifiInfo(
+      "[WIFI] Start: radio wylaczone. Dzienna synchronizacja o 09:00, AP tylko jako fallback z menu WiFi.");
 
   for (;;) {
-    processAPRequests();
-    maintainStaConnection();
-    if (isAPMode)
+    processWifiRequests();
+    maintainWifiState();
+    if (isAPMode) {
       dnsServer.processNextRequest();
-    server.handleClient();
-    vTaskDelay(10 / portTICK_PERIOD_MS); // Przekazanie sterowania dla FreeRTOS
+    }
+    if (webServerRunning) {
+      server.handleClient();
+    }
+    vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
 
 void AkwariumWifi::begin() {
-  xTaskCreatePinnedToCore(WifiTask,   // Funkcja zadania
-                          "WifiTask", // Nazwa zadania
-                          8192,       // Rozmiar stosu
-                          NULL,       // Parametry
-                          1,          // Priorytet
-                          NULL,       // Uchwyt
-                          1);         // Rdzen 1
+  BaseType_t result =
+      xTaskCreatePinnedToCore(WifiTask, "WifiTask", 10240, nullptr, 1, nullptr, 1);
+  if (result == pdPASS) {
+    LogManager::logInfo("WIFI: uruchomiono zadanie sieciowe.");
+  } else {
+    LogManager::logError("WIFI: nie mozna uruchomic zadania sieciowego.");
+  }
 }
 
 bool AkwariumWifi::getIsAPMode() { return isAPMode; }
 
 void AkwariumWifi::startAP() {
-  apStopRequested = false;
+  serviceModeStopRequested = false;
   staOffRequested = false;
-  apStartRequested = true;
+  serviceModeStartRequested = true;
 }
 
 void AkwariumWifi::stopAP() {
-  apStartRequested = false;
-  apStopRequested = true;
+  serviceModeStartRequested = false;
+  serviceModeStopRequested = true;
 }
 
 void AkwariumWifi::requestStaOffForSleep() {
-  apStartRequested = false;
+  if (serviceModeActive || timeSyncInProgress || isAPMode) {
+    return;
+  }
+  serviceModeStartRequested = false;
   staOnRequested = false;
   staOffRequested = true;
 }
 
 void AkwariumWifi::requestStaOn() {
-  if (isAPMode) {
+  if (serviceModeActive || isAPMode) {
     return;
   }
   staOffRequested = false;
@@ -551,26 +899,46 @@ bool AkwariumWifi::isStaOff() { return staIsOff; }
 
 bool AkwariumWifi::isStaConnected() { return staConnected; }
 
+bool AkwariumWifi::isStaConnecting() { return staConnecting; }
+
+bool AkwariumWifi::isServiceModeActive() { return serviceModeActive; }
+
+bool AkwariumWifi::isTimeSyncInProgress() { return timeSyncInProgress; }
+
 String AkwariumWifi::getAPName() {
-  return isAPMode ? String(apSSID) : String(STA_SSID);
+  return isAPMode ? getConfiguredApSsidString() : getConfiguredStaSsidString();
 }
 
 String AkwariumWifi::getAPPassword() {
-  return isAPMode ? String(apPassword) : String(STA_PASSWORD);
+  return isAPMode ? getConfiguredApPasswordString() : String();
 }
 
-String AkwariumWifi::getConfiguredAPName() { return String(apSSID); }
+String AkwariumWifi::getConfiguredStaSsid() {
+  return getConfiguredStaSsidString();
+}
 
-String AkwariumWifi::getConfiguredAPPassword() { return String(apPassword); }
+String AkwariumWifi::getConfiguredAPName() { return getConfiguredApSsidString(); }
+
+String AkwariumWifi::getConfiguredAPPassword() {
+  return getConfiguredApPasswordString();
+}
 
 String AkwariumWifi::getStaSsid() {
   return staLastConnectedSsid.length() > 0 ? staLastConnectedSsid
-                                           : String(STA_SSID);
+                                           : getConfiguredStaSsidString();
 }
 
 uint32_t AkwariumWifi::getStaLastConnectedEpoch() {
   return staLastConnectedEpoch;
 }
+
+uint32_t AkwariumWifi::getLastTimeSyncEpoch() { return lastTimeSyncEpoch; }
+
+bool AkwariumWifi::wasLastTimeSyncSuccessful() {
+  return lastTimeSyncSuccessful;
+}
+
+String AkwariumWifi::getLastTimeSyncStatus() { return lastTimeSyncStatus; }
 
 String AkwariumWifi::getIP() {
   return isAPMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
@@ -579,4 +947,3 @@ String AkwariumWifi::getIP() {
 uint8_t AkwariumWifi::getConnectedClients() {
   return isAPMode ? WiFi.softAPgetStationNum() : 0;
 }
-

@@ -159,7 +159,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                     </li>
                 </ul>
                 <div class="sys-version">
-                    v4.2.0-stable<br>
+                    <span id="sidebar-firmware-version">v--</span><br>
                     <span>FreeRTOS Core</span>
                 </div>
             </div>
@@ -311,7 +311,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                     <div class="card glass dashboard-card chart-wide temp-history-card">
                         <div class="temp-chart-header">
                             <span class="card-heading">Zakres temperatury</span>
-                            <span id="temperature-chart-meta" class="card-chip card-chip-accent">20 ostatnich pomiarów</span>
+                            <span id="temperature-chart-meta" class="card-chip card-chip-accent">20 ostatnich pomiarow co 10 min</span>
                         </div>
 
                         <div class="temp-chart-shell">
@@ -347,7 +347,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Oświetlenie Główne</div>
-                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select id="schedule-light-mode" class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
                                     <option value="zawsze_wlaczone">Zawsze włączony</option>
                                     <option value="zawsze_wylaczone">Zawsze wyłączony</option>
@@ -355,8 +355,8 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
                                 <div class="schedule-bar" style="background: var(--accent-yellow);"></div>
-                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:00">
-                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="21:30">
+                                <input type="time" id="schedule-light-start" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" id="schedule-light-end" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="21:30">
                             </div>
                         </div>
                     </div>
@@ -366,7 +366,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Napowietrzanie</div>
-                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select id="schedule-air-mode" class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
                                     <option value="zawsze_wlaczone">Zawsze włączony</option>
                                     <option value="zawsze_wylaczone">Zawsze wyłączony</option>
@@ -374,8 +374,8 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
                                 <div class="schedule-bar" style="background: var(--accent-white);"></div>
-                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:00">
-                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="19:00">
+                                <input type="time" id="schedule-air-start" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:00">
+                                <input type="time" id="schedule-air-end" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="19:00">
                             </div>
                         </div>
                     </div>
@@ -385,7 +385,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Filtracja</div>
-                                <select class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select id="schedule-filter-mode" class="form-control schedule-mode-select" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="harmonogram" selected>Harmonogram</option>
                                     <option value="zawsze_wlaczone">Zawsze włączony</option>
                                     <option value="zawsze_wylaczone">Zawsze wyłączony</option>
@@ -393,8 +393,8 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
                                 <div class="schedule-bar" style="background: var(--accent-blue);"></div>
-                                <input type="time" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:30">
-                                <input type="time" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="20:30">
+                                <input type="time" id="schedule-filter-start" class="time-pill schedule-time-start" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="10:30">
+                                <input type="time" id="schedule-filter-end" class="time-pill schedule-time-end" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="20:30">
                             </div>
                         </div>
                     </div>
@@ -404,7 +404,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                         <div class="schedule-details">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div class="schedule-title" style="margin-bottom: 0;">Karmienie (Automatyczne)</div>
-                                <select class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
+                                <select id="schedule-feed-mode" class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px; height: auto;">
                                     <option value="wylaczone">Wyłączone</option>
                                     <option value="codziennie" selected>Codziennie</option>
                                     <option value="co_2_dni">Co 2 dni</option>
@@ -413,9 +413,16 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                             </div>
                             <div class="schedule-bar-container" style="margin-bottom: 30px;">
                                 <div class="schedule-point" style="left: 75%; background: var(--accent-cyan);"></div>
-                                <input type="time" class="time-pill schedule-time-point" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="18:00">
+                                <input type="time" id="schedule-feed-time" class="time-pill schedule-time-point" style="position: absolute; top: 16px; transform: translateX(-50%); width: 75px;" value="18:00">
                             </div>
                         </div>
+                    </div>
+
+                    <div style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 26px;">
+                        <div id="schedule-save-status" class="text-muted" style="font-size: 12px;">Zmiany harmonogramow wymagaja zapisania.</div>
+                        <button id="save-schedule-btn" class="btn btn-primary" onclick="saveScheduleSettings()" style="padding: 12px 18px; border-radius: 12px;">
+                            <i class="fa-solid fa-floppy-disk"></i> Zapisz harmonogramy
+                        </button>
                     </div>
                 </div>
             </section>
@@ -489,11 +496,12 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                         <h3 class="mb-2" style="font-size: 24px; font-weight: 600; color: #f8fafc;">Instalacja nowej wersji</h2>
                         <p class="text-muted mb-4" style="font-size: 14px; max-width: 400px; margin-left: auto; margin-right: auto; line-height: 1.5;">Prześlij skompilowany plik <code style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-family: monospace; color: var(--accent-cyan);">.bin</code> aby zaktualizować oprogramowanie bazowe mikrokontrolera ESP32-S3 sterującego akwarium.</p>
                         
-                        <div class="file-upload-wrapper mb-4" style="border: 2px dashed rgba(255,255,255,0.15); border-radius: 16px; padding: 40px 20px; transition: border-color 0.3s, background 0.3s; cursor: pointer; background: rgba(0,0,0,0.2);" onmouseover="this.style.borderColor='var(--accent-blue)'; this.style.background='rgba(59, 130, 246, 0.05)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.15)'; this.style.background='rgba(0,0,0,0.2)';" onclick="document.getElementById('firmware-file').click()">
+                        <div id="firmware-upload-wrapper" class="file-upload-wrapper mb-4" style="border: 2px dashed rgba(255,255,255,0.15); border-radius: 16px; padding: 40px 20px; transition: border-color 0.3s, background 0.3s; cursor: pointer; background: rgba(0,0,0,0.2);" onmouseover="this.style.borderColor='var(--accent-blue)'; this.style.background='rgba(59, 130, 246, 0.05)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.15)'; this.style.background='rgba(0,0,0,0.2)';" onclick="document.getElementById('firmware-file').click()">
                             <input type="file" id="firmware-file" accept=".bin" style="display: none;">
                             <i class="fa-solid fa-file-arrow-up mb-3" style="font-size: 32px; color: var(--text-muted);"></i>
                             <div style="font-size: 16px; font-weight: 500; color: var(--text-main); margin-bottom: 8px;">Przeciągnij plik tutaj lub kliknij</div>
                             <div style="font-size: 12px; color: var(--text-muted);">Maksymalny rozmiar pliku: 4 MB</div>
+                            <div id="firmware-file-name" style="margin-top: 10px; font-size: 12px; color: var(--accent-cyan); font-family: monospace;">Nie wybrano pliku .bin</div>
                         </div>
 
                         <div id="ota-progress" style="display: none; width: 100%; text-align: left; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 24px;">
@@ -532,12 +540,25 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                         </div>
                         <div class="card-body form-group">
                             <label>Aktywne SSID (Station):</label>
-                            <input type="text" class="form-control mb-3" value="MojaSiec_5G" disabled>
+                            <input id="settings-active-sta-ssid" type="text" class="form-control mb-3" value="-" disabled>
                             
                             <label>Przydzielony Adres IP:</label>
-                            <input type="text" class="form-control mb-4" value="192.168.1.144" disabled>
+                            <input id="settings-network-ip" type="text" class="form-control mb-3" value="-" disabled>
                             
-                            <button class="btn btn-secondary w-100"><i class="fa-solid fa-satellite-dish"></i> Skanuj i Konfiguruj Sieci AP</button>
+                            <label>Docelowe SSID STA:</label>
+                            <input id="settings-sta-ssid" type="text" class="form-control mb-3" maxlength="32" value="">
+
+                            <label>Nowe haslo STA:</label>
+                            <input id="settings-sta-password" type="password" class="form-control mb-3" maxlength="63" value="" placeholder="Pozostaw puste, aby nie zmieniac">
+
+                            <label>Nazwa AP awaryjnego:</label>
+                            <input id="settings-ap-ssid" type="text" class="form-control mb-3" maxlength="31" value="">
+
+                            <label>Nowe haslo AP:</label>
+                            <input id="settings-ap-password" type="password" class="form-control mb-3" maxlength="63" value="" placeholder="Pozostaw puste, aby nie zmieniac">
+
+                            <button id="save-network-btn" class="btn btn-secondary w-100" onclick="saveNetworkSettings()"><i class="fa-solid fa-floppy-disk"></i> Zapisz Ustawienia WiFi</button>
+                            <div id="settings-network-status" class="text-muted" style="margin-top: 10px; font-size: 12px;">Zmiany SSID i hasel sa stosowane przy kolejnej sesji WiFi.</div>
                         </div>
                     </div>
                     
@@ -580,7 +601,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                         <div class="card-body" style="gap: 12px;">
                             <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
                                 <span class="text-muted" style="font-size: 13px;">Wersja Oprogramowania:</span>
-                                <span style="font-weight: 600; color: var(--text-main); font-size: 13px;">v4.2.0-stable</span>
+                                <span id="system-firmware-version" style="font-weight: 600; color: var(--text-main); font-size: 13px;">v--</span>
                             </div>
                             <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
                                 <span class="text-muted" style="font-size: 13px;">Środowisko RTOS:</span>
@@ -602,8 +623,9 @@ const char web_index_html[] PROGMEM = R"AQWEB(
                             </div>
                         </div>
                         <div class="card-body form-group">
-                            <label>Ostatnia synchronizacja RTC (DS3231):</label>
-                            <input type="text" class="form-control mb-3" value="11 mar 2026, 18:00" disabled>
+                            <label>Aktualny czas urzadzenia (RTC/sterownik):</label>
+                            <input type="text" id="settings-device-datetime" class="form-control mb-2" value="Oczekiwanie na polaczenie ze sterownikiem..." disabled>
+                            <div id="settings-clock-status" class="text-muted" style="font-size: 12px; margin-bottom: 12px;">Czas urzadzenia jest pobierany automatycznie po polaczeniu.</div>
                             
                             <div class="grid-2-col">
                                 <button class="btn btn-secondary w-100" style="padding: 10px 14px; font-size: 13px;"><i class="fa-solid fa-arrows-rotate"></i> Synch. z NTP</button>
@@ -2492,6 +2514,72 @@ function getCurrentClockDate() {
     return new Date();
 }
 
+function formatControllerClock(clock) {
+    if (!clock) return '';
+
+    const year = Number(clock.year);
+    const month = Number(clock.month);
+    const day = Number(clock.day);
+    const hour = Number(clock.hour);
+    const minute = Number(clock.minute);
+    const second = Number(clock.second);
+
+    if (
+        !Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day) ||
+        !Number.isInteger(hour) || !Number.isInteger(minute) || !Number.isInteger(second) ||
+        year < 2024 || month < 1 || month > 12 || day < 1 || day > 31
+    ) {
+        return '';
+    }
+
+    const date = new Date(year, month - 1, day, hour, minute, second, 0);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+
+    return `${date.toLocaleDateString('pl-PL', { day: '2-digit', month: 'short', year: 'numeric' })}, ${date.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+}
+
+function renderSettingsClockPanel(clock) {
+    const input = document.getElementById('settings-device-datetime');
+    const status = document.getElementById('settings-clock-status');
+    if (!input || !status) return;
+
+    const formatted = formatControllerClock(clock);
+    if (formatted) {
+        input.value = formatted;
+        status.textContent = 'Czas urzadzenia pobrany automatycznie ze sterownika.';
+        status.style.color = 'var(--accent-cyan)';
+    } else {
+        input.value = 'Brak poprawnego czasu z urzadzenia.';
+        status.textContent = 'Sterownik nie udostepnil jeszcze poprawnego czasu.';
+        status.style.color = 'var(--text-muted)';
+    }
+}
+
+function normalizeFirmwareVersion(version) {
+    const raw = (version || '').trim();
+    if (!raw) return 'v--';
+    return raw.startsWith('v') || raw.startsWith('V') ? raw : `v${raw}`;
+}
+
+function renderFirmwareInfo(firmware) {
+    const versionText = normalizeFirmwareVersion(firmware?.version);
+    const tooltipParts = [
+        firmware?.buildRef ? `Build: ${firmware.buildRef}` : '',
+        firmware?.buildDate && firmware?.buildTime ? `Kompilacja: ${firmware.buildDate} ${firmware.buildTime}` : '',
+        firmware?.idfVersion ? `IDF: ${firmware.idfVersion}` : ''
+    ].filter(Boolean);
+    const tooltip = tooltipParts.join(' | ');
+
+    ['sidebar-firmware-version', 'system-firmware-version'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = versionText;
+        el.title = tooltip;
+    });
+}
+
 function setText(id, value) {
     const el = document.getElementById(id);
     if (el) {
@@ -2648,6 +2736,210 @@ function renderNetworkCard(network) {
 
     card.classList.remove('network-online', 'network-aponly', 'network-offline');
     card.classList.add(staConnected ? 'network-online' : (apMode ? 'network-aponly' : 'network-offline'));
+}
+
+function setSettingsNetworkStatus(message, tone = 'muted') {
+    const el = document.getElementById('settings-network-status');
+    if (!el) return;
+
+    el.textContent = message;
+    if (tone === 'success') {
+        el.style.color = 'var(--accent-cyan)';
+    } else if (tone === 'error') {
+        el.style.color = '#ef4444';
+    } else {
+        el.style.color = 'var(--text-muted)';
+    }
+}
+
+function setScheduleStatus(message, tone = 'muted') {
+    const el = document.getElementById('schedule-save-status');
+    if (!el) return;
+
+    el.textContent = message;
+    if (tone === 'success') {
+        el.style.color = 'var(--accent-cyan)';
+    } else if (tone === 'error') {
+        el.style.color = '#ef4444';
+    } else {
+        el.style.color = 'var(--text-muted)';
+    }
+}
+
+function scheduleModeToUi(value) {
+    switch (Number(value)) {
+        case 1:
+            return 'zawsze_wlaczone';
+        case 2:
+            return 'zawsze_wylaczone';
+        default:
+            return 'harmonogram';
+    }
+}
+
+function scheduleModeToApi(value) {
+    switch (value) {
+        case 'zawsze_wlaczone':
+            return 1;
+        case 'zawsze_wylaczone':
+            return 2;
+        default:
+            return 0;
+    }
+}
+
+function feedFrequencyToUi(value) {
+    switch (Number(value)) {
+        case 1:
+            return 'codziennie';
+        case 2:
+            return 'co_2_dni';
+        case 3:
+            return 'co_3_dni';
+        default:
+            return 'wylaczone';
+    }
+}
+
+function feedFrequencyToApi(value) {
+    switch (value) {
+        case 'codziennie':
+            return 1;
+        case 'co_2_dni':
+            return 2;
+        case 'co_3_dni':
+            return 3;
+        default:
+            return 0;
+    }
+}
+
+function clearScheduleDirtyState() {
+    document.querySelectorAll('#harmonogramy [data-dirty="1"]').forEach((el) => {
+        el.dataset.dirty = '0';
+    });
+}
+
+function markScheduleDirty() {
+    setScheduleStatus('Masz niezapisane zmiany harmonogramow.', 'muted');
+}
+
+function setInputValueIfClean(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (document.activeElement === el || el.dataset.dirty === '1') return;
+    el.value = value || '';
+}
+
+function renderScheduleEditor(data) {
+    const schedule = data.schedule || {};
+    const feeding = data.feeding || {};
+
+    setInputValueIfClean('schedule-light-mode', scheduleModeToUi(schedule.lightMode));
+    setInputValueIfClean('schedule-light-start', formatTime(schedule.dayStartHour, schedule.dayStartMin));
+    setInputValueIfClean('schedule-light-end', formatTime(schedule.dayEndHour, schedule.dayEndMin));
+
+    setInputValueIfClean('schedule-air-mode', scheduleModeToUi(schedule.airMode));
+    setInputValueIfClean('schedule-air-start', formatTime(schedule.airStartHour, schedule.airStartMin));
+    setInputValueIfClean('schedule-air-end', formatTime(schedule.airEndHour, schedule.airEndMin));
+
+    setInputValueIfClean('schedule-filter-mode', scheduleModeToUi(schedule.filterMode));
+    setInputValueIfClean('schedule-filter-start', formatTime(schedule.filterStartHour, schedule.filterStartMin));
+    setInputValueIfClean('schedule-filter-end', formatTime(schedule.filterEndHour, schedule.filterEndMin));
+
+    setInputValueIfClean('schedule-feed-mode', feedFrequencyToUi(feeding.freq));
+    setInputValueIfClean('schedule-feed-time', formatTime(feeding.hour, feeding.minute));
+
+    document.querySelectorAll('#harmonogramy .schedule-item').forEach((item) => {
+        const kind = item.getAttribute('data-schedule-kind') || 'point';
+        if (kind === 'range') {
+            updateRangeScheduleItem(item);
+        } else {
+            updatePointScheduleItem(item);
+        }
+    });
+
+    if (!document.querySelector('#harmonogramy [data-dirty="1"]')) {
+        setScheduleStatus('Harmonogramy zsynchronizowane ze sterownikiem.', 'success');
+    }
+}
+
+async function saveScheduleSettings() {
+    const button = document.getElementById('save-schedule-btn');
+    if (!button) return;
+
+    const payload = {
+        lightMode: scheduleModeToApi(document.getElementById('schedule-light-mode')?.value),
+        dayStart: document.getElementById('schedule-light-start')?.value || '00:00',
+        dayEnd: document.getElementById('schedule-light-end')?.value || '00:00',
+        aerationMode: scheduleModeToApi(document.getElementById('schedule-air-mode')?.value),
+        airOn: document.getElementById('schedule-air-start')?.value || '00:00',
+        airOff: document.getElementById('schedule-air-end')?.value || '00:00',
+        filterMode: scheduleModeToApi(document.getElementById('schedule-filter-mode')?.value),
+        filterOn: document.getElementById('schedule-filter-start')?.value || '00:00',
+        filterOff: document.getElementById('schedule-filter-end')?.value || '00:00',
+        feedFreq: feedFrequencyToApi(document.getElementById('schedule-feed-mode')?.value),
+        feedTime: document.getElementById('schedule-feed-time')?.value || '00:00'
+    };
+
+    button.disabled = true;
+    setScheduleStatus('Zapisywanie harmonogramow...', 'muted');
+
+    try {
+        await sendAction('save_schedule', payload);
+        clearScheduleDirtyState();
+        setScheduleStatus('Zapisano harmonogramy.', 'success');
+        await fetchStatus();
+    } catch (error) {
+        setScheduleStatus(`Blad zapisu harmonogramow: ${error?.message || 'nieznany blad'}`, 'error');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function renderSettingsNetworkPanel(network) {
+    setInputValueIfClean('settings-active-sta-ssid', network?.staSsid || '-');
+    setInputValueIfClean('settings-network-ip', network?.ip || '-');
+    setInputValueIfClean('settings-sta-ssid', network?.configuredStaSsid || '');
+    setInputValueIfClean('settings-ap-ssid', network?.configuredApSsid || '');
+}
+
+async function saveNetworkSettings() {
+    const staSsidInput = document.getElementById('settings-sta-ssid');
+    const staPasswordInput = document.getElementById('settings-sta-password');
+    const apSsidInput = document.getElementById('settings-ap-ssid');
+    const apPasswordInput = document.getElementById('settings-ap-password');
+    const button = document.getElementById('save-network-btn');
+    if (!staSsidInput || !staPasswordInput || !apSsidInput || !apPasswordInput || !button) return;
+
+    const payload = {
+        staSsid: (staSsidInput.value || '').trim(),
+        apSsid: (apSsidInput.value || '').trim()
+    };
+
+    const staPassword = (staPasswordInput.value || '').trim();
+    const apPassword = (apPasswordInput.value || '').trim();
+    if (staPassword) payload.staPassword = staPassword;
+    if (apPassword) payload.apPassword = apPassword;
+
+    button.disabled = true;
+    setSettingsNetworkStatus('Zapisywanie ustawien WiFi...', 'muted');
+
+    try {
+        await sendAction('save_network', payload);
+        ['settings-sta-ssid', 'settings-sta-password', 'settings-ap-ssid', 'settings-ap-password'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.dataset.dirty = '0';
+        });
+        staPasswordInput.value = '';
+        apPasswordInput.value = '';
+        setSettingsNetworkStatus('Zapisano. Nowe SSID/hasla beda uzyte przy kolejnej sesji WiFi.', 'success');
+        await fetchStatus();
+    } catch (error) {
+        setSettingsNetworkStatus(`Blad zapisu WiFi: ${error?.message || 'nieznany blad'}`, 'error');
+    } finally {
+        button.disabled = false;
+    }
 }
 
 function modeValue(value) {
@@ -2811,6 +3103,8 @@ function renderTemperatureChart(temperature) {
     if (!svg || !empty) return;
 
     const rawHistory = Array.isArray(temperature?.history) ? temperature.history : [];
+    const historyCapacity = Math.max(1, Math.round(toFiniteNumber(temperature?.historyCapacity) ?? 20));
+    const historyIntervalMinutes = Math.max(1, Math.round(toFiniteNumber(temperature?.historyIntervalMinutes) ?? 10));
     const points = rawHistory
         .map((item, index) => ({
             value: toFiniteNumber(item?.value),
@@ -2818,7 +3112,7 @@ function renderTemperatureChart(temperature) {
             index
         }))
         .filter((item) => isValidTemperature(item.value))
-        .slice(-20)
+        .slice(-historyCapacity)
         .map((item, index, arr) => ({
             value: item.value,
             epoch: item.epoch,
@@ -2826,11 +3120,11 @@ function renderTemperatureChart(temperature) {
             timeLabel: formatEpoch(item.epoch, {
                 fallback: `Pomiar ${index + 1} z ${arr.length}`,
                 includeDate: false,
-                includeSeconds: true
+                includeSeconds: false
             })
         }));
 
-    setText('temperature-chart-meta', `${points.length || 0} / 20 ostatnich pomiarów`);
+    setText('temperature-chart-meta', `${points.length || 0} / ${historyCapacity} pomiarow co ${historyIntervalMinutes} min`);
     setText('temperature-chart-start', points.length ? points[0].timeLabel : 'Najstarszy pomiar');
     setText('temperature-chart-end', points.length ? points[points.length - 1].timeLabel : 'Teraz');
     svg.innerHTML = '';
@@ -3000,7 +3294,11 @@ function renderDashboard(data) {
     renderTopbarActiveModules(data);
     renderTemperatureCard(data.temperature || {});
     renderBatteryWidgets(data.battery || {});
+    renderFirmwareInfo(data.firmware || {});
     renderNetworkCard(data.network || {});
+    renderSettingsNetworkPanel(data.network || {});
+    renderSettingsClockPanel(data.clock || {});
+    renderScheduleEditor(data);
     renderRelays(data);
     renderTodaySchedule(data);
     renderFeederCard(data);
@@ -3109,13 +3407,29 @@ function initScheduleTimeline() {
             const modeSelect = item.querySelector('.schedule-mode-select');
             const startInput = item.querySelector('.schedule-time-start');
             const endInput = item.querySelector('.schedule-time-end');
-            modeSelect?.addEventListener('change', () => updateRangeScheduleItem(item));
-            startInput?.addEventListener('input', () => updateRangeScheduleItem(item));
-            endInput?.addEventListener('input', () => updateRangeScheduleItem(item));
+            const onRangeChange = () => {
+                [modeSelect, startInput, endInput].forEach((el) => {
+                    if (el) el.dataset.dirty = '1';
+                });
+                updateRangeScheduleItem(item);
+                markScheduleDirty();
+            };
+            modeSelect?.addEventListener('change', onRangeChange);
+            startInput?.addEventListener('input', onRangeChange);
+            endInput?.addEventListener('input', onRangeChange);
             updateRangeScheduleItem(item);
         } else {
+            const feedModeSelect = item.querySelector('select');
             const pointInput = item.querySelector('.schedule-time-point');
-            pointInput?.addEventListener('input', () => updatePointScheduleItem(item));
+            const onPointChange = () => {
+                [feedModeSelect, pointInput].forEach((el) => {
+                    if (el) el.dataset.dirty = '1';
+                });
+                updatePointScheduleItem(item);
+                markScheduleDirty();
+            };
+            feedModeSelect?.addEventListener('change', onPointChange);
+            pointInput?.addEventListener('input', onPointChange);
             updatePointScheduleItem(item);
         }
     });
@@ -3199,25 +3513,46 @@ function triggerFeed() {
 }
 
 // OTA Logic
+function setOtaUploadReadyState(hasValidFile, fileName = '') {
+    const uploadBtn = document.getElementById('upload-btn');
+    const wrapper = document.getElementById('firmware-upload-wrapper');
+    const fileNameLabel = document.getElementById('firmware-file-name');
+    if (!uploadBtn) return;
+
+    uploadBtn.disabled = !hasValidFile;
+    uploadBtn.textContent = hasValidFile && fileName ? `Aktualizuj System (${fileName})` : 'Aktualizuj System';
+    uploadBtn.style.opacity = hasValidFile ? '1' : '0.5';
+    uploadBtn.style.filter = hasValidFile ? 'brightness(1.12)' : 'saturate(0.7)';
+    uploadBtn.style.boxShadow = hasValidFile ? '0 10px 28px rgba(37, 99, 235, 0.35)' : 'none';
+
+    if (wrapper) {
+        wrapper.style.borderColor = hasValidFile ? 'rgba(59, 130, 246, 0.75)' : 'rgba(255,255,255,0.15)';
+        wrapper.style.background = hasValidFile ? 'rgba(59, 130, 246, 0.10)' : 'rgba(0,0,0,0.2)';
+    }
+
+    if (fileNameLabel) {
+        fileNameLabel.textContent = hasValidFile && fileName ? `Wybrany plik: ${fileName}` : 'Nie wybrano pliku .bin';
+    }
+}
+
 function initOTA() {
     const fileInput = document.getElementById('firmware-file');
     const uploadBtn = document.getElementById('upload-btn');
     
     if(fileInput && uploadBtn) {
+        setOtaUploadReadyState(false);
         fileInput.addEventListener('change', (e) => {
             if(e.target.files.length > 0) {
                 const file = e.target.files[0];
                 if(file.name.endsWith('.bin')) {
-                    uploadBtn.disabled = false;
-                    uploadBtn.textContent = `Aktualizuj System (${file.name})`;
+                    setOtaUploadReadyState(true, file.name);
                 } else {
                     alert('Proszę wybrać poprawny plik firmware z rozszerzeniem .bin');
-                    uploadBtn.disabled = true;
+                    setOtaUploadReadyState(false);
                     e.target.value = '';
                 }
             } else {
-                uploadBtn.disabled = true;
-                uploadBtn.textContent = 'Aktualizuj System';
+                setOtaUploadReadyState(false);
             }
         });
     }
@@ -3236,6 +3571,8 @@ function simulateOTA() {
         alert('Najpierw wybierz plik .bin.');
         return;
     }
+
+    const selectedFileName = firmwareFile.files[0]?.name || '';
 
     const formData = new FormData();
     formData.append('update', firmwareFile.files[0]);
@@ -3264,12 +3601,12 @@ function simulateOTA() {
                 progressContainer.style.display = 'none';
                 fill.style.width = '0%';
                 percentTxt.textContent = '0%';
-                btn.textContent = 'Aktualizuj System';
                 btn.style.backgroundColor = '';
                 const firmwareFile = document.getElementById('firmware-file');
                 if(firmwareFile) {
                     firmwareFile.value = '';
                 }
+                setOtaUploadReadyState(false);
             }, 1000);
         }
     };
@@ -3281,7 +3618,11 @@ function simulateOTA() {
     };
 
     xhr.onloadend = function () {
-        btn.disabled = false;
+        if (selectedFileName) {
+            setOtaUploadReadyState(true, selectedFileName);
+        } else {
+            setOtaUploadReadyState(false);
+        }
     };
 
     xhr.send(formData);
@@ -3296,6 +3637,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initOTA();
     initScheduleTimeline();
+    ['settings-sta-ssid', 'settings-sta-password', 'settings-ap-ssid', 'settings-ap-password'].forEach((id) => {
+        const el = document.getElementById(id);
+        el?.addEventListener('input', () => {
+            el.dataset.dirty = '1';
+        });
+    });
+    setSettingsNetworkStatus('Zmiany SSID i hasel sa stosowane przy kolejnej sesji WiFi.', 'muted');
 
     const currentBtn = document.getElementById('logs-current-btn');
     const criticalBtn = document.getElementById('logs-critical-btn');

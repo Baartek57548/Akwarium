@@ -62,10 +62,12 @@ static bool isNightTimeNow();
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
 static bool configureLightSleepWakeup();
 static void syncBleWithOledState(bool oledShouldStayOn);
+static bool isUnexpectedResetReason(esp_reset_reason_t reason);
 
 static const unsigned long LIGHT_SLEEP_IDLE_MS = 300000UL;
 static const unsigned long NIGHT_INTERACTION_WINDOW_MS = 60000UL;
 static const unsigned long OLED_IDLE_TIMEOUT_MS = 120000UL;
+static const unsigned long SERVO_BOOT_GUARD_MS = 5000UL;
 static bool wokeFromButtonThisBoot = false;
 
 struct TestOverridesState {
@@ -266,16 +268,45 @@ int SystemController::getLastResetReason() { return lastResetReason; }
 
 const char *SystemController::getLastResetLabel() {
   switch (static_cast<esp_reset_reason_t>(lastResetReason)) {
+  case ESP_RST_UNKNOWN:
+    return "unknown";
+  case ESP_RST_POWERON:
+    return "power_on";
+  case ESP_RST_EXT:
+    return "external";
+  case ESP_RST_SW:
+    return "software";
   case ESP_RST_TASK_WDT:
     return "watchdog";
   case ESP_RST_INT_WDT:
     return "watchdog";
+  case ESP_RST_WDT:
+    return "watchdog";
   case ESP_RST_PANIC:
     return "panic";
+  case ESP_RST_DEEPSLEEP:
+    return "deep_sleep";
   case ESP_RST_BROWNOUT:
     return "brownout";
+  case ESP_RST_SDIO:
+    return "sdio";
   default:
     return nullptr;
+  }
+}
+
+static bool isUnexpectedResetReason(esp_reset_reason_t reason) {
+  switch (reason) {
+  case ESP_RST_UNKNOWN:
+  case ESP_RST_TASK_WDT:
+  case ESP_RST_INT_WDT:
+  case ESP_RST_WDT:
+  case ESP_RST_PANIC:
+  case ESP_RST_BROWNOUT:
+  case ESP_RST_SDIO:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -347,8 +378,16 @@ void SystemController::hardwareSetup() {
     // Sprawdz czy czas w RTC jest rozsadny.
     DateTime now = rtc.now();
     if (now.year() < 2024 || now.year() > 2099) {
-      LogManager::logWarn("RTC ma niepoprawny czas, przywracanie domyslnego...");
-      rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+      LogManager::logWarn(
+          "RTC ma niepoprawny czas - probuje odzyskac kopie z NVS.");
+      if (restoreRtcFromBackup()) {
+        LogManager::logInfo(
+            "RTC: przywrocono czas z kopii NVS po wykryciu niepoprawnej daty.");
+      } else {
+        LogManager::logWarn(
+            "RTC nadal nie ma poprawnego czasu, ustawiam wartosc domyslna (2025-01-01).");
+        rtc.adjust(DateTime(2025, 1, 1, 12, 0, 0));
+      }
     }
   }
 }
@@ -390,18 +429,33 @@ void SystemController::init() {
         "Wybudzenie przyciskiem GPIO14 - aktywne okno interakcji nocnej.");
   }
 
-  // Rejestracja biezacego zadania (loop) do Watchdoga
-  esp_task_wdt_add(NULL);
-
   lastResetReason = static_cast<int>(esp_reset_reason());
   const char *rstLabel = getLastResetLabel();
+  const esp_reset_reason_t resetReason =
+      static_cast<esp_reset_reason_t>(lastResetReason);
   if (rstLabel != nullptr) {
-    char msg[80];
-    snprintf(msg, sizeof(msg), "RESET: %s (code=%d)", rstLabel,
-             lastResetReason);
-    LogManager::logError(msg);
+    char timeBuf[32] = "rtc=unavailable";
+    if (rtcReady) {
+      const DateTime now = getCurrentDateTime();
+      snprintf(timeBuf, sizeof(timeBuf), "rtc=%04d-%02d-%02d %02d:%02d:%02d",
+               now.year(), now.month(), now.day(), now.hour(), now.minute(),
+               now.second());
+    }
+
+    char msg[144];
+    snprintf(msg, sizeof(msg), "BOOT: reset=%s code=%d count=%lu %s", rstLabel,
+             lastResetReason, static_cast<unsigned long>(systemResetCount),
+             timeBuf);
+    if (isUnexpectedResetReason(resetReason)) {
+      LogManager::logError(msg);
+    } else {
+      LogManager::logInfo(msg);
+    }
   } else {
-    LogManager::logInfo("System zainicjalizowany poprawnie.");
+    char msg[96];
+    snprintf(msg, sizeof(msg), "BOOT: reset=unmapped code=%d count=%lu",
+             lastResetReason, static_cast<unsigned long>(systemResetCount));
+    LogManager::logError(msg);
   }
 }
 
@@ -552,7 +606,14 @@ void SystemController::updateDecisions() {
   }
 
   // Aplikacja Serwa
+  static unsigned long servoControlEnabledAtMs = 0;
   static int lastServoTarget = -1;
+  if (servoControlEnabledAtMs == 0) {
+    servoControlEnabledAtMs = millis() + SERVO_BOOT_GUARD_MS;
+  }
+  if (millis() < servoControlEnabledAtMs) {
+    servoTarget = servoController.getCurrentPosition();
+  }
   if (servoTarget != lastServoTarget) {
     servoController.setPosition(servoTarget);
     lastServoTarget = servoTarget;
@@ -745,6 +806,12 @@ bool SystemController::canEnterLightSleep(unsigned long nowMs,
     return false;
   }
   if (AkwariumWifi::getIsAPMode()) {
+    return false;
+  }
+  if (AkwariumWifi::isServiceModeActive()) {
+    return false;
+  }
+  if (AkwariumWifi::isTimeSyncInProgress()) {
     return false;
   }
   if (!AkwariumWifi::isStaOff()) {
@@ -1035,14 +1102,12 @@ void SystemController::handlePowerManagement(U8G2 *display,
   }
 
   if (!isNightTimeNow()) {
-    if (!AkwariumWifi::getIsAPMode() && AkwariumWifi::isStaOff()) {
-      AkwariumWifi::requestStaOn();
-    }
     handleOnlyOledTimeout(OLED_IDLE_TIMEOUT_MS);
     return;
   }
 
-  if (!AkwariumWifi::isStaOff()) {
+  if (!AkwariumWifi::isStaOff() && !AkwariumWifi::isServiceModeActive() &&
+      !AkwariumWifi::isTimeSyncInProgress()) {
     AkwariumWifi::requestStaOffForSleep();
   }
 

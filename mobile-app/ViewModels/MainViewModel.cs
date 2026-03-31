@@ -1560,7 +1560,13 @@ public sealed class MainViewModel : ObservableObject
 
 	private void ProcessCommandResult(AquariumCommandResult result, string successMessage)
 	{
-		var translated = result.IsSuccess ? successMessage : TranslateFirmwareCode(result.Code);
+		var translatedCode = TranslateFirmwareCode(result.Code);
+		var hasSpecificTranslation =
+			!string.IsNullOrWhiteSpace(result.Code) &&
+			!string.Equals(translatedCode, result.Code, StringComparison.Ordinal);
+		var translated = result.IsSuccess
+			? (hasSpecificTranslation ? translatedCode : successMessage)
+			: translatedCode;
 		LatestResultText = translated;
 		StatusMessage = translated;
 		AddLog("system", translated, !result.IsSuccess);
@@ -1667,6 +1673,7 @@ public sealed class MainViewModel : ObservableObject
 		return code switch
 		{
 			"settings_saved" => "Harmonogramy zapisane w kontrolerze.",
+			"settings_partial" => "Harmonogramy zapisane czesciowo. Sterownik skorygowal lub odrzucil czesc pol.",
 			"feed_now" => "Karmienie uruchomione.",
 			"clear_logs" => "Krytyczne logi usuniete.",
 			"invalid_light_mode" => "Niepoprawny tryb oswietlenia.",

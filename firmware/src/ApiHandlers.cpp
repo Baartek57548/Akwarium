@@ -4,6 +4,7 @@
 #include "BleManager.h"
 #include "ConfigManager.h"
 #include "ConfigValidation.h"
+#include "FirmwareInfo.h"
 #include "LogManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
@@ -88,7 +89,7 @@ static String buildStatusJson() {
     voltage = 0.0f;
   }
 
-  DynamicJsonDocument doc(4096);
+  DynamicJsonDocument doc(5120);
 
   JsonObject temperature = doc.createNestedObject("temperature");
   temperature["current"] = isnan(snap.temperature) ? -99.9f : snap.temperature;
@@ -98,6 +99,8 @@ static String buildStatusJson() {
   temperature["hysteresis"] = cfg.tempHysteresis;
   temperature["min"] = isnan(snap.minTemp) ? -99.9f : snap.minTemp;
   temperature["minTimeEpoch"] = snap.minTempEpoch;
+  temperature["historyIntervalMinutes"] = 10;
+  temperature["historyCapacity"] = TEMP_HISTORY_SIZE;
   JsonArray history = temperature.createNestedArray("history");
   for (uint8_t i = 0; i < snap.temperatureHistoryCount; ++i) {
     const TemperatureHistoryEntry &entry = snap.temperatureHistory[i];
@@ -151,8 +154,16 @@ static String buildStatusJson() {
   network["ssid"] = AkwariumWifi::getAPName();
   network["clients"] = AkwariumWifi::getConnectedClients();
   network["staConnected"] = AkwariumWifi::isStaConnected();
+  network["staConnecting"] = AkwariumWifi::isStaConnecting();
+  network["serviceMode"] = AkwariumWifi::isServiceModeActive();
   network["staSsid"] = AkwariumWifi::getStaSsid();
+  network["configuredStaSsid"] = AkwariumWifi::getConfiguredStaSsid();
+  network["configuredApSsid"] = AkwariumWifi::getConfiguredAPName();
   network["staLastConnectedEpoch"] = AkwariumWifi::getStaLastConnectedEpoch();
+  network["timeSyncInProgress"] = AkwariumWifi::isTimeSyncInProgress();
+  network["lastTimeSyncEpoch"] = AkwariumWifi::getLastTimeSyncEpoch();
+  network["lastTimeSyncOk"] = AkwariumWifi::wasLastTimeSyncSuccessful();
+  network["lastTimeSyncStatus"] = AkwariumWifi::getLastTimeSyncStatus();
   const bool bleAdvertising = BleManager::isAdvertising();
   const bool bleConnected = BleManager::isConnected();
   network["bleAdvertising"] = bleAdvertising;
@@ -167,8 +178,17 @@ static String buildStatusJson() {
   clock["month"] = snap.month;
   clock["year"] = snap.year;
 
+  const FirmwareRuntimeInfo firmwareInfo = FirmwareInfo::getRuntimeInfo();
+  JsonObject firmware = doc.createNestedObject("firmware");
+  firmware["name"] = firmwareInfo.firmwareName;
+  firmware["version"] = firmwareInfo.firmwareVersion;
+  firmware["buildRef"] = firmwareInfo.buildRef;
+  firmware["buildDate"] = firmwareInfo.buildDate;
+  firmware["buildTime"] = firmwareInfo.buildTime;
+  firmware["idfVersion"] = firmwareInfo.idfVersion;
+
   String json;
-  json.reserve(3072);
+  json.reserve(3584);
   serializeJson(doc, json);
   return json;
 }
@@ -260,7 +280,14 @@ void setupApiEndpoints() {
         return;
       }
 
-      if (!ConfigManager::updateAndSave(cfg)) {
+      const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
+      if (!saveResult.ok) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "API save failed (%s, written=%u, read=%u)",
+                 action.c_str(), static_cast<unsigned>(saveResult.bytesWritten),
+                 static_cast<unsigned>(saveResult.bytesReadBack));
+        LogManager::logError(msg);
         server.send(500, "text/plain", "save_failed");
         return;
       }
@@ -312,6 +339,81 @@ void setupApiEndpoints() {
       server.send(200, "text/plain", "OK");
       delay(200);
       ESP.restart();
+      return;
+    }
+
+    if (action == "save_network") {
+      Config cfg = ConfigManager::getCopy();
+      bool anyField = false;
+
+      auto applyWifiField = [&](const char *argName, char *dest,
+                                size_t destSize,
+                                bool (*validator)(const char *),
+                                const char *errorCode,
+                                bool ignoreEmpty) -> bool {
+        if (!server.hasArg(argName)) {
+          return true;
+        }
+
+        String raw = server.arg(argName);
+        raw.trim();
+        if (ignoreEmpty && raw.length() == 0) {
+          return true;
+        }
+
+        anyField = true;
+        if (!validator(raw.c_str())) {
+          sendValidationError(server, errorCode);
+          return false;
+        }
+
+        snprintf(dest, destSize, "%s", raw.c_str());
+        return true;
+      };
+
+      if (!applyWifiField("staSsid", cfg.staSsid, sizeof(cfg.staSsid),
+                          ConfigValidation::isStaSsidValid, "invalid_sta_ssid",
+                          false)) {
+        return;
+      }
+      if (!applyWifiField("staPassword", cfg.staPassword,
+                          sizeof(cfg.staPassword),
+                          ConfigValidation::isStaPasswordValid,
+                          "invalid_sta_password", true)) {
+        return;
+      }
+      if (!applyWifiField("apSsid", cfg.apSsid, sizeof(cfg.apSsid),
+                          ConfigValidation::isApSsidValid, "invalid_ap_ssid",
+                          false)) {
+        return;
+      }
+      if (!applyWifiField("apPassword", cfg.apPassword, sizeof(cfg.apPassword),
+                          ConfigValidation::isApPasswordValid,
+                          "invalid_ap_password", true)) {
+        return;
+      }
+
+      if (!anyField) {
+        server.send(400, "text/plain", "empty_settings");
+        return;
+      }
+
+      const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
+      if (!saveResult.ok) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "API save_network failed (written=%u, read=%u, status=%u)",
+                 static_cast<unsigned>(saveResult.bytesWritten),
+                 static_cast<unsigned>(saveResult.bytesReadBack),
+                 static_cast<unsigned>(saveResult.status));
+        LogManager::logError(msg);
+        server.send(500, "text/plain", "save_failed");
+        return;
+      }
+
+      LogManager::logInfo(
+          "Ustawienia WiFi zapisane. Nowe SSID/hasla beda uzyte w kolejnej sesji WiFi.");
+      server.send(200, "text/plain", "OK");
       return;
     }
 
@@ -445,7 +547,15 @@ void setupApiEndpoints() {
       return;
     }
 
-    if (!ConfigManager::updateAndSave(cfg)) {
+    const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
+    if (!saveResult.ok) {
+      char msg[160];
+      snprintf(msg, sizeof(msg),
+               "API save_schedule failed (written=%u, read=%u, status=%u)",
+               static_cast<unsigned>(saveResult.bytesWritten),
+               static_cast<unsigned>(saveResult.bytesReadBack),
+               static_cast<unsigned>(saveResult.status));
+      LogManager::logError(msg);
       server.send(500, "text/plain", "save_failed");
       return;
     }
