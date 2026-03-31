@@ -35,7 +35,7 @@ public:
 
 class OtaRenderer {
 public:
-    static void drawAccessPointScreen(AquariumAnimation* ctx, const char *apName, const char *apPass, const char *ip, uint8_t clients);
+    static void drawAccessPointScreen(AquariumAnimation* ctx, const char *modeLabel, const char *primaryLine, const char *secondaryLine, const char *ip, uint8_t clients);
 };
 
 #endif // UI_RENDERERS_H

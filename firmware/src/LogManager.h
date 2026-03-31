@@ -28,6 +28,7 @@ public:
 
 private:
   static void appendWebLog(const char *msg);
+  static bool ensureMutex();
 
   static const int WEB_MAX_LOGS = 20;
   static String webLogs[WEB_MAX_LOGS];

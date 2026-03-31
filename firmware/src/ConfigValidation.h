@@ -92,6 +92,10 @@ bool isMinuteStepValid(int minute);
 bool isScheduleTimeValid(int hour, int minute);
 bool isTemperatureThresholdValid(float value);
 bool isHysteresisValid(float value);
+bool isStaSsidValid(const char *value);
+bool isStaPasswordValid(const char *value);
+bool isApSsidValid(const char *value);
+bool isApPasswordValid(const char *value);
 void sanitizeConfig(Config &cfg);
 bool applyRuntimePatch(Config &cfg, const ConfigPatch &patch,
                        ConfigValidationResult &result);

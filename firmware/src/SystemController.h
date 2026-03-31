@@ -18,8 +18,11 @@ class AquariumAnimation;
 
 class SystemController {
 public:
+  using BootStageReporter = void (*)(const char *stage);
+
   static void init();
   static void update();
+  static void setBootStageReporter(BootStageReporter reporter);
 
   // Akcje wymuszane z WebUI / Menu
   static void feedNow();

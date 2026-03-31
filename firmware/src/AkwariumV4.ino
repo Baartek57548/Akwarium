@@ -19,6 +19,7 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <Wire.h>
+#include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
 
 // Obiekty glowne
@@ -226,6 +227,52 @@ static void suppressUiTimeSyncForManualFeed(unsigned long nowMs) {
   }
 }
 
+static const char *configSaveStatusToString(ConfigSaveStatus status) {
+  switch (status) {
+  case ConfigSaveStatus::Ok:
+    return "ok";
+  case ConfigSaveStatus::OkVerifiedAfterWriteMismatch:
+    return "ok_verified_after_write_mismatch";
+  case ConfigSaveStatus::LockTimeout:
+    return "lock_timeout";
+  case ConfigSaveStatus::WriteFailed:
+    return "write_failed";
+  case ConfigSaveStatus::VerifyReadFailed:
+    return "verify_read_failed";
+  case ConfigSaveStatus::VerifyMismatch:
+    return "verify_mismatch";
+  default:
+    return "unknown";
+  }
+}
+
+static void logBootStage(const char *stage) {
+  char line1[22] = {0};
+  char line2[22] = {0};
+  if (stage != nullptr) {
+    snprintf(line1, sizeof(line1), "%.21s", stage);
+    const size_t len = strlen(stage);
+    if (len > 21) {
+      snprintf(line2, sizeof(line2), "%.21s", stage + 21);
+    }
+  }
+
+  display.clearBuffer();
+  display.setFont(u8g2_font_5x7_tr);
+  display.drawStr(0, 8, "BOOT");
+  if (line1[0] != '\0') {
+    display.drawStr(0, 19, line1);
+  }
+  if (line2[0] != '\0') {
+    display.drawStr(0, 30, line2);
+  }
+  display.sendBuffer();
+
+  Serial.print("[BOOT] ");
+  Serial.println(stage != nullptr ? stage : "stage");
+  delay(1);
+}
+
 static void queueScheduleUpdateFromAnimation() {
   if (!animation)
     return;
@@ -371,10 +418,26 @@ static void applyPendingUiChanges() {
     cfg.feedMinute = constrain(localSchedule.feedMinute, 0, 59);
     cfg.feedMode = constrain(localSchedule.feedMode, 0, 3);
 
-    if (ConfigManager::updateAndSave(cfg)) {
-      LogManager::logInfo("Zapisano harmonogramy.");
+    const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
+    if (saveResult.ok) {
+      if (saveResult.sanitizedChanged) {
+        LogManager::logWarn(
+            "Harmonogram zapisany po korekcie wartosci do dozwolonego formatu.");
+      } else if (saveResult.status ==
+                 ConfigSaveStatus::OkVerifiedAfterWriteMismatch) {
+        LogManager::logWarn(
+            "Harmonogram zapisany i zweryfikowany mimo niejednoznacznej odpowiedzi storage.");
+      } else {
+        LogManager::logInfo("Zapisano harmonogramy.");
+      }
     } else {
-      LogManager::logWarn("Blad zapisu harmonogramow.");
+      char msg[160];
+      snprintf(msg, sizeof(msg),
+               "Blad zapisu harmonogramow. status=%s written=%u read=%u",
+               configSaveStatusToString(saveResult.status),
+               static_cast<unsigned>(saveResult.bytesWritten),
+               static_cast<unsigned>(saveResult.bytesReadBack));
+      LogManager::logError(msg);
     }
   }
 
@@ -387,6 +450,13 @@ static void applyPendingUiChanges() {
     uint16_t year = constrain(localTime.year, 2024, 2099);
     DateTime newTime(year, month, day, hour, minute, second);
     syncSystemTime(static_cast<uint32_t>(newTime.unixtime()));
+    char msg[96];
+    snprintf(msg, sizeof(msg),
+             "Menu Data/Czas: zapisano %04u-%02u-%02u %02u:%02u:%02u.", year,
+             static_cast<unsigned>(month), static_cast<unsigned>(day),
+             static_cast<unsigned>(hour), static_cast<unsigned>(minute),
+             static_cast<unsigned>(second));
+    LogManager::logInfo(msg);
   }
 }
 
@@ -563,46 +633,22 @@ void updateUiState() {
         uiState = UiState::MENU;
       } else if (sel == 5) {
         AkwariumWifi::startAP();
-        LogManager::logInfo("WiFi AP wlaczony z menu.");
+        LogManager::logInfo(
+            "Menu WiFi: start sesji WiFi (STA 6 s, potem fallback do AP).");
         uiState = UiState::ACCESS_POINT;
       } else if (sel == 6) {
         BleManager::start();
-        LogManager::logInfo("Bluetooth wlaczony z menu.");
+        LogManager::logInfo("Bluetooth: zlecono uruchomienie z menu.");
         uiState = UiState::BLUETOOTH;
       }
     }
     break;
 
   case UiState::ACCESS_POINT: {
-    static uint8_t maxClients = 0;
-    static unsigned long lastClientSeenMs = 0;
-    constexpr unsigned long AP_CLIENT_GRACE_MS = 60000UL;
-    uint8_t currentClients = AkwariumWifi::getConnectedClients();
-    if (currentClients > maxClients) {
-      maxClients = currentClients;
-    }
-    if (currentClients > 0) {
-      lastClientSeenMs = millis();
-    }
-
-    // Auto disconnect when client leaves
-    if (maxClients > 0 && currentClients == 0 &&
-        lastClientSeenMs > 0 &&
-        (millis() - lastClientSeenMs >= AP_CLIENT_GRACE_MS)) {
-      AkwariumWifi::stopAP();
-      LogManager::logInfo("WiFi AP wylaczony automatycznie.");
-      uiState = UiState::HOME;
-      maxClients = 0;
-      lastClientSeenMs = 0;
-    }
-
-    // Manual exit
     if (upJustPressed) {
       AkwariumWifi::stopAP();
-      LogManager::logInfo("WiFi AP wylaczony z menu.");
+      LogManager::logInfo("Sesja WiFi zakonczona z menu (wylaczono STA/AP).");
       uiState = UiState::MENU;
-      maxClients = 0;
-      lastClientSeenMs = 0;
     }
     break;
   }
@@ -969,13 +1015,33 @@ void VideoTask(void *pvParameters) {
         case UiState::TESTS:
           animation->drawTests(isUp, isSel, isDn);
           break;
-        case UiState::ACCESS_POINT:
+        case UiState::ACCESS_POINT: {
+          String modeLabel = "WiFi";
+          String primaryLine = "Offline";
+          String secondaryLine = "UP: wyjscie";
+
+          if (AkwariumWifi::getIsAPMode()) {
+            modeLabel = "AP";
+            primaryLine = String("SSID: ") + AkwariumWifi::getConfiguredAPName();
+            secondaryLine =
+                String("Haslo: ") + AkwariumWifi::getConfiguredAPPassword();
+          } else if (AkwariumWifi::isStaConnecting()) {
+            primaryLine = "Proba polaczenia STA...";
+            secondaryLine = "Po 6 s fallback do AP";
+          } else if (AkwariumWifi::isStaConnected()) {
+            modeLabel = "STA";
+            primaryLine = String("SSID: ") + AkwariumWifi::getStaSsid();
+            secondaryLine = "Polaczono z routerem";
+          } else if (AkwariumWifi::isServiceModeActive()) {
+            primaryLine = "Brak polaczenia STA";
+            secondaryLine = "Fallback do AP nieudany";
+          }
+
           animation->drawAccessPointScreen(
-              AkwariumWifi::getConfiguredAPName().c_str(),
-              AkwariumWifi::getConfiguredAPPassword().c_str(),
-              AkwariumWifi::getIP().c_str(),
-              AkwariumWifi::getConnectedClients());
+              modeLabel.c_str(), primaryLine.c_str(), secondaryLine.c_str(),
+              AkwariumWifi::getIP().c_str(), AkwariumWifi::getConnectedClients());
           break;
+        }
         case UiState::BLUETOOTH:
           animation->drawBluetoothScreen(
               BleManager::getDeviceName(),
@@ -1024,62 +1090,77 @@ void setup() {
   if (rawVersion[0] == 'v' || rawVersion[0] == 'V') {
     snprintf(versionLabel, sizeof(versionLabel), "%s", rawVersion);
   } else {
-    snprintf(versionLabel, sizeof(versionLabel), "V%s", rawVersion);
+    snprintf(versionLabel, sizeof(versionLabel), "v%s", rawVersion);
   }
 
-  char versionVisible[40] = {0};
-  snprintf(versionVisible, sizeof(versionVisible), "%s", versionLabel);
-
-  char startupTitle[64] = {0};
-  bool wasTrimmed = false;
-  while (true) {
-    snprintf(startupTitle, sizeof(startupTitle), "Sterownik Akwarium (%s%s)",
-             versionVisible, wasTrimmed ? "..." : "");
-
-    if (display.getStrWidth(startupTitle) <= display.getDisplayWidth()) {
-      break;
-    }
-
-    size_t visibleLen = strlen(versionVisible);
-    if (visibleLen <= 1) {
-      snprintf(startupTitle, sizeof(startupTitle), "Sterownik Akwarium");
-      break;
-    }
-
-    versionVisible[visibleLen - 1] = '\0';
-    wasTrimmed = true;
-  }
-
-  int16_t titleX = (display.getDisplayWidth() - display.getStrWidth(startupTitle)) / 2;
+  const char *startupTitle = "Sterownik Akwarium";
+  int16_t titleX =
+      (display.getDisplayWidth() - display.getStrWidth(startupTitle)) / 2;
   if (titleX < 0) {
     titleX = 0;
   }
-  display.drawStr(titleX, 9, startupTitle);
+  display.drawStr(titleX, 8, startupTitle);
 
-  display.setFont(u8g2_font_5x7_tr);
   const char *authorLine = "by Bartosz Wolny";
   int16_t authorX =
       (display.getDisplayWidth() - display.getStrWidth(authorLine)) / 2;
   if (authorX < 0) {
     authorX = 0;
   }
-  display.drawStr(authorX, 23, authorLine);
+  display.drawStr(authorX, 18, authorLine);
+
+  char versionLine[40] = {0};
+  snprintf(versionLine, sizeof(versionLine), "ver. %s", versionLabel);
+  int16_t versionX =
+      (display.getDisplayWidth() - display.getStrWidth(versionLine)) / 2;
+  if (versionX < 0) {
+    versionX = 0;
+  }
+  display.drawStr(versionX, 28, versionLine);
   display.sendBuffer();
+  delay(4000);
+  logBootStage("ekran startowy gotowy");
 
   // Inicjalizacja sprzetu, pamieci (CRC NVS), baterii i logow
+  logBootStage("SystemController::init start");
   SystemController::init();
+  logBootStage("SystemController::init done");
 
   animation = new AquariumAnimation(&display);
+  logBootStage("AquariumAnimation ready");
 
   setupApiEndpoints();
-  AkwariumWifi::begin();
-  BleManager::init();
+  logBootStage("API handlers ready");
 
-  // Uruchomienie wyswietlania na Core 0 z mechanizmem SharedState Snapshot
-  xTaskCreatePinnedToCore(VideoTask, "VideoTask", 10000, NULL, 1, NULL, 0);
+  // UI uruchamiamy jak najwczesniej, aby nie zostawiac sterownika na samym
+  // splash screen przy ciezszej inicjalizacji pozostalych modulow.
+  if (xTaskCreatePinnedToCore(VideoTask, "VideoTask", 12288, NULL, 1, NULL, 0) ==
+      pdPASS) {
+    logBootStage("VideoTask started");
+  } else {
+    Serial.println("[BOOT] ERROR: VideoTask start failed");
+  }
+
+  AkwariumWifi::begin();
+  logBootStage("WifiTask start requested");
+
+  // BLE ma byc wlaczane z menu Bluetooth, wiec inicjalizujemy je leniwie.
+  logBootStage("BLE deferred until first use");
+
+  // Watchdog dopinamy dopiero po zakonczeniu ciezkiego setup(), aby uniknac
+  // resetu na ekranie powitalnym przy dluzszym starcie stosow BLE/WiFi.
+  const esp_err_t wdtErr = esp_task_wdt_add(NULL);
+  if (wdtErr == ESP_OK) {
+    esp_task_wdt_reset();
+    logBootStage("loop watchdog armed");
+  } else {
+    Serial.printf("[BOOT] WARN: esp_task_wdt_add failed (%d)\n",
+                  static_cast<int>(wdtErr));
+  }
 
   Serial.println("[SYSTEM] Setup zakonczony na rdzeniu: " +
                  String(xPortGetCoreID()));
+  LogManager::logInfo("BOOT: setup zakonczony.");
 }
 
 void loop() {

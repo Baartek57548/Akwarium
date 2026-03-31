@@ -5,6 +5,7 @@
 
 SemaphoreHandle_t SharedState::mutex = NULL;
 SharedStateData SharedState::state = {};
+static constexpr uint32_t TEMP_HISTORY_INTERVAL_SEC = 600UL;
 
 void SharedState::init() {
   mutex = xSemaphoreCreateMutex();
@@ -56,18 +57,35 @@ void SharedState::updateTemperature(float current, float min, uint32_t minEp,
     state.minTempEpoch = minEp;
     state.maxTemp = max;
 
-    const bool validTemperature = !isnan(current) && current > -50.0f && current < 100.0f;
+    const bool validTemperature =
+        !isnan(current) && current > -50.0f && current < 100.0f;
     if (validTemperature) {
-      if (state.temperatureHistoryCount >= TEMP_HISTORY_SIZE) {
-        memmove(&state.temperatureHistory[0], &state.temperatureHistory[1],
-                sizeof(TemperatureHistoryEntry) * (TEMP_HISTORY_SIZE - 1));
-        state.temperatureHistoryCount = TEMP_HISTORY_SIZE - 1;
+      bool shouldAppend = state.temperatureHistoryCount == 0;
+      if (!shouldAppend) {
+        const TemperatureHistoryEntry &lastEntry =
+            state.temperatureHistory[state.temperatureHistoryCount - 1];
+        if (lastEntry.epoch == 0 || currentEpoch == 0) {
+          shouldAppend = true;
+        } else if (currentEpoch >= lastEntry.epoch) {
+          shouldAppend =
+              (currentEpoch - lastEntry.epoch) >= TEMP_HISTORY_INTERVAL_SEC;
+        } else {
+          shouldAppend = true;
+        }
       }
 
-      TemperatureHistoryEntry &entry =
-          state.temperatureHistory[state.temperatureHistoryCount++];
-      entry.value = current;
-      entry.epoch = currentEpoch;
+      if (shouldAppend) {
+        if (state.temperatureHistoryCount >= TEMP_HISTORY_SIZE) {
+          memmove(&state.temperatureHistory[0], &state.temperatureHistory[1],
+                  sizeof(TemperatureHistoryEntry) * (TEMP_HISTORY_SIZE - 1));
+          state.temperatureHistoryCount = TEMP_HISTORY_SIZE - 1;
+        }
+
+        TemperatureHistoryEntry &entry =
+            state.temperatureHistory[state.temperatureHistoryCount++];
+        entry.value = current;
+        entry.epoch = currentEpoch;
+      }
     }
 
     xSemaphoreGive(mutex);

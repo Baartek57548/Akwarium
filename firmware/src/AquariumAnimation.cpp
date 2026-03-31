@@ -1857,9 +1857,11 @@ void AquariumAnimation::drawTests(bool btnBackState, bool btnSelectState,
 }
 
 // AccessPoint
-void AquariumAnimation::drawAccessPointScreen(const char *apName,
-                                              const char *apPass,
-                                              const char *ip, uint8_t clients) {
+void AquariumAnimation::drawAccessPointScreen(const char *modeLabel,
+                                              const char *primaryLine,
+                                              const char *secondaryLine,
+                                              const char *ip,
+                                              uint8_t clients) {
   if (!display)
     return;
   display->setFontMode(1);
@@ -1871,9 +1873,9 @@ void AquariumAnimation::drawAccessPointScreen(const char *apName,
   // === Linia pozioma po naglowku ===
   display->drawLine(1, 11, 126, 11);
 
-  // --- NAGLOWEK: "AP" + spinner + paski WiFi + info ---
+  // --- NAGLOWEK: tryb WiFi + spinner + paski WiFi + info ---
   display->setFont(u8g2_font_6x10_tr);
-  display->drawStr(2, 9, "AP");
+  display->drawStr(2, 9, modeLabel ? modeLabel : "WiFi");
 
   // Spinner
   static const char spinChars[] = {'|', '/', '-', '\\'};
@@ -1906,17 +1908,18 @@ void AquariumAnimation::drawAccessPointScreen(const char *apName,
   snprintf(clientsBuf, sizeof(clientsBuf), "[%d]", clients);
   display->drawStr(108, 9, clientsBuf);
 
-  // --- SSID (srodkowy wiersz, font 4x6) ---
+  // --- GLOWNA LINIA (srodkowy wiersz, font 4x6) ---
   display->setFont(u8g2_font_4x6_tr);
-  char ssidBuf[32];
-  snprintf(ssidBuf, sizeof(ssidBuf), "N:%.24s", apName ? apName : "");
-  display->drawStr(3, 20, ssidBuf);
+  char primaryBuf[32];
+  snprintf(primaryBuf, sizeof(primaryBuf), "%.30s",
+           primaryLine ? primaryLine : "");
+  display->drawStr(3, 20, primaryBuf);
 
-  // --- HASLO (dolny wiersz, font 4x6) ---
-  char passBuf[32];
-  snprintf(passBuf, sizeof(passBuf), "H:%.24s",
-           apPass ? apPass : ""); // 'H:' dla hasla
-  display->drawStr(3, 30, passBuf);
+  // --- LINIA POMOCNICZA (dolny wiersz, font 4x6) ---
+  char secondaryBuf[32];
+  snprintf(secondaryBuf, sizeof(secondaryBuf), "%.30s",
+           secondaryLine ? secondaryLine : "");
+  display->drawStr(3, 30, secondaryBuf);
 }
 
 void AquariumAnimation::drawBluetoothScreen(const char *bleName,

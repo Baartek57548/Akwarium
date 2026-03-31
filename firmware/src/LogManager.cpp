@@ -1,12 +1,9 @@
 #include "LogManager.h"
 #include <Preferences.h>
-#include <RTClib.h> // Potrzebne uzytkownika getCurrentDateTime lub z SharedState / z globalnego contextu. Zakladajac wstrzykniecie DateTime przez zaleznosc, lub polegajac na zewnetrznym mechanizmie.
-// Zrobmy uzycie zewnetrznej funkcji, ktora bedzie zdefiniowana nizej bo to
-// jedyny zewnetrzny glos.
-extern DateTime getCurrentDateTime();
-// Ewentualnie jesli to klopot, wezmiemy epoch z shared state - zeby nie mieszac
-// zaleznosci miedzy modulami.
-extern class AquariumAnimation *animation;
+#include <RTClib.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <time.h>
 
 String LogManager::webLogs[WEB_MAX_LOGS];
 int LogManager::webLogsHead = 0;
@@ -17,6 +14,38 @@ int LogManager::criticalLogsCount = 0;
 int LogManager::criticalLogsHead = 0;
 
 static Preferences logPrefs;
+static SemaphoreHandle_t logMutex = nullptr;
+static portMUX_TYPE logMutexInitMux = portMUX_INITIALIZER_UNLOCKED;
+static bool persistentCriticalLogsEnabled = true;
+static bool persistentCriticalLogsErrorPrinted = false;
+
+static void disablePersistentCriticalLogs(const char *reason) {
+  persistentCriticalLogsEnabled = false;
+  if (!persistentCriticalLogsErrorPrinted) {
+    Serial.print("[LOGS] Persistent critical logs disabled: ");
+    Serial.println(reason != nullptr ? reason : "unknown");
+    persistentCriticalLogsErrorPrinted = true;
+  }
+}
+
+static DateTime getLogDateTime() {
+  const time_t now = time(nullptr);
+  if (now > 1700000000) {
+    return DateTime(static_cast<uint32_t>(now));
+  }
+
+  // Fallback bez dotykania RTC/I2C z wielu zadan.
+  return DateTime(2025, 1, 1, 0, 0, 0) +
+         TimeSpan(static_cast<int32_t>(millis() / 1000UL));
+}
+
+static uint32_t getLogEpoch() {
+  const time_t now = time(nullptr);
+  if (now > 1700000000) {
+    return static_cast<uint32_t>(now);
+  }
+  return static_cast<uint32_t>(getLogDateTime().unixtime());
+}
 
 static String escapeJsonString(const String &input) {
   String out;
@@ -74,19 +103,51 @@ void LogManager::loadCriticalLogs() {
 }
 
 void LogManager::saveCriticalLog(const CriticalLog &log, int index) {
+  if (!persistentCriticalLogsEnabled) {
+    return;
+  }
   char key[16];
   snprintf(key, sizeof(key), "critLog%d", index);
-  logPrefs.putBytes(key, &log, sizeof(CriticalLog));
+  const size_t bytesWritten = logPrefs.putBytes(key, &log, sizeof(CriticalLog));
+  if (bytesWritten != sizeof(CriticalLog)) {
+    disablePersistentCriticalLogs("nvs_set_blob failed");
+  }
+}
+
+bool LogManager::ensureMutex() {
+  if (logMutex != nullptr) {
+    return true;
+  }
+
+  portENTER_CRITICAL(&logMutexInitMux);
+  if (logMutex == nullptr) {
+    logMutex = xSemaphoreCreateMutex();
+  }
+  portEXIT_CRITICAL(&logMutexInitMux);
+
+  return logMutex != nullptr;
 }
 
 void LogManager::init() {
-  logPrefs.begin("Akwarium", false);
-  loadCriticalLogs();
+  ensureMutex();
+  persistentCriticalLogsEnabled = logPrefs.begin("Akwarium", false);
+  persistentCriticalLogsErrorPrinted = false;
+  if (!persistentCriticalLogsEnabled) {
+    disablePersistentCriticalLogs("preferences.begin failed");
+    return;
+  }
+  if (logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(250)) == pdTRUE) {
+    loadCriticalLogs();
+    xSemaphoreGive(logMutex);
+  } else {
+    loadCriticalLogs();
+  }
 }
 
 void LogManager::appendWebLog(const char *msg) {
   char timeBufWeb[10];
-  DateTime now2 = getCurrentDateTime();
+  const DateTime now2 = getLogDateTime();
   snprintf(timeBufWeb, sizeof(timeBufWeb), "%02d:%02d:%02d", now2.hour(),
            now2.minute(), now2.second());
   String entry = String("[") + timeBufWeb + "] " + msg;
@@ -99,76 +160,116 @@ void LogManager::appendWebLog(const char *msg) {
 void LogManager::logInfo(const char *msg) {
   Serial.print("[INFO] ");
   Serial.println(msg);
-  char normalized[96];
-  snprintf(normalized, sizeof(normalized), "INFO: %s", msg);
-  appendWebLog(normalized);
-
-  // Legacy support for animation
-  if (animation != nullptr) {
-    char timeBuf[6];
-    DateTime now = getCurrentDateTime();
-    snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d", now.hour(), now.minute());
-    // animation->addLog(msg, timeBuf); // Zostawimy to na potem w
-    // SystemController
+  if (ensureMutex() && logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(250)) == pdTRUE) {
+    char normalized[96];
+    snprintf(normalized, sizeof(normalized), "INFO: %s", msg);
+    appendWebLog(normalized);
+    xSemaphoreGive(logMutex);
   }
 }
 
 void LogManager::logWarn(const char *msg) {
   Serial.print("[WARN] ");
   Serial.println(msg);
-  char normalized[96];
-  snprintf(normalized, sizeof(normalized), "WARN: %s", msg);
-  appendWebLog(normalized);
+  if (ensureMutex() && logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(250)) == pdTRUE) {
+    char normalized[96];
+    snprintf(normalized, sizeof(normalized), "WARN: %s", msg);
+    appendWebLog(normalized);
+    xSemaphoreGive(logMutex);
+  }
 }
 
 void LogManager::logError(const char *msg) {
   Serial.print("[ERROR] ");
   Serial.println(msg);
+  if (ensureMutex() && logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(250)) == pdTRUE) {
+    char normalized[96];
+    snprintf(normalized, sizeof(normalized), "ERROR: %s", msg);
+    appendWebLog(normalized);
 
-  DateTime now = getCurrentDateTime();
-  CriticalLog newLog;
-  newLog.epoch = now.unixtime();
-  strncpy(newLog.message, msg, sizeof(newLog.message) - 1);
-  newLog.message[sizeof(newLog.message) - 1] = '\0';
+    CriticalLog newLog;
+    newLog.epoch = getLogEpoch();
+    strncpy(newLog.message, msg, sizeof(newLog.message) - 1);
+    newLog.message[sizeof(newLog.message) - 1] = '\0';
 
-  criticalLogs[criticalLogsHead] = newLog;
-  saveCriticalLog(newLog, criticalLogsHead);
+    criticalLogs[criticalLogsHead] = newLog;
+    if (persistentCriticalLogsEnabled) {
+      saveCriticalLog(newLog, criticalLogsHead);
+    }
 
-  criticalLogsHead = (criticalLogsHead + 1) % MAX_CRITICAL_LOGS;
-  if (criticalLogsCount < MAX_CRITICAL_LOGS) {
-    criticalLogsCount++;
+    criticalLogsHead = (criticalLogsHead + 1) % MAX_CRITICAL_LOGS;
+    if (criticalLogsCount < MAX_CRITICAL_LOGS) {
+      criticalLogsCount++;
+    }
+
+    if (persistentCriticalLogsEnabled) {
+      const size_t countWritten = logPrefs.putInt("critCount", criticalLogsCount);
+      const size_t headWritten = logPrefs.putInt("critHead", criticalLogsHead);
+      if (countWritten != sizeof(int32_t) || headWritten != sizeof(int32_t)) {
+        disablePersistentCriticalLogs("nvs_set_i32 failed");
+      }
+    }
+    xSemaphoreGive(logMutex);
   }
-
-  logPrefs.putInt("critCount", criticalLogsCount);
-  logPrefs.putInt("critHead", criticalLogsHead);
 }
 
 void LogManager::clearCriticalLogs() {
-  criticalLogsCount = 0;
-  criticalLogsHead = 0;
-  logPrefs.putInt("critCount", 0);
-  logPrefs.putInt("critHead", 0);
-  Serial.println("[LOGS] WICZYSZCZONO LOGI KRYTYCZNE");
+  if (ensureMutex() && logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(250)) == pdTRUE) {
+    criticalLogsCount = 0;
+    criticalLogsHead = 0;
+    if (persistentCriticalLogsEnabled) {
+      logPrefs.putInt("critCount", 0);
+      logPrefs.putInt("critHead", 0);
+    }
+    xSemaphoreGive(logMutex);
+  }
+  Serial.println("[LOGS] WYCZYSZCZONO LOGI KRYTYCZNE");
 }
 
 void LogManager::clearNormalLogs() {
-  webLogsCount = 0;
-  webLogsHead = 0;
+  if (ensureMutex() && logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(250)) == pdTRUE) {
+    webLogsCount = 0;
+    webLogsHead = 0;
+    xSemaphoreGive(logMutex);
+  }
   Serial.println("[LOGS] WYCZYSZCZONO LOGI ZWYKLE");
 }
 
 uint8_t LogManager::getNormalLogsCount() {
-  return static_cast<uint8_t>(webLogsCount);
+  uint8_t count = static_cast<uint8_t>(webLogsCount);
+  if (ensureMutex() && logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    count = static_cast<uint8_t>(webLogsCount);
+    xSemaphoreGive(logMutex);
+  }
+  return count;
 }
 
 uint8_t LogManager::getCriticalLogsCount() {
-  return static_cast<uint8_t>(criticalLogsCount);
+  uint8_t count = static_cast<uint8_t>(criticalLogsCount);
+  if (ensureMutex() && logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    count = static_cast<uint8_t>(criticalLogsCount);
+    xSemaphoreGive(logMutex);
+  }
+  return count;
 }
 
 bool LogManager::getNormalLogAt(uint8_t indexFromOldest, char *messageOut,
                                 size_t messageOutSize, char *timeOut,
                                 size_t timeOutSize) {
+  if (!(ensureMutex() && logMutex != nullptr &&
+        xSemaphoreTake(logMutex, pdMS_TO_TICKS(100)) == pdTRUE)) {
+    return false;
+  }
+
   if (indexFromOldest >= webLogsCount) {
+    xSemaphoreGive(logMutex);
     return false;
   }
 
@@ -202,13 +303,20 @@ bool LogManager::getNormalLogAt(uint8_t indexFromOldest, char *messageOut,
     snprintf(timeOut, timeOutSize, "%s", parsedTime);
   }
 
+  xSemaphoreGive(logMutex);
   return true;
 }
 
 bool LogManager::getCriticalLogAt(uint8_t indexFromOldest, char *messageOut,
                                   size_t messageOutSize, char *timeOut,
                                   size_t timeOutSize) {
+  if (!(ensureMutex() && logMutex != nullptr &&
+        xSemaphoreTake(logMutex, pdMS_TO_TICKS(100)) == pdTRUE)) {
+    return false;
+  }
+
   if (indexFromOldest >= criticalLogsCount) {
+    xSemaphoreGive(logMutex);
     return false;
   }
 
@@ -230,10 +338,16 @@ bool LogManager::getCriticalLogAt(uint8_t indexFromOldest, char *messageOut,
     }
   }
 
+  xSemaphoreGive(logMutex);
   return true;
 }
 
 String LogManager::getLogsAsJson() {
+  if (!(ensureMutex() && logMutex != nullptr &&
+        xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE)) {
+    return "{\"normal\":[],\"critical\":[]}";
+  }
+
   String jsonLog = "{";
   jsonLog += "\"normal\":[";
   int startIdx = (webLogsCount < WEB_MAX_LOGS) ? 0 : webLogsHead;
@@ -258,5 +372,6 @@ String LogManager::getLogsAsJson() {
       jsonLog += ",";
   }
   jsonLog += "]}";
+  xSemaphoreGive(logMutex);
   return jsonLog;
 }

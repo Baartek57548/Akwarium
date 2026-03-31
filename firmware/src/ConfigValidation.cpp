@@ -1,4 +1,5 @@
 #include "ConfigValidation.h"
+#include "SecretConfig.h"
 
 #include <math.h>
 #include <string.h>
@@ -13,6 +14,7 @@ constexpr uint8_t MAX_TEMPERATURE = 30;
 constexpr float MIN_HYSTERESIS = 0.1f;
 constexpr float MAX_HYSTERESIS = 5.0f;
 constexpr float HYSTERESIS_STEP = 0.1f;
+constexpr size_t MIN_WIFI_PASSWORD_LENGTH = 8;
 constexpr uint8_t DEFAULT_THRESHOLD = 25;
 constexpr float DEFAULT_HYSTERESIS = 0.5f;
 
@@ -138,6 +140,47 @@ static void copyCandidateIfValid(Config &cfg, const Config &candidate,
   }
 }
 
+static bool isPrintableCredentialChar(char c) {
+  return static_cast<uint8_t>(c) >= 0x20;
+}
+
+static bool isWifiTextValid(const char *value, size_t minLen, size_t maxLen,
+                            bool allowEmpty) {
+  if (value == nullptr) {
+    return false;
+  }
+
+  const size_t len = strnlen(value, maxLen + 2);
+  if (len == 0) {
+    return allowEmpty;
+  }
+  if (len < minLen || len > maxLen) {
+    return false;
+  }
+
+  for (size_t i = 0; i < len; ++i) {
+    if (!isPrintableCredentialChar(value[i])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static void copyOrDefault(char *dest, size_t destSize, const char *candidate,
+                          const char *fallback, size_t minLen, size_t maxLen,
+                          bool allowEmpty) {
+  const char *source =
+      isWifiTextValid(candidate, minLen, maxLen, allowEmpty) ? candidate
+                                                             : fallback;
+  if (dest != nullptr && destSize > 0) {
+    if (source == dest) {
+      return;
+    }
+    snprintf(dest, destSize, "%s", source != nullptr ? source : "");
+  }
+}
+
 } // namespace
 
 ValidationProfileSnapshot ConfigValidation::getValidationProfile() {
@@ -191,6 +234,26 @@ bool ConfigValidation::isHysteresisValid(float value) {
          isIntegralStep(value, HYSTERESIS_STEP);
 }
 
+bool ConfigValidation::isStaSsidValid(const char *value) {
+  return isWifiTextValid(value, 1, WIFI_SSID_MAX_LENGTH, false);
+}
+
+bool ConfigValidation::isStaPasswordValid(const char *value) {
+  return isWifiTextValid(value, 0, WIFI_PASSWORD_MAX_LENGTH, true) &&
+         (value == nullptr || value[0] == '\0' ||
+          strnlen(value, WIFI_PASSWORD_MAX_LENGTH + 1) >=
+              MIN_WIFI_PASSWORD_LENGTH);
+}
+
+bool ConfigValidation::isApSsidValid(const char *value) {
+  return isWifiTextValid(value, 1, AP_SSID_MAX_LENGTH, false);
+}
+
+bool ConfigValidation::isApPasswordValid(const char *value) {
+  return isWifiTextValid(value, MIN_WIFI_PASSWORD_LENGTH,
+                         WIFI_PASSWORD_MAX_LENGTH, false);
+}
+
 void ConfigValidation::sanitizeConfig(Config &cfg) {
   const uint8_t legacyLightMode = deriveLegacyLightMode(cfg);
 
@@ -236,6 +299,16 @@ void ConfigValidation::sanitizeConfig(Config &cfg) {
   cfg.feedMode = static_cast<uint8_t>(constrain(cfg.feedMode, 0, 3));
   cfg.feedHour = static_cast<uint8_t>(constrain(cfg.feedHour, MIN_HOUR, MAX_HOUR));
   cfg.feedMinute = snapMinuteToStep(cfg.feedMinute);
+
+  copyOrDefault(cfg.staSsid, sizeof(cfg.staSsid), cfg.staSsid, SECRET_SSID, 1,
+                WIFI_SSID_MAX_LENGTH, false);
+  copyOrDefault(cfg.staPassword, sizeof(cfg.staPassword), cfg.staPassword,
+                SECRET_PASS, 0, WIFI_PASSWORD_MAX_LENGTH, true);
+  copyOrDefault(cfg.apSsid, sizeof(cfg.apSsid), cfg.apSsid, AP_SSID,
+                1, AP_SSID_MAX_LENGTH, false);
+  copyOrDefault(cfg.apPassword, sizeof(cfg.apPassword), cfg.apPassword,
+                AP_PASSWORD, MIN_WIFI_PASSWORD_LENGTH,
+                WIFI_PASSWORD_MAX_LENGTH, false);
 }
 
 bool ConfigValidation::applyRuntimePatch(Config &cfg, const ConfigPatch &patch,

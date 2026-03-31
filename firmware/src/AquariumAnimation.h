@@ -190,8 +190,9 @@ public:
   void drawLogs(bool btnBack, bool btnSelect, bool btnNext,
                 bool deleteHoldActive, uint8_t deleteHoldProgress);
   void drawTests(bool btnBack, bool btnSelect, bool btnNext);
-  void drawAccessPointScreen(const char *apName, const char *apPass,
-                             const char *ip, uint8_t clients);
+  void drawAccessPointScreen(const char *modeLabel, const char *primaryLine,
+                             const char *secondaryLine, const char *ip,
+                             uint8_t clients);
   void drawBluetoothScreen(const char *bleName, bool advertising,
                            bool connected, uint8_t clients,
                            uint32_t passkey);

@@ -4,7 +4,10 @@
 #include <Arduino.h>
 
 constexpr uint32_t CONFIG_MAGIC = 0xCAFEBAC4;
-constexpr uint16_t CONFIG_VERSION = 6;
+constexpr uint16_t CONFIG_VERSION = 7;
+constexpr size_t WIFI_SSID_MAX_LENGTH = 32;
+constexpr size_t AP_SSID_MAX_LENGTH = 31;
+constexpr size_t WIFI_PASSWORD_MAX_LENGTH = 63;
 constexpr int SERVO_OPEN_ANGLE = 0;
 constexpr int SERVO_PREOFF_ANGLE = 45;
 constexpr int SERVO_CLOSED_ANGLE = 90;
@@ -48,6 +51,10 @@ struct Config {
   uint8_t feedMinute;
   uint32_t lastFeedEpoch;
   bool alwaysScreenOn;
+  char staSsid[WIFI_SSID_MAX_LENGTH + 1];
+  char staPassword[WIFI_PASSWORD_MAX_LENGTH + 1];
+  char apSsid[WIFI_SSID_MAX_LENGTH + 1];
+  char apPassword[WIFI_PASSWORD_MAX_LENGTH + 1];
   uint16_t version;
   uint32_t magic;
   uint32_t crc32; // Nowe pole dla CRC w celu zapewnienia weryfikacji zawartosci
