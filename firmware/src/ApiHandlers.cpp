@@ -292,6 +292,7 @@ void setupApiEndpoints() {
         return;
       }
 
+      requestUiSaveConfirmationAnimation();
       server.send(200, "text/plain", "OK");
       return;
     }
@@ -413,6 +414,7 @@ void setupApiEndpoints() {
 
       LogManager::logInfo(
           "Ustawienia WiFi zapisane. Nowe SSID/hasla beda uzyte w kolejnej sesji WiFi.");
+      requestUiSaveConfirmationAnimation();
       server.send(200, "text/plain", "OK");
       return;
     }
@@ -560,6 +562,7 @@ void setupApiEndpoints() {
       return;
     }
 
+    requestUiSaveConfirmationAnimation();
     server.send(200, "text/plain",
                 (parseInvalidFields > 0 || validation.hasInvalidFields())
                     ? "OK_PARTIAL"

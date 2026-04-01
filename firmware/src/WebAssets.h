@@ -8,7 +8,7 @@ const char web_index_html[] PROGMEM = R"AQWEB(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aquarium Controller ESP32</title>
-    <link rel="stylesheet" href="style.css?v=20260323d">
+    <link rel="stylesheet" href="style.css?v=20260401a">
     <style>
         /* Custom Time Inputs (Pills) */
         input[type="time"].time-pill {
@@ -671,7 +671,32 @@ const char web_index_html[] PROGMEM = R"AQWEB(
         </div>
     </div>
 
-    <script src="script.js?v=20260323d"></script>
+    <div class="overlay" id="oled-save-overlay">
+        <div class="oled-save-modal glass">
+            <div class="oled-save-screen" aria-hidden="true">
+                <div class="oled-save-screen-inner">
+                    <div class="oled-save-scanline"></div>
+                    <div class="oled-save-grid"></div>
+                    <div class="oled-save-label">OLED SAVE</div>
+                    <div class="oled-save-bars">
+                        <span class="oled-save-bar"></span>
+                        <span class="oled-save-bar"></span>
+                        <span class="oled-save-bar"></span>
+                        <span class="oled-save-bar"></span>
+                    </div>
+                    <div class="oled-save-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            </div>
+            <h3 id="oled-save-title">Zapisywanie danych</h3>
+            <p id="oled-save-subtext">Sterownik synchronizuje konfiguracje i pokazuje zapis na OLED.</p>
+        </div>
+    </div>
+
+    <script src="script.js?v=20260401a"></script>
 </body>
 </html>
 
@@ -1390,6 +1415,164 @@ input:checked + .slider:before {
 .modal p {
     color: var(--text-muted);
     font-size: 14px;
+}
+
+.oled-save-modal {
+    width: min(92vw, 420px);
+    padding: 28px 24px 24px;
+    text-align: center;
+    border-radius: 24px;
+    border: 1px solid rgba(110, 231, 183, 0.24);
+    background:
+        linear-gradient(180deg, rgba(12, 22, 28, 0.96) 0%, rgba(7, 14, 20, 0.98) 100%);
+    box-shadow:
+        0 28px 80px rgba(2, 8, 23, 0.66),
+        0 0 34px rgba(110, 231, 183, 0.1);
+}
+
+.oled-save-modal h3 {
+    margin-bottom: 8px;
+    font-size: 22px;
+    letter-spacing: 0.02em;
+}
+
+.oled-save-modal p {
+    max-width: 300px;
+    margin: 0 auto;
+    color: rgba(226, 232, 240, 0.78);
+    line-height: 1.45;
+}
+
+.oled-save-screen {
+    width: min(100%, 320px);
+    margin: 0 auto 20px;
+    padding: 10px;
+    border-radius: 18px;
+    background:
+        linear-gradient(180deg, rgba(6, 22, 18, 0.98) 0%, rgba(2, 12, 10, 1) 100%);
+    border: 1px solid rgba(134, 239, 172, 0.22);
+    box-shadow:
+        inset 0 0 0 1px rgba(16, 185, 129, 0.08),
+        inset 0 0 24px rgba(74, 222, 128, 0.08),
+        0 0 24px rgba(16, 185, 129, 0.16);
+}
+
+.oled-save-screen-inner {
+    position: relative;
+    aspect-ratio: 4 / 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    border-radius: 12px;
+    background:
+        radial-gradient(circle at 50% 50%, rgba(74, 222, 128, 0.12), transparent 58%),
+        rgba(4, 16, 13, 0.96);
+}
+
+.oled-save-grid,
+.oled-save-scanline {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.oled-save-grid {
+    opacity: 0.14;
+    background-image:
+        linear-gradient(rgba(167, 243, 208, 0.18) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(167, 243, 208, 0.12) 1px, transparent 1px);
+    background-size: 8px 8px;
+}
+
+.oled-save-scanline {
+    top: -18%;
+    bottom: auto;
+    height: 36%;
+    background: linear-gradient(180deg, transparent 0%, rgba(167, 243, 208, 0.1) 42%, rgba(167, 243, 208, 0.55) 50%, rgba(167, 243, 208, 0.1) 58%, transparent 100%);
+    mix-blend-mode: screen;
+    animation: oled-save-scan 1.55s linear infinite;
+}
+
+.oled-save-label {
+    position: relative;
+    z-index: 1;
+    color: #a7f3d0;
+    font-family: "Courier New", monospace;
+    font-size: clamp(18px, 4vw, 28px);
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    text-shadow: 0 0 10px rgba(167, 243, 208, 0.55);
+    transform: translateX(0.17em);
+    animation: oled-save-pulse 0.92s steps(2, end) infinite;
+}
+
+.oled-save-bars {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 7px;
+    height: 18px;
+}
+
+.oled-save-bar {
+    display: block;
+    width: 10px;
+    border-radius: 2px 2px 0 0;
+    background: linear-gradient(180deg, #d1fae5 0%, #6ee7b7 100%);
+    box-shadow: 0 0 10px rgba(110, 231, 183, 0.4);
+    animation: oled-save-bars 0.95s steps(4, end) infinite;
+}
+
+.oled-save-bar:nth-child(1) { animation-delay: 0s; }
+.oled-save-bar:nth-child(2) { animation-delay: 0.12s; }
+.oled-save-bar:nth-child(3) { animation-delay: 0.24s; }
+.oled-save-bar:nth-child(4) { animation-delay: 0.36s; }
+
+.oled-save-dots {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 8px;
+}
+
+.oled-save-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #a7f3d0;
+    box-shadow: 0 0 10px rgba(167, 243, 208, 0.5);
+    animation: oled-save-dot 0.96s steps(2, end) infinite;
+}
+
+.oled-save-dots span:nth-child(2) { animation-delay: 0.18s; }
+.oled-save-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes oled-save-scan {
+    from { transform: translateY(-135%); }
+    to { transform: translateY(380%); }
+}
+
+@keyframes oled-save-pulse {
+    0%, 100% { opacity: 0.82; }
+    50% { opacity: 1; }
+}
+
+@keyframes oled-save-bars {
+    0% { height: 6px; opacity: 0.45; }
+    25% { height: 12px; opacity: 0.7; }
+    50% { height: 18px; opacity: 1; }
+    75% { height: 10px; opacity: 0.72; }
+    100% { height: 6px; opacity: 0.45; }
+}
+
+@keyframes oled-save-dot {
+    0%, 100% { opacity: 0.28; transform: scale(0.88); }
+    50% { opacity: 1; transform: scale(1); }
 }
 
 /* Views & Tabs */
@@ -2245,6 +2428,16 @@ let cachedLogs = { normal: [], critical: [] };
 let deviceClockBaseDate = null;
 let deviceClockSyncedAtMs = 0;
 let lastStatusData = null;
+const OLED_SAVE_ACTIONS = new Set(['save_schedule', 'save_network', 'set_light', 'set_filter']);
+const OLED_SAVE_TITLES = {
+    save_schedule: 'Zapisywanie harmonogramow',
+    save_network: 'Zapisywanie ustawien WiFi',
+    set_light: 'Zapisywanie stanu swiatla',
+    set_filter: 'Zapisywanie stanu filtra'
+};
+let oledSaveOverlayActiveCount = 0;
+let oledSaveOverlayShownAtMs = 0;
+let oledSaveOverlayHideTimer = null;
 
 function makeLocalIcon(paths) {
     return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
@@ -3331,15 +3524,79 @@ async function fetchLogs() {
     }
 }
 
-async function sendAction(action, payload = {}) {
-    const params = new URLSearchParams({ action, ...payload });
-    const response = await fetch(API_ACTION, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString()
-    });
-    if (!response.ok) {
-        throw new Error(await response.text());
+function shouldShowOledSaveAnimation(action) {
+    return OLED_SAVE_ACTIONS.has(action);
+}
+
+function showOledSaveAnimation(action) {
+    const overlay = document.getElementById('oled-save-overlay');
+    const title = document.getElementById('oled-save-title');
+    const subtext = document.getElementById('oled-save-subtext');
+    if (!overlay || !title || !subtext) {
+        return false;
+    }
+
+    if (oledSaveOverlayHideTimer) {
+        clearTimeout(oledSaveOverlayHideTimer);
+        oledSaveOverlayHideTimer = null;
+    }
+
+    oledSaveOverlayActiveCount += 1;
+    title.textContent = OLED_SAVE_TITLES[action] || 'Zapisywanie danych';
+    subtext.textContent = 'Sterownik synchronizuje konfiguracje i pokazuje zapis na OLED.';
+
+    if (oledSaveOverlayActiveCount === 1) {
+        overlay.style.display = 'flex';
+        overlay.setAttribute('aria-hidden', 'false');
+        oledSaveOverlayShownAtMs = Date.now();
+    }
+
+    return true;
+}
+
+function hideOledSaveAnimation() {
+    const overlay = document.getElementById('oled-save-overlay');
+    if (oledSaveOverlayActiveCount > 0) {
+        oledSaveOverlayActiveCount -= 1;
+    }
+
+    if (oledSaveOverlayActiveCount > 0 || !overlay) {
+        return;
+    }
+
+    const elapsedMs = Date.now() - oledSaveOverlayShownAtMs;
+    const delayMs = Math.max(0, 900 - elapsedMs);
+    oledSaveOverlayHideTimer = setTimeout(() => {
+        overlay.style.display = 'none';
+        overlay.setAttribute('aria-hidden', 'true');
+        oledSaveOverlayHideTimer = null;
+    }, delayMs);
+}
+
+async function sendAction(action, payload = {}, options = {}) {
+    const showSaveAnimation = options.showSaveAnimation ?? shouldShowOledSaveAnimation(action);
+    if (showSaveAnimation) {
+        showOledSaveAnimation(action);
+    }
+
+    try {
+        const params = new URLSearchParams({ action, ...payload });
+        const response = await fetch(API_ACTION, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString()
+        });
+
+        const responseText = await response.text();
+        if (!response.ok) {
+            throw new Error(responseText);
+        }
+
+        return responseText;
+    } finally {
+        if (showSaveAnimation) {
+            hideOledSaveAnimation();
+        }
     }
 }
 

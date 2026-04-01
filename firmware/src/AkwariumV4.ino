@@ -197,6 +197,7 @@ struct PendingTimeUpdate {
 static portMUX_TYPE pendingUiMux = portMUX_INITIALIZER_UNLOCKED;
 static volatile bool hasPendingScheduleUpdate = false;
 static volatile bool hasPendingTimeUpdate = false;
+static volatile bool hasPendingSaveConfirmAnimation = false;
 static PendingScheduleUpdate pendingScheduleUpdate = {};
 static PendingTimeUpdate pendingTimeUpdate = {};
 static unsigned long suppressUiTimeSyncUntilMs = 0;
@@ -224,6 +225,25 @@ static void suppressUiTimeSyncForManualFeed(unsigned long nowMs) {
       animation->cancelEditing();
     }
     animation->hasTimeChanged();
+  }
+}
+
+void requestUiSaveConfirmationAnimation() {
+  portENTER_CRITICAL(&pendingUiMux);
+  hasPendingSaveConfirmAnimation = true;
+  portEXIT_CRITICAL(&pendingUiMux);
+}
+
+static void consumePendingUiSaveConfirmationAnimation() {
+  bool shouldPlayAnimation = false;
+
+  portENTER_CRITICAL(&pendingUiMux);
+  shouldPlayAnimation = hasPendingSaveConfirmAnimation;
+  hasPendingSaveConfirmAnimation = false;
+  portEXIT_CRITICAL(&pendingUiMux);
+
+  if (shouldPlayAnimation && animation) {
+    animation->playConfirmAnimation();
   }
 }
 
@@ -460,6 +480,15 @@ static void applyPendingUiChanges() {
   }
 }
 
+static void resetUiStateAfterIdleTimeout() {
+  logsViewState = LogsViewState::SELECT_TYPE;
+  logsTypeSelection = 0;
+  resetLogsDeleteHoldState();
+  if (animation) {
+    animation->resetNavigationState();
+  }
+}
+
 void updateUiState() {
   if (!animation)
     return;
@@ -596,7 +625,7 @@ void updateUiState() {
 
   if (shouldApplyUiIdleHomeTimeout(uiState) &&
       (nowMs - lastUiInteractionMs >= UI_IDLE_RETURN_HOME_MS)) {
-    animation->cancelEditing();
+    resetUiStateAfterIdleTimeout();
     uiState = UiState::HOME;
   }
 
@@ -970,6 +999,7 @@ void VideoTask(void *pvParameters) {
       snprintf(feedTime, sizeof(feedTime), "%02u:%02u", cfg.feedHour,
                cfg.feedMinute);
       animation->setFeedingSchedule(feedTime, cfg.feedMode, 0);
+      consumePendingUiSaveConfirmationAnimation();
 
       if (!animation->drawConfirmAnimationFrame()) {
         switch (uiState) {

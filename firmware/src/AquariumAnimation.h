@@ -230,6 +230,7 @@ public:
   void nextEditStep();
   void cancelEditing();
   bool isEditingActive();
+  void resetNavigationState();
 
   // Animacje
   void playConfirmAnimation();
