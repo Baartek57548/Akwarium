@@ -1,0 +1,13 @@
+{
+  "name": "aquarium-web-smoke",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Smoke tests for the Aquarium Controller web dashboard.",
+  "scripts": {
+    "test:web-smoke": "playwright test",
+    "test:web-smoke:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1"
+  }
+}

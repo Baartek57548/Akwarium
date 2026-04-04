@@ -9,6 +9,7 @@ on:
       - main
     tags:
       - "v*"
+      - "[0-9]*.[0-9]*.[0-9]*"
 
   pull_request:
     branches:
@@ -50,3 +51,39 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: firmware/.pio/build/esp32-s3-devkitc-1/firmware.bin
+
+  web-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tools/testing/package-lock.json
+
+      - name: Install web smoke dependencies
+        working-directory: tools/testing
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: tools/testing
+        run: npx playwright install --with-deps chromium
+
+      - name: Run web smoke tests
+        working-directory: tools/testing
+        run: npm run test:web-smoke
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: web-smoke-report
+          path: |
+            tools/testing/playwright-report
+            tools/testing/test-results
+          if-no-files-found: ignore

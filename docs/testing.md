@@ -2,7 +2,7 @@
 
 ## Zakres
 
-Po uproszczeniu repo testowanie skupia sie na firmware uruchamianym na fizycznym urzadzeniu.
+Po uproszczeniu repo testowanie skupia sie na firmware uruchamianym na fizycznym urzadzeniu, ale panel WWW ma tez lekki smoke test uruchamiany automatycznie w `CI`.
 
 ## Materialy testowe
 
@@ -10,6 +10,7 @@ Po uproszczeniu repo testowanie skupia sie na firmware uruchamianym na fizycznym
 | --- | --- |
 | `docs/manual_smoke_test.md` | checklista najwazniejszych scenariuszy runtime |
 | `tools/testing/` | miejsce na pomocnicze notatki, fixture'y i artefakty testowe |
+| `tools/testing/web-dashboard.spec.js` | automatyczny smoke test panelu WWW i mockowanego API |
 
 ## Co warto sprawdzac po zmianach
 
@@ -26,11 +27,12 @@ Po uproszczeniu repo testowanie skupia sie na firmware uruchamianym na fizycznym
 ## Zalecany workflow
 
 1. Zbudowac firmware.
-2. Wgrac je na urzadzenie.
-3. Przejsc `docs/manual_smoke_test.md`.
-4. Dla zmian w power management sprawdzic zachowanie po zmroku lub na wymuszonym czasie nocnym.
+2. Dla zmian w panelu WWW uruchomic `npm run test:web-smoke` w `tools/testing/`.
+3. Wgrac firmware na urzadzenie.
+4. Przejsc `docs/manual_smoke_test.md`.
+5. Dla zmian w power management sprawdzic zachowanie po zmroku lub na wymuszonym czasie nocnym.
 
 ## Ograniczenia
 
-- repo nie zawiera obecnie zautomatyzowanych testow jednostkowych
+- repo nie zawiera obecnie zautomatyzowanych testow jednostkowych firmware
 - najwazniejsza walidacja nadal odbywa sie na fizycznym urzadzeniu

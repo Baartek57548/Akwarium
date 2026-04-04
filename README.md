@@ -25,6 +25,8 @@ Usuniete z repo:
 - `HTTP OTA`
 - tryb `STA/AP` z fallbackiem do `AP`
 - automatyczne zamkniecie sesji `AP` po `90 s` bez klientow
+- panel WWW bez zaleznosci od zewnetrznych CDN
+- automatyczny smoke test panelu WWW w `CI`
 
 ## Uklad repo
 
