@@ -65,6 +65,7 @@ python -m platformio device monitor -b 115200
 
 ## Dokumentacja
 
+- [Changelog](CHANGELOG.md)
 - [Setup](docs/setup.md)
 - [Firmware](docs/firmware.md)
 - [Testowanie](docs/testing.md)
