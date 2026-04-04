@@ -985,6 +985,17 @@ void AquariumAnimation::cancelEditing() {
 
 bool AquariumAnimation::isEditingActive() { return isEditing; }
 
+void AquariumAnimation::resetNavigationState() {
+  menuSelection = 0;
+  menuScrollOffset = 0;
+  scheduleSelection = 0;
+  activeScheduleId = 0;
+  logScroll = 0;
+  logsCriticalMode = false;
+  testSelection = 0;
+  cancelEditing();
+}
+
 // --- GETTERY ---
 bool AquariumAnimation::hasScheduleChanged() {
   if (scheduleChangePending) {

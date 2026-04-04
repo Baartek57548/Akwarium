@@ -7,6 +7,7 @@
 #include "SharedState.h"
 #include "SystemController.h"
 #include "WebAssets.h"
+#include "WebApiProtocol.h"
 
 #include <DNSServer.h>
 #include <RTClib.h>
@@ -64,6 +65,15 @@ static String lastTimeSyncStatus = "Brak proby synchronizacji czasu.";
 static int lastDailySyncAttemptDateStamp = -1;
 static bool webServerConfigured = false;
 static bool webServerRunning = false;
+static WiFiClient sseClient;
+static bool sseClientActive = false;
+static unsigned long lastSseStatusPushMs = 0;
+static unsigned long lastSseHeartbeatMs = 0;
+static String lastSseStatusPayload;
+static String lastSseLogsPayload;
+
+static constexpr unsigned long SSE_STATUS_INTERVAL_MS = 1000UL;
+static constexpr unsigned long SSE_HEARTBEAT_INTERVAL_MS = 15000UL;
 
 WebServer &AkwariumWifi::getServer() { return server; }
 
@@ -75,6 +85,12 @@ static void processWifiRequests();
 static void maintainWifiState();
 static void maybeRunDailyTimeSync();
 static void sendCaptiveRedirect();
+static void sendCompressedAsset(const WebAssetDescriptor &asset);
+static void openSseStream();
+static void closeSseStream();
+static void updateSseStream(bool forcePush = false);
+static bool isSseStreamHealthy();
+static void sendSseEvent(const char *eventName, const String &payload);
 static void loadConfiguredStaCredentials(char *ssidOut, size_t ssidOutSize,
                                          char *passwordOut,
                                          size_t passwordOutSize);
@@ -577,34 +593,142 @@ static void sendCaptiveRedirect() {
   server.send(302, "text/plain", "");
 }
 
+static void sendCompressedAsset(const WebAssetDescriptor &asset) {
+  server.sendHeader("Connection", "close");
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
+  server.sendHeader("Content-Encoding", "gzip");
+  server.sendHeader("Vary", "Accept-Encoding");
+  server.send_P(200, asset.contentType,
+                reinterpret_cast<PGM_P>(asset.data), asset.size);
+}
+
+static bool isSseStreamHealthy() {
+  if (!sseClientActive) {
+    return false;
+  }
+
+  if (!sseClient || !sseClient.connected()) {
+    closeSseStream();
+    return false;
+  }
+
+  return true;
+}
+
+static void closeSseStream() {
+  if (sseClient) {
+    sseClient.stop();
+  }
+  sseClient = WiFiClient();
+  sseClientActive = false;
+  lastSseStatusPushMs = 0;
+  lastSseHeartbeatMs = 0;
+  lastSseStatusPayload = "";
+  lastSseLogsPayload = "";
+}
+
+static void sendSseEvent(const char *eventName, const String &payload) {
+  if (!isSseStreamHealthy()) {
+    return;
+  }
+
+  if (eventName != nullptr && eventName[0] != '\0') {
+    sseClient.print("event: ");
+    sseClient.print(eventName);
+    sseClient.print("\n");
+  }
+  sseClient.print("data: ");
+  sseClient.print(payload);
+  sseClient.print("\n\n");
+  sseClient.flush();
+
+  if (!sseClient.connected()) {
+    closeSseStream();
+  }
+}
+
+static void updateSseStream(bool forcePush) {
+  if (!isSseStreamHealthy()) {
+    return;
+  }
+
+  const unsigned long nowMs = millis();
+  if (forcePush || lastSseStatusPushMs == 0 ||
+      (nowMs - lastSseStatusPushMs) >= SSE_STATUS_INTERVAL_MS) {
+    const String statusPayload = buildWebStatusJson();
+    if (forcePush || statusPayload != lastSseStatusPayload) {
+      sendSseEvent("status", statusPayload);
+      lastSseStatusPayload = statusPayload;
+    }
+
+    const String logsPayload = buildWebLogsJson();
+    if (forcePush || logsPayload != lastSseLogsPayload) {
+      sendSseEvent("logs", logsPayload);
+      lastSseLogsPayload = logsPayload;
+    }
+
+    lastSseStatusPushMs = nowMs;
+  }
+
+  if (isSseStreamHealthy() &&
+      (lastSseHeartbeatMs == 0 ||
+       (nowMs - lastSseHeartbeatMs) >= SSE_HEARTBEAT_INTERVAL_MS)) {
+    sseClient.print(": keep-alive\n\n");
+    sseClient.flush();
+    lastSseHeartbeatMs = nowMs;
+
+    if (!sseClient.connected()) {
+      closeSseStream();
+    }
+  }
+}
+
+static void openSseStream() {
+  WiFiClient client = server.client();
+  if (!client) {
+    return;
+  }
+
+  closeSseStream();
+
+  client.setNoDelay(true);
+  client.print("HTTP/1.1 200 OK\r\n");
+  client.print("Content-Type: text/event-stream\r\n");
+  client.print("Cache-Control: no-cache, no-store, must-revalidate\r\n");
+  client.print("Connection: keep-alive\r\n");
+  client.print("X-Accel-Buffering: no\r\n\r\n");
+  client.flush();
+
+  sseClient = client;
+  sseClientActive = true;
+  lastSseStatusPushMs = 0;
+  lastSseHeartbeatMs = millis();
+  lastSseStatusPayload = "";
+  lastSseLogsPayload = "";
+
+  sendSseEvent("ready",
+               buildWebActionResponseJson(true, "sse_ready",
+                                          "Strumien SSE zostal otwarty."));
+  updateSseStream(true);
+}
+
 static void setupWebServer() {
   if (webServerConfigured) {
     return;
   }
 
-  server.on("/", HTTP_GET, []() {
-    server.sendHeader("Connection", "close");
-    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    server.sendHeader("Pragma", "no-cache");
-    server.sendHeader("Expires", "0");
-    server.send_P(200, "text/html; charset=utf-8", web_index_html);
-  });
+  server.on("/", HTTP_GET,
+            []() { sendCompressedAsset(web_index_html_gz_asset); });
 
-  server.on("/style.css", HTTP_GET, []() {
-    server.sendHeader("Connection", "close");
-    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    server.sendHeader("Pragma", "no-cache");
-    server.sendHeader("Expires", "0");
-    server.send_P(200, "text/css; charset=utf-8", web_style_css);
-  });
+  server.on("/style.css", HTTP_GET,
+            []() { sendCompressedAsset(web_style_css_gz_asset); });
 
-  server.on("/script.js", HTTP_GET, []() {
-    server.sendHeader("Connection", "close");
-    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    server.sendHeader("Pragma", "no-cache");
-    server.sendHeader("Expires", "0");
-    server.send_P(200, "application/javascript; charset=utf-8", web_script_js);
-  });
+  server.on("/script.js", HTTP_GET,
+            []() { sendCompressedAsset(web_script_js_gz_asset); });
+
+  server.on("/api/events", HTTP_GET, []() { openSseStream(); });
 
   server.on("/settime", HTTP_POST, []() {
     if (!server.hasArg("epoch")) {
@@ -799,6 +923,7 @@ static void stopWebServerIfNeeded() {
     return;
   }
 
+  closeSseStream();
   server.stop();
   webServerRunning = false;
 }
@@ -850,6 +975,7 @@ static void WifiTask(void *parameter) {
     }
     if (webServerRunning) {
       server.handleClient();
+      updateSseStream(false);
     }
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }

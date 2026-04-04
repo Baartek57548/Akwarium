@@ -65,6 +65,8 @@ bool logsDeleteHoldTriggered = false;
 bool logsDeleteHoldActive = false;
 uint8_t logsDeleteHoldProgress = 0;
 uint16_t todayFeedingsCount = 0;
+unsigned long apIdleStartMs = 0;
+bool apAutoStopPending = false;
 uint8_t feedingsCounterDay = 1;
 uint8_t feedingsCounterMonth = 1;
 uint16_t feedingsCounterYear = 2025;
@@ -89,6 +91,7 @@ uint16_t feedingsCounterYear = 2025;
 #define MANUAL_FEED_SINGLE_GUARD_MS 140UL
 #define UI_IDLE_RETURN_HOME_MS 30000UL
 #define LOGS_DELETE_HOLD_MS 3000UL
+#define AP_IDLE_TIMEOUT_MS 90000UL
 
 static constexpr uint8_t BUTTON_MASK_UP = (1U << 0);
 static constexpr uint8_t BUTTON_MASK_SELECT = (1U << 1);
@@ -162,6 +165,55 @@ static void syncBleSessionWithUiState() {
   }
 }
 
+static void resetApSessionIdleState() {
+  apIdleStartMs = 0;
+  apAutoStopPending = false;
+}
+
+static void maintainApSessionTimeout(unsigned long nowMs) {
+  const bool shouldTrackApSession =
+      (uiState == UiState::ACCESS_POINT) ||
+      (uiState == UiState::FEEDING &&
+       uiStateBeforeFeeding == UiState::ACCESS_POINT);
+
+  if (!shouldTrackApSession) {
+    resetApSessionIdleState();
+    return;
+  }
+
+  if (!AkwariumWifi::getIsAPMode()) {
+    resetApSessionIdleState();
+    return;
+  }
+
+  if (apAutoStopPending) {
+    return;
+  }
+
+  if (AkwariumWifi::getConnectedClients() > 0) {
+    apIdleStartMs = 0;
+    return;
+  }
+
+  if (apIdleStartMs == 0) {
+    apIdleStartMs = nowMs;
+    return;
+  }
+
+  if ((nowMs - apIdleStartMs) < AP_IDLE_TIMEOUT_MS) {
+    return;
+  }
+
+  AkwariumWifi::stopAP();
+  LogManager::logInfo("AP wylaczony automatycznie po 90 s bez klientow.");
+  apAutoStopPending = true;
+  apIdleStartMs = 0;
+
+  if (uiState == UiState::ACCESS_POINT) {
+    uiState = UiState::HOME;
+  }
+}
+
 struct PendingScheduleUpdate {
   uint8_t lightMode;
   uint8_t dayStartHour;
@@ -197,6 +249,7 @@ struct PendingTimeUpdate {
 static portMUX_TYPE pendingUiMux = portMUX_INITIALIZER_UNLOCKED;
 static volatile bool hasPendingScheduleUpdate = false;
 static volatile bool hasPendingTimeUpdate = false;
+static volatile bool hasPendingSaveConfirmAnimation = false;
 static PendingScheduleUpdate pendingScheduleUpdate = {};
 static PendingTimeUpdate pendingTimeUpdate = {};
 static unsigned long suppressUiTimeSyncUntilMs = 0;
@@ -224,6 +277,25 @@ static void suppressUiTimeSyncForManualFeed(unsigned long nowMs) {
       animation->cancelEditing();
     }
     animation->hasTimeChanged();
+  }
+}
+
+void requestUiSaveConfirmationAnimation() {
+  portENTER_CRITICAL(&pendingUiMux);
+  hasPendingSaveConfirmAnimation = true;
+  portEXIT_CRITICAL(&pendingUiMux);
+}
+
+static void consumePendingUiSaveConfirmationAnimation() {
+  bool shouldPlayAnimation = false;
+
+  portENTER_CRITICAL(&pendingUiMux);
+  shouldPlayAnimation = hasPendingSaveConfirmAnimation;
+  hasPendingSaveConfirmAnimation = false;
+  portEXIT_CRITICAL(&pendingUiMux);
+
+  if (shouldPlayAnimation && animation) {
+    animation->playConfirmAnimation();
   }
 }
 
@@ -460,6 +532,15 @@ static void applyPendingUiChanges() {
   }
 }
 
+static void resetUiStateAfterIdleTimeout() {
+  logsViewState = LogsViewState::SELECT_TYPE;
+  logsTypeSelection = 0;
+  resetLogsDeleteHoldState();
+  if (animation) {
+    animation->resetNavigationState();
+  }
+}
+
 void updateUiState() {
   if (!animation)
     return;
@@ -596,9 +677,11 @@ void updateUiState() {
 
   if (shouldApplyUiIdleHomeTimeout(uiState) &&
       (nowMs - lastUiInteractionMs >= UI_IDLE_RETURN_HOME_MS)) {
-    animation->cancelEditing();
+    resetUiStateAfterIdleTimeout();
     uiState = UiState::HOME;
   }
+
+  maintainApSessionTimeout(nowMs);
 
   switch (uiState) {
   case UiState::HOME:
@@ -648,6 +731,7 @@ void updateUiState() {
     if (upJustPressed) {
       AkwariumWifi::stopAP();
       LogManager::logInfo("Sesja WiFi zakonczona z menu (wylaczono STA/AP).");
+      resetApSessionIdleState();
       uiState = UiState::MENU;
     }
     break;
@@ -970,6 +1054,7 @@ void VideoTask(void *pvParameters) {
       snprintf(feedTime, sizeof(feedTime), "%02u:%02u", cfg.feedHour,
                cfg.feedMinute);
       animation->setFeedingSchedule(feedTime, cfg.feedMode, 0);
+      consumePendingUiSaveConfirmationAnimation();
 
       if (!animation->drawConfirmAnimationFrame()) {
         switch (uiState) {
