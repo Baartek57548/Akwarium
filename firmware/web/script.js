@@ -447,12 +447,10 @@ function renderTopbarActiveModules(data) {
     if (!container) return;
 
     const network = data.network || {};
-    const bleActive = !!network.bleActive || !!network.bleAdvertising || !!network.bleConnected;
 
     container.innerHTML = [
         buildModuleBadge('fa-satellite-dish', 'AP', !!network.apMode, 'success'),
-        buildModuleBadge('fa-wifi', 'STA', !!network.staConnected, 'success'),
-        buildModuleBadge('fa-bluetooth-b', 'BLE', bleActive, 'blue')
+        buildModuleBadge('fa-wifi', 'STA', !!network.staConnected, 'success')
     ].join('');
 }
 

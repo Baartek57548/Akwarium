@@ -1,7 +1,6 @@
 #include "ApiHandlers.h"
 
 #include "AkwariumWifi.h"
-#include "BleManager.h"
 #include "ConfigManager.h"
 #include "ConfigValidation.h"
 #include "FirmwareInfo.h"

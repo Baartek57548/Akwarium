@@ -1,18 +1,17 @@
 # firmware/src
 
-Ten katalog zawiera właściwy kod runtime firmware: state machine OLED, scheduling logic, hardware interface, komunikację HTTP/BLE i power management.
+Ten katalog zawiera runtime firmware: state machine OLED, logike harmonogramow, obsluge sprzetu, HTTP API, OTA i power management.
 
-## Najważniejsze moduły
+## Najwazniejsze moduly
 
 - `AkwariumV4.ino`
 - `SystemController.*`
 - `AkwariumWifi.*`
 - `ApiHandlers.*`
-- `BleManager.*`
+- `WebApiProtocol.*`
 - `ConfigManager.*`
 - `ConfigValidation.*`
 
-## Gdzie czytać dalej
+## Gdzie czytac dalej
 
 - [Dokumentacja firmware](../../docs/firmware.md)
-- [Dokumentacja komunikacji](../../docs/communication.md)

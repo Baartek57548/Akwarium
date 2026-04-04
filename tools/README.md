@@ -1,14 +1,11 @@
 # tools
 
-Ten katalog grupuje narzędzia pomocnicze, emulatory UI i materiały testowe.
+Ten katalog zawiera pomocnicze materialy zwiazane z testowaniem firmware.
 
 ## Co tu jest
 
-- `simulator/` - emulator renderingu OLED firmware,
-- `testing/` - uporządkowane materiały pomocnicze do weryfikacji,
-- `testy/` - eksperymenty, prototypy i starsze narzędzia.
+- `testing/` - uporzadkowane materialy pomocnicze do weryfikacji
 
-## Gdzie czytać dalej
+## Gdzie czytac dalej
 
-- [Dokumentacja emulatorów](../docs/emulator.md)
 - [Dokumentacja testowania](../docs/testing.md)

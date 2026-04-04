@@ -7,7 +7,6 @@
 #include "AkwariumWifi.h"
 #include "ApiHandlers.h"
 #include "AquariumAnimation.h"
-#include "BleManager.h"
 #include "ConfigManager.h"
 #include "FirmwareInfo.h"
 #include "LogManager.h"
@@ -41,8 +40,7 @@ enum class UiState {
   SETTINGS_DATETIME,
   TESTS,
   FEEDING,
-  ACCESS_POINT,
-  BLUETOOTH
+  ACCESS_POINT
 };
 UiState uiState = UiState::HOME;
 
@@ -100,7 +98,7 @@ static constexpr uint8_t BUTTON_MASK_DOWN = (1U << 2);
 static void clampRelayPinsAtBoot() {
   // Szybkie "usztywnienie" pinow po restarcie, aby ograniczyc przypadkowe
   // klikniecia przekaznikow podczas normalnego programowania i bootowania.
-  // Dla restartu po OTA/BLE odtwarzamy poziomy zapisane tuz przed restartem.
+  // Dla restartu po OTA odtwarzamy poziomy zapisane tuz przed restartem.
   uint8_t lightLevel = HIGH;
   uint8_t filterLevel = HIGH;
   uint8_t heaterLevel = HIGH;
@@ -125,7 +123,7 @@ static void clampRelayPinsAtBoot() {
 static bool shouldApplyUiIdleHomeTimeout(UiState state) {
   if (state == UiState::HOME)
     return false;
-  if (state == UiState::ACCESS_POINT || state == UiState::BLUETOOTH)
+  if (state == UiState::ACCESS_POINT)
     return false;
   if (state == UiState::FEEDING)
     return false;
@@ -147,21 +145,6 @@ static void syncDailyFeedingsCounterDate() {
     feedingsCounterDay = snap.day;
     feedingsCounterMonth = snap.month;
     feedingsCounterYear = snap.year;
-  }
-}
-
-static void syncBleSessionWithUiState() {
-  // BLE ma byc wlaczane tylko z funkcji "Bluetooth".
-  // Wyjatek: podczas ekranu karmienia utrzymujemy sesje, jesli wejsciem
-  // byl ekran Bluetooth.
-  const bool shouldEnableBle =
-      (uiState == UiState::BLUETOOTH) ||
-      (uiState == UiState::FEEDING && uiStateBeforeFeeding == UiState::BLUETOOTH);
-
-  if (shouldEnableBle) {
-    BleManager::start();
-  } else {
-    BleManager::stop();
   }
 }
 
@@ -651,10 +634,8 @@ void updateUiState() {
     feedingUiActive = false;
     animation->setFeedingAnimation(false);
     if (uiState == UiState::FEEDING) {
-      if ((uiStateBeforeFeeding == UiState::ACCESS_POINT &&
-           !AkwariumWifi::getIsAPMode()) ||
-          (uiStateBeforeFeeding == UiState::BLUETOOTH &&
-           !BleManager::isAdvertising() && !BleManager::isConnected())) {
+      if (uiStateBeforeFeeding == UiState::ACCESS_POINT &&
+          !AkwariumWifi::getIsAPMode()) {
         uiState = UiState::HOME;
       } else {
         uiState = uiStateBeforeFeeding;
@@ -719,10 +700,6 @@ void updateUiState() {
         LogManager::logInfo(
             "Menu WiFi: start sesji WiFi (STA 6 s, potem fallback do AP).");
         uiState = UiState::ACCESS_POINT;
-      } else if (sel == 6) {
-        BleManager::start();
-        LogManager::logInfo("Bluetooth: zlecono uruchomienie z menu.");
-        uiState = UiState::BLUETOOTH;
       }
     }
     break;
@@ -733,39 +710,6 @@ void updateUiState() {
       LogManager::logInfo("Sesja WiFi zakonczona z menu (wylaczono STA/AP).");
       resetApSessionIdleState();
       uiState = UiState::MENU;
-    }
-    break;
-  }
-
-  case UiState::BLUETOOTH: {
-    static uint8_t maxClients = 0;
-    static unsigned long lastClientSeenMs = 0;
-    constexpr unsigned long BLE_CLIENT_GRACE_MS = 60000UL;
-    uint8_t currentClients = BleManager::getConnectedClients();
-    if (currentClients > maxClients) {
-      maxClients = currentClients;
-    }
-    if (currentClients > 0) {
-      lastClientSeenMs = millis();
-    }
-
-    // Auto-disconnect analogicznie do AP: po wyjsciu ostatniego klienta
-    // czekamy chwile i zamykamy sesje BLE.
-    if (maxClients > 0 && currentClients == 0 && lastClientSeenMs > 0 &&
-        (millis() - lastClientSeenMs >= BLE_CLIENT_GRACE_MS)) {
-      BleManager::stop();
-      LogManager::logInfo("Bluetooth wylaczony automatycznie.");
-      uiState = UiState::HOME;
-      maxClients = 0;
-      lastClientSeenMs = 0;
-    }
-
-    if (upJustPressed) {
-      BleManager::stop();
-      LogManager::logInfo("Bluetooth wylaczony z menu.");
-      uiState = UiState::MENU;
-      maxClients = 0;
-      lastClientSeenMs = 0;
     }
     break;
   }
@@ -1016,7 +960,6 @@ void VideoTask(void *pvParameters) {
     if (animation != nullptr) {
       updateUiState();
       syncTestOverridesWithUiState();
-      syncBleSessionWithUiState();
       captureUiChanges();
 
       bool isUp = (digitalRead(BUTTON_UP_PIN) == LOW);
@@ -1127,14 +1070,6 @@ void VideoTask(void *pvParameters) {
               AkwariumWifi::getIP().c_str(), AkwariumWifi::getConnectedClients());
           break;
         }
-        case UiState::BLUETOOTH:
-          animation->drawBluetoothScreen(
-              BleManager::getDeviceName(),
-              BleManager::isAdvertising(),
-              BleManager::isConnected(),
-              BleManager::getConnectedClients(),
-              BleManager::getPasskey());
-          break;
         case UiState::FEEDING:
           animation->drawFeedingScreen();
           break;
@@ -1229,11 +1164,8 @@ void setup() {
   AkwariumWifi::begin();
   logBootStage("WifiTask start requested");
 
-  // BLE ma byc wlaczane z menu Bluetooth, wiec inicjalizujemy je leniwie.
-  logBootStage("BLE deferred until first use");
-
   // Watchdog dopinamy dopiero po zakonczeniu ciezkiego setup(), aby uniknac
-  // resetu na ekranie powitalnym przy dluzszym starcie stosow BLE/WiFi.
+  // resetu na ekranie powitalnym przy dluzszym starcie stosu WiFi.
   const esp_err_t wdtErr = esp_task_wdt_add(NULL);
   if (wdtErr == ESP_OK) {
     esp_task_wdt_reset();
@@ -1254,7 +1186,6 @@ void loop() {
   // Glowna petla obslugujaca sensory, decyzje i wykonawcze elementy na Core 1
   SystemController::update();
   OtaManager::update();
-  BleManager::update();
   // Wifi Server handle juz leci asynchronicznie lub poprzez dedykowany
   // handleClient, wiec upewnijmy sie ze w Wifi.cpp tak jet. Tu ewentualnie
   // dodac AkwariumWifi::handleClient() jesli brakuje.

@@ -5,6 +5,9 @@ firmware/src/build/
 firmware/.vscode/.browse.c_cpp.db*
 firmware/.vscode/ipch/
 firmware/src/arduino_secrets.h
+firmware/compile_commands.json
+firmware/src/WebAssets.h
+.vscode/c_cpp_properties.json
 
 # .NET MAUI app
 mobile-app/**/bin/

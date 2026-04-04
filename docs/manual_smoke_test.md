@@ -2,104 +2,99 @@
 
 ## Cel
 
-Checklista służy do szybkiej walidacji najbardziej ryzykownych ścieżek po zmianach w firmware, komunikacji lub OTA.
+Checklista sluzy do szybkiej walidacji najwazniejszych sciezek po zmianach w firmware, panelu WWW lub OTA.
 
 ## Preconditions
 
-- firmware zostało zbudowane i wgrane,
-- czas urządzenia jest poprawny,
-- `firmware/src/arduino_secrets.h` zawiera prawidłowe dane sieciowe i `BLE passkey`,
-- brak aktywnej sesji OTA przed startem testów.
+- firmware zostalo zbudowane i wgrane
+- czas urzadzenia jest poprawny
+- `firmware/src/arduino_secrets.h` zawiera poprawne dane `STA/AP`
+- przed testem nie trwa aktywna sesja OTA
 
-## 1. Access Point i panel WWW
+## 1. Panel WWW i status
 
-1. Otwórz ekran `Wifi` na OLED.
-2. Uruchom `AP`.
-3. Połącz laptop lub telefon z SSID urządzenia.
-4. Otwórz `http://<ip_urzadzenia>/`.
-5. Zweryfikuj ładowanie dashboardu i odczyt statusu.
-6. Zakończ sesję i sprawdź poprawne wyjście z trybu `AP`.
-
-Oczekiwany wynik:
-
-- `AP` startuje poprawnie,
-- panel WWW odpowiada,
-- liczba klientów jest raportowana,
-- wyjście z trybu `AP` nie blokuje powrotu do normalnego runtime.
-
-## 2. BLE pairing i reconnect
-
-1. Otwórz ekran `Bluetooth` na OLED.
-2. Sparuj urządzenie przy użyciu `SECRET_BLE_PASSKEY`.
-3. Odczytaj status przez aplikację MAUI lub narzędzie BLE.
-4. Rozłącz i połącz ponownie.
+1. Otworz ekran `Wifi` na OLED.
+2. Uruchom sesje WiFi.
+3. Polacz sie z urzadzeniem przez `STA` albo `AP`.
+4. Otworz `http://<ip_urzadzenia>/`.
+5. Zweryfikuj ladowanie dashboardu i pobranie statusu.
 
 Oczekiwany wynik:
 
-- pairing kończy się szyfrowanym połączeniem,
-- odczyt statusu działa,
-- reconnect nie wymaga restartu firmware.
+- panel WWW odpowiada
+- status urzadzenia laduje sie poprawnie
+- logi sa widoczne w panelu
 
-## 3. Zapis konfiguracji przez HTTP i BLE
+## 2. `AP` i timeout bez klientow
 
-1. Przez panel WWW ustaw poprawne i niepoprawne wartości harmonogramów.
-2. Zweryfikuj odpowiedź `OK` albo `OK_PARTIAL`.
-3. Przez BLE wyślij analogiczny patch ustawień.
-4. Zweryfikuj kody `settings_saved` albo `settings_partial`.
-5. Zrestartuj urządzenie.
-6. Sprawdź persystencję ustawień po restarcie.
+1. Uruchom `AP` z menu `Wifi`.
+2. Nie lacz zadnego klienta przez co najmniej `90 s`.
+3. Obserwuj OLED i logi.
 
 Oczekiwany wynik:
 
-- walidacja działa spójnie dla HTTP i BLE,
-- poprawne pola są zapisywane,
-- błędne pola nie psują całego payloadu,
-- konfiguracja przetrwa restart.
+- sesja `AP` zamyka sie automatycznie po `90 s`
+- firmware wraca do `HOME`
+- w logach pojawia sie wpis o automatycznym zamknieciu `AP`
 
-## 4. Tryb nocny i light sleep
+## 3. SSE i odswiezanie statusu
 
-1. Ustaw czas urządzenia poza oknem dnia.
-2. Upewnij się, że `AP` jest wyłączony.
-3. Upewnij się, że BLE nie reklamuje i nie ma aktywnego klienta.
-4. Upewnij się, że nie trwa OTA.
-5. Odczekaj powyżej progu bezczynności.
+1. Pozostaw otwarty panel WWW.
+2. Wywolaj akcje z panelu, ktore zmieniaja stan urzadzenia lub logi.
+3. Zweryfikuj, czy interfejs odswieza status bez recznego reloadu strony.
 
 Oczekiwany wynik:
 
-- firmware przechodzi do light sleep tylko po spełnieniu wszystkich gate'ów,
-- brak wejścia w sleep podczas aktywnego `AP`, BLE, OTA lub karmienia,
-- wybudzenie działa przez przycisk albo timer.
+- przegladarka utrzymuje polaczenie z `GET /api/events`
+- zmiany statusu i logow pojawiaja sie na zywo
 
-## 5. OTA
+## 4. Zapis konfiguracji przez HTTP
 
-### HTTP OTA
+1. Przez panel WWW ustaw poprawne i niepoprawne wartosci harmonogramow.
+2. Zweryfikuj odpowiedz `OK` albo `OK_PARTIAL`.
+3. Zrestartuj urzadzenie.
+4. Sprawdz persystencje ustawien po restarcie.
 
-1. Połącz się z panelem WWW.
-2. Wyślij obraz firmware przez `POST /update`.
+Oczekiwany wynik:
+
+- poprawne pola sa zapisywane
+- niepoprawne pola nie psuja calego payloadu
+- konfiguracja przetrwa restart
+
+## 5. Tryb nocny i light sleep
+
+1. Ustaw czas urzadzenia poza oknem dnia.
+2. Upewnij sie, ze `AP` jest wylaczony.
+3. Upewnij sie, ze nie trwa OTA ani karmienie.
+4. Odczekaj powyzej progu bezczynnosci.
+
+Oczekiwany wynik:
+
+- firmware przechodzi do light sleep tylko po spelnieniu wszystkich gate'ow
+- brak wejscia w sleep podczas aktywnego `AP`, OTA lub karmienia
+- wybudzenie dziala przez przycisk albo timer
+
+## 6. HTTP OTA
+
+1. Polacz sie z panelem WWW.
+2. Wyslij obraz firmware przez `POST /update`.
 3. Obserwuj przebieg i restart.
 
-### BLE OTA
+Oczekiwany wynik:
 
-1. Połącz aplikację MAUI z urządzeniem.
-2. Wybierz poprawny obraz `.bin`.
-3. Uruchom `BLE OTA`.
-4. Poczekaj na zakończenie transferu i restart.
+- firmware wchodzi w stan OTA
+- wyjscia przechodza do bezpiecznego stanu
+- po zakonczeniu nastepuje restart
+
+## 7. Karmnik i serwo
+
+1. Uruchom reczne karmienie.
+2. Sprawdz timeout bezpieczenstwa i poprawne zatrzymanie napedu.
+3. Wymus reczne ustawienie serwa.
+4. Wyczysc override serwa.
 
 Oczekiwany wynik:
 
-- firmware wchodzi w stan OTA,
-- wyjścia przechodzą do bezpiecznego stanu,
-- po zakończeniu następuje restart i przełączenie obrazu.
-
-## 6. Karmnik i serwo
-
-1. Uruchom ręczne karmienie.
-2. Sprawdź timeout bezpieczeństwa i poprawne zatrzymanie napędu.
-3. Wymuś ręczne ustawienie serwa.
-4. Wyczyść override serwa.
-
-Oczekiwany wynik:
-
-- karmnik nie zostaje w stanie aktywnym,
-- czujnik karmnika zatrzymuje cykl zgodnie z oczekiwaniem,
-- ręczne sterowanie serwem działa i można je wyczyścić.
+- karmnik nie zostaje w stanie aktywnym
+- czujnik karmnika zatrzymuje cykl zgodnie z oczekiwaniem
+- reczne sterowanie serwem dziala i mozna je wyczyscic

@@ -1,3 +1,0 @@
-C:/Users/Bartek/Documents/PlatformIO/Projects/260225-101701-seeed_xiao_esp32s3/tools/simulator/FirmwareUI/build/CMakeFiles/FirmwareUI.dir
-C:/Users/Bartek/Documents/PlatformIO/Projects/260225-101701-seeed_xiao_esp32s3/tools/simulator/FirmwareUI/build/CMakeFiles/ALL_BUILD.dir
-C:/Users/Bartek/Documents/PlatformIO/Projects/260225-101701-seeed_xiao_esp32s3/tools/simulator/FirmwareUI/build/CMakeFiles/ZERO_CHECK.dir
