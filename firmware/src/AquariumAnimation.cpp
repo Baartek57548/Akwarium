@@ -660,7 +660,7 @@ void AquariumAnimation::updatePhysics() {
 // --- LOGIKA NAWIGACJI MENU ---
 void AquariumAnimation::menuNext() {
   menuSelection++;
-  if (menuSelection > 6) {
+  if (menuSelection > 5) {
     menuSelection = 0;
     menuScrollOffset = 0;
   } else if (menuSelection > menuScrollOffset + 2) {
@@ -1349,7 +1349,7 @@ void AquariumAnimation::drawMenu(bool btnBackState, bool btnSelectState,
   display->drawLine(127, 1, 127, 32);
   display->drawLine(114, 0, 114, 31);
   const char *items[] = {"Harmonogramy", "Logi", "Data i Czas", "Test",
-                         "Kalibracja karmnika", "Wifi", "Bluetooth"};
+                         "Kalibracja karmnika", "Wifi"};
   for (int i = 0; i < 3; i++) {
     int itemIndex = menuScrollOffset + i;
     int yPos = 9 + (i * 11);
@@ -1931,78 +1931,6 @@ void AquariumAnimation::drawAccessPointScreen(const char *modeLabel,
   snprintf(secondaryBuf, sizeof(secondaryBuf), "%.30s",
            secondaryLine ? secondaryLine : "");
   display->drawStr(3, 30, secondaryBuf);
-}
-
-void AquariumAnimation::drawBluetoothScreen(const char *bleName,
-                                            bool advertising, bool connected,
-                                            uint8_t clients,
-                                            uint32_t passkey) {
-  if (!display)
-    return;
-  display->setFontMode(1);
-  display->setBitmapMode(1);
-
-  // === Ramka ===
-  display->drawFrame(0, 0, 128, 32);
-  display->drawLine(1, 11, 126, 11);
-
-  // --- Naglowek: BT + spinner + aktywnosc ---
-  display->setFont(u8g2_font_6x10_tr);
-  display->drawStr(2, 9, "BT");
-
-  static const char spinChars[] = {'|', '/', '-', '\\'};
-  char spinBuf[2] = {' ', '\0'};
-  if (advertising) {
-    spinBuf[0] = spinChars[(millis() / 250) % 4];
-  } else if (connected) {
-    spinBuf[0] = '*';
-  } else {
-    spinBuf[0] = '.';
-  }
-  display->drawStr(18, 9, spinBuf);
-
-  // Symbol BLE + dynamiczne "fale" aktywnosci
-  const int iconX = 31;
-  const int iconY = 6;
-  display->drawLine(iconX, 1, iconX, 10);
-  display->drawLine(iconX, iconY, iconX + 4, 2);
-  display->drawLine(iconX, iconY, iconX + 4, 10);
-  display->drawLine(iconX, iconY, iconX - 4, 2);
-  display->drawLine(iconX, iconY, iconX - 4, 10);
-
-  uint8_t wavePhase = (millis() / 300) % 3;
-  for (uint8_t w = 0; w < 3; w++) {
-    uint8_t x = 40 + w * 5;
-    uint8_t h = 3 + w * 2;
-    uint8_t y = 10 - h;
-    bool lit = connected || (advertising && w <= wavePhase);
-    if (lit)
-      display->drawBox(x, y, 4, h);
-    else
-      display->drawFrame(x, y, 4, h);
-  }
-
-  // Liczba klientow po prawej stronie
-  char clientsBuf[6];
-  snprintf(clientsBuf, sizeof(clientsBuf), "[%d]", clients);
-  display->drawStr(108, 9, clientsBuf);
-
-  // --- Nazwa i status BLE ---
-  display->setFont(u8g2_font_4x6_tr);
-
-  char nameBuf[32];
-  snprintf(nameBuf, sizeof(nameBuf), "N:%.24s", bleName ? bleName : "");
-  display->drawStr(3, 20, nameBuf);
-
-  const char *advLabel = advertising ? "ON" : "OFF";
-  char statusBuf[32];
-  if (connected) {
-    snprintf(statusBuf, sizeof(statusBuf), "S:CONNECTED A:%s", advLabel);
-  } else {
-    snprintf(statusBuf, sizeof(statusBuf), "PIN:%06lu A:%s",
-             static_cast<unsigned long>(passkey), advLabel);
-  }
-  display->drawStr(3, 30, statusBuf);
 }
 
 // --- METODY OBSLUGI TESTOW ---

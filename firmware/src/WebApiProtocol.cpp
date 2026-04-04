@@ -1,7 +1,6 @@
 #include "WebApiProtocol.h"
 
 #include "AkwariumWifi.h"
-#include "BleManager.h"
 #include "ConfigManager.h"
 #include "FirmwareInfo.h"
 #include "LogManager.h"
@@ -102,11 +101,6 @@ String buildWebStatusJson() {
   network["lastTimeSyncEpoch"] = AkwariumWifi::getLastTimeSyncEpoch();
   network["lastTimeSyncOk"] = AkwariumWifi::wasLastTimeSyncSuccessful();
   network["lastTimeSyncStatus"] = AkwariumWifi::getLastTimeSyncStatus();
-  const bool bleAdvertising = BleManager::isAdvertising();
-  const bool bleConnected = BleManager::isConnected();
-  network["bleAdvertising"] = bleAdvertising;
-  network["bleConnected"] = bleConnected;
-  network["bleActive"] = bleAdvertising || bleConnected;
 
   JsonObject clock = doc.createNestedObject("clock");
   clock["hour"] = snap.hour;

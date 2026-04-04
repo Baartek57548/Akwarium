@@ -193,9 +193,6 @@ public:
   void drawAccessPointScreen(const char *modeLabel, const char *primaryLine,
                              const char *secondaryLine, const char *ip,
                              uint8_t clients);
-  void drawBluetoothScreen(const char *bleName, bool advertising,
-                           bool connected, uint8_t clients,
-                           uint32_t passkey);
 
   // Rysowanie samej animacji proceduralnej (Akcja karmienia)
   void drawFeedingScreen();

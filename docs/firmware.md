@@ -2,221 +2,135 @@
 
 ## Zakres
 
-Ten dokument opisuje firmware urządzenia z katalogu `firmware/`. Obejmuje strukturę projektu, główne moduły, scheduling logic, hardware interface, fail-safe oraz znane ograniczenia implementacji.
+Ten dokument opisuje aktywne firmware w katalogu `firmware/`: runtime urzadzenia, UI OLED, panel WWW, OTA i power management.
 
 ## Struktura katalogu `firmware/`
 
 ```text
 firmware/
-|-- boards/                 niestandardowa definicja płytki
-|-- include/                nagłówki globalne PlatformIO
-|-- lib/                    miejsce na biblioteki lokalne
-|-- scripts/                hooki build metadata
-|-- src/                    właściwy kod firmware
-|-- Interfaces/             archiwalne paczki interfejsów WWW
-`-- platformio.ini          konfiguracja builda firmware
+|-- boards/
+|-- include/
+|-- lib/
+|-- scripts/
+|-- src/
+|-- web/
+|-- Interfaces/
+`-- platformio.ini
 ```
 
-Najważniejszy kod runtime znajduje się w `firmware/src/`.
+Aktywny kod runtime znajduje sie w `firmware/src/`. Zrodla panelu WWW sa w `firmware/web/`, a podczas builda trafiaja do wygenerowanego `WebAssets.h`.
 
 ## Runtime model
 
-### Zadania i rdzenie
+### Zadania
 
-- `loop()` na `Core 1` wykonuje `SystemController::update()`, `OtaManager::update()`, `BleManager::update()` i zapis zmian z UI OLED.
-- `VideoTask` na `Core 0` obsługuje lokalny state machine wyświetlacza, przyciski, render OLED i power management.
-- `WifiTask` utrzymuje `WebServer`, captive portal i logikę `STA/AP`.
+- `loop()` na `Core 1` uruchamia glowny runtime urzadzenia przez `SystemController::update()` oraz utrzymuje `OtaManager`
+- `VideoTask` na `Core 0` obsluguje przyciski, UI OLED, logike menu i timeout sesji `AP`
+- `WifiTask` zarzadza `STA/AP`, `WebServer`, captive portal, SSE i synchronizacja czasu
 
 ### Centralna orkiestracja
 
-`SystemController` pełni rolę głównego orchestratora. Odpowiada za:
+`SystemController` jest glownym orchestreratorem. Odpowiada za:
 
-- inicjalizację hardware,
-- odczyt sensorów,
-- wykonywanie scheduling logic,
-- wyznaczanie stanów wyjść,
-- synchronizację z `SharedState`,
-- zarządzanie energią i warunkami przejścia do light sleep.
+- inicjalizacje hardware
+- odczyt sensorow
+- logike harmonogramow
+- stany wyjsc
+- synchronizacje `SharedState`
+- warunki przejscia do low power i light sleep
 
-## Moduły firmware
+## Glowne moduly
 
 ### `AkwariumV4.ino`
 
-Punkt wejścia firmware. Zawiera:
+Punkt wejscia firmware. Zawiera:
 
-- setup runtime,
-- lokalny OLED state machine,
-- mapowanie przycisków,
-- obsługę zmian konfiguracji z ekranu urządzenia,
-- integrację menu `WiFi`, `Bluetooth`, `Test`, `Data i czas`, `Harmonogramy`.
+- setup runtime
+- lokalna state machine OLED
+- mapowanie przyciskow
+- integracje menu `WiFi`, `Test`, `Data i czas`, `Harmonogramy`
+- timeout `AP` po `90 s` bez klientow
 
 ### `SystemController.*`
 
-Warstwa decyzyjna urządzenia. Łączy:
+Warstwa decyzyjna urzadzenia. Laczy:
 
-- `ConfigManager`,
-- `ScheduleManager`,
-- `TemperatureController`,
-- `FeederController`,
-- `ServoController`,
-- `PowerManager`,
-- `SharedState`.
-
-### `TemperatureController.*`
-
-Odpowiada za:
-
-- odczyt `DS18B20`,
-- odrzucanie próbek nieprawidłowych (`DEVICE_DISCONNECTED_C`, `85.0 C`, zakres poza limitem),
-- histerezę i minimalny interwał przełączeń,
-- sterowanie grzałką jako bezpiecznikiem odcinającym, a nie pełnym termostatem.
-
-### `ScheduleManager.*`
-
-Implementuje scheduling logic dla:
-
-- dnia i oświetlenia,
-- filtra,
-- napowietrzania,
-- auto-karmienia.
-
-Obsługuje okna przechodzące przez północ i separuje logikę czasu od warstwy UI.
-
-### `FeederController.*`
-
-Steruje karmnikiem:
-
-- w trybie czasowym,
-- w trybie sensorowym z cyklem `1 -> 0 -> 1`,
-- z timeoutem bezpieczeństwa.
-
-### `ServoController.*`
-
-Steruje serwem napowietrzania. Implementacja attach/detach ogranicza niepotrzebne obciążenie sygnału PWM i zasilania.
+- `ConfigManager`
+- `ScheduleManager`
+- `TemperatureController`
+- `FeederController`
+- `ServoController`
+- `PowerManager`
+- `SharedState`
 
 ### `AkwariumWifi.*`
 
-Warstwa Wi-Fi i HTTP:
+Warstwa Wi-Fi i HTTP. Odpowiada za:
 
-- start `STA` przy boot,
-- ręczny start `AP`,
-- `WebServer`,
-- captive portal,
-- endpoint `POST /update`,
-- synchronizacja czasu przez `POST /settime`.
+- probe `STA` przy starcie
+- fallback do `AP`
+- reczny start i stop sesji `AP`
+- `WebServer`
+- captive portal
+- `GET /api/status`
+- `GET /api/logs`
+- `GET /api/events`
+- `POST /api/action`
+- `POST /update`
 
-### `ApiHandlers.*`
+### `ApiHandlers.*` i `WebApiProtocol.*`
 
-Warstwa REST API. Udostępnia:
-
-- `GET /api/status`,
-- `GET /api/logs`,
-- `POST /api/action`.
-
-### `BleManager.*`
-
-Warstwa BLE GATT. Udostępnia:
-
-- status runtime,
-- komendy sterujące,
-- ustawienia,
-- wynik `ACK/ERR`,
-- informacje o urządzeniu,
-- `BLE OTA`.
+Warstwa API oraz skladanie odpowiedzi dla panelu WWW. Dba o spojnosc payloadow statusu, logow i wynikow akcji.
 
 ### `ConfigManager.*` i `ConfigValidation.*`
 
-Odpowiadają za:
-
-- model konfiguracji,
-- walidację i sanitizację,
-- migrację legacy,
-- zapis do `Preferences`,
-- CRC i wersjonowanie struktury.
+Model konfiguracji, walidacja, sanitizacja, migracje oraz zapis do `Preferences`.
 
 ### `SharedState.*`
 
-Mutex-protected snapshot runtime używany między taskami. To lokalna abstraction layer dla danych odczytywanych przez UI, HTTP i BLE.
-
-### `PowerManager.*` i `BatteryReader.*`
-
-Obsługa bezczynności, poziomu baterii RTC i trybów zasilania. `PowerManager` publikuje telemetrię, ale właściwe wejście w sleep wykonuje `SystemController`.
+Mutex-protected snapshot runtime wykorzystywany miedzy taskami i warstwami UI/API.
 
 ### `OtaManager.*` i `FirmwareInfo.*`
 
-Warstwa pomocnicza dla OTA oraz build metadata. `FirmwareInfo` osadza w obrazie marker `AQFWMETA`, który jest wykorzystywany przez aplikację MAUI przy walidacji pakietu `.bin`.
+HTTP OTA i metadane builda firmware.
 
-## Logika działania
+## UI OLED
 
-### Start urządzenia
+Lokalna state machine zawiera ekrany:
 
-1. Inicjalizacja `SharedState`, konfiguracji, logów i hardware.
-2. Uruchomienie kontrolerów temperatury, karmnika, serwa i baterii.
-3. Próba przywrócenia poprawnego czasu z RTC lub backupu `NVS`.
-4. Start `WiFi`, REST API, BLE i UI OLED.
+- `HOME`
+- `MENU`
+- harmonogramy
+- `LOGS`
+- `SETTINGS_DATETIME`
+- `TESTS`
+- `FEEDING`
+- `ACCESS_POINT`
 
-### Cykl runtime
+Tryb `AP` moze byc uruchomiony z menu. Jezeli nikt nie jest polaczony, sesja zamknie sie automatycznie po `90 s`.
 
-1. Odczyt temperatury i baterii.
-2. Obliczenie aktywnych okien pracy z harmonogramów.
-3. Wyznaczenie stanów światła, filtra, napowietrzania i grzałki.
-4. Aktualizacja `SharedState`.
-5. Zapis na fizyczne piny i aktualizacja actuatorów.
+## Logika pracy sieci
 
-### Lokalna state machine
+- przy starcie firmware probuje polaczyc `STA` przez okolo `6 s`
+- przy niepowodzeniu przechodzi do `AP`
+- panel WWW dziala zarowno w `STA`, jak i `AP`
+- logi i status sa odswiezane przez SSE na `GET /api/events`
 
-OLED UI działa jako osobna state machine z ekranami:
+## Power management
 
-- `HOME`,
-- `MENU`,
-- harmonogramy,
-- logi,
-- `ACCESS_POINT`,
-- `BLUETOOTH`,
-- `TESTS`,
-- `FEEDING`.
+Wejscie w light sleep wymaga jednoczesnie:
 
-To nie jest główny model domenowy, ale interfejs lokalny urządzenia.
+- bezczynnosci powyzej progu nocnego
+- braku aktywnego OTA
+- braku aktywnego `AP`
+- braku service mode i synchronizacji czasu
+- wylaczonego `STA`
+- braku aktywnego karmienia
+- wylaczonych wyjsc swiatla i filtra
 
-## Fail-safe i edge case'y
+Jesli warunki do light sleep nie sa spelnione, firmware moze wygasic sam OLED i pozostac w `MODE_LOW_POWER`.
 
-### Temperatura
-
-- trzy nieprawidłowe próbki z rzędu oznaczają błąd sensora,
-- próbka `85.0 C` jest traktowana jako artefakt startowy,
-- odcięcie grzałki następuje po przekroczeniu `target + hysteresis`,
-- ponowne podłączenie następuje po zejściu do `target`.
-
-### Harmonogram filtra
-
-Jeżeli `filter start == filter end`, firmware traktuje to jako błędne okno i stosuje fallback do rytmu dnia.
-
-### RTC
-
-- przy `lostPower()` najpierw zachowywany jest czas z układu, jeśli wygląda wiarygodnie,
-- w przeciwnym razie firmware próbuje odzyskać epoch z backupu `NVS`,
-- brak wiarygodnego czasu kończy się fallbackiem do wartości domyślnej.
-
-### OTA
-
-- podczas OTA firmware przechodzi w stan ograniczony,
-- wyjścia są wymuszane do bezpiecznych wartości,
-- normalny runtime jest wstrzymany do końca transferu.
-
-### Power management
-
-Wejście w light sleep wymaga spełnienia wszystkich warunków:
-
-- brak aktywnego OTA,
-- brak aktywnego `AP`,
-- wyłączone radio `STA`,
-- brak advertisingu i połączenia BLE,
-- brak aktywnego karmienia,
-- bezczynność powyżej progu nocnego.
-
-## Piny i hardware interface
-
-Aktualne mapowanie z kodu:
+## Piny
 
 | Funkcja | GPIO |
 | --- | --- |
@@ -233,23 +147,8 @@ Aktualne mapowanie z kodu:
 | `BAT_EN` | `10` |
 | `FEEDER_SENSOR` | `12` |
 
-## Design Decisions
+## Ograniczenia
 
-- `SystemController` jest pojedynczym punktem koordynacji, aby ograniczyć rozproszenie logiki krytycznej.
-- `SharedState` stosuje model snapshot zamiast bezpośredniego współdzielenia obiektów między taskami.
-- `ConfigValidation` jest jedyną akceptowaną ścieżką walidacji runtime patchy z UI, HTTP i BLE.
-- OTA blokuje sterowanie runtime, ponieważ bezpieczeństwo spójności flash ma wyższy priorytet niż ciągłość działania wyjść.
-
-## Known Limitations
-
-- `AkwariumV4.ino` pozostaje dużym plikiem łączącym state machine, obsługę wejścia i część integracji runtime.
-- `heaterMode=Off` nie działa jak klasyczny tryb wyłączenia grzałki; obecna implementacja zachowuje logikę bezpiecznika sprzętowego.
-- `SharedState::minTempEpoch` nie jest aktualnie wypełniany pełnym timestampem minimalnej temperatury.
-- Interfejsy WWW w `firmware/Interfaces/` są archiwalne i nie stanowią aktywnego source of truth.
-
-## Future Improvements
-
-- Rozbicie `AkwariumV4.ino` na dedykowane moduły UI i input controller.
-- Dodanie testów jednostkowych dla `ConfigValidation` i `ScheduleManager`.
-- Formalizacja hardware abstraction layer dla wyjść przekaźnikowych i sensorów.
-- Ujednolicenie semantyki grzałki pomiędzy firmware, UI i dokumentacją domenową.
+- `AkwariumV4.ino` nadal jest duzym plikiem laczacym UI i czesc integracji runtime
+- `heaterMode=Off` dziala bardziej jak bezpiecznik sprzetowy niz klasyczny termostat
+- `firmware/Interfaces/` zawiera archiwalne artefakty WWW i nie jest source of truth

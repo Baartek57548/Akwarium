@@ -1,17 +1,17 @@
 # Firmware
 
-Ten katalog zawiera projekt firmware dla `ESP32-S3` budowany przez `PlatformIO`.
+Ten katalog zawiera firmware dla `ESP32-S3` budowane przez `PlatformIO`.
 
 ## Co tu jest
 
-- `platformio.ini` - właściwa konfiguracja builda firmware,
-- `src/` - kod runtime urządzenia,
-- `boards/` - definicja płytki,
-- `scripts/` - hooki build metadata,
-- `Interfaces/` - archiwalne paczki interfejsów WWW.
+- `platformio.ini` - glowna konfiguracja builda
+- `src/` - runtime urzadzenia
+- `web/` - zrodla panelu WWW
+- `scripts/` - hooki build metadata i generowania assetow WWW
+- `boards/` - definicja plytki
+- `Interfaces/` - archiwalne paczki interfejsow WWW
 
-## Gdzie czytać dalej
+## Gdzie czytac dalej
 
 - [Dokumentacja firmware](../docs/firmware.md)
-- [Dokumentacja komunikacji](../docs/communication.md)
 - [Setup](../docs/setup.md)

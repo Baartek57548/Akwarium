@@ -1,7 +1,6 @@
 #include "SystemController.h"
 #include "AkwariumWifi.h"
 #include "AquariumAnimation.h"
-#include "BleManager.h"
 #include "ConfigManager.h"
 #include "LogManager.h"
 #include "OtaManager.h"
@@ -61,7 +60,6 @@ static void logWakeupCauseOnBoot();
 static bool isNightTimeNow();
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now);
 static bool configureLightSleepWakeup();
-static void syncBleWithOledState(bool oledShouldStayOn);
 static bool isUnexpectedResetReason(esp_reset_reason_t reason);
 
 static const unsigned long LIGHT_SLEEP_IDLE_MS = 300000UL;
@@ -92,22 +90,6 @@ static TestOverridesState getTestOverridesSnapshot() {
   TestOverridesState snapshot = testOverrides;
   portEXIT_CRITICAL(&testOverrideMux);
   return snapshot;
-}
-
-static void syncBleWithOledState(bool oledShouldStayOn) {
-  const bool bleConnected = BleManager::isConnected();
-  const bool bleAdvertising = BleManager::isAdvertising();
-
-  // BLE jest sterowane przez UI, nie przez sam aktywny OLED.
-  // Tutaj jedynie dopinamy awaryjne zatrzymanie reklamowania przy wygaszeniu
-  // ekranu lub przejsciu do snu, o ile klient nie jest podlaczony.
-  if (bleConnected) {
-    return;
-  }
-
-  if (!oledShouldStayOn && bleAdvertising) {
-    BleManager::stop();
-  }
 }
 
 TemperatureController
@@ -817,9 +799,6 @@ bool SystemController::canEnterLightSleep(unsigned long nowMs,
   if (!AkwariumWifi::isStaOff()) {
     return false;
   }
-  if (BleManager::isAdvertising() || BleManager::isConnected()) {
-    return false;
-  }
   if (SystemController::isFeedingNow()) {
     return false;
   }
@@ -1067,11 +1046,10 @@ void SystemController::handlePowerManagement(U8G2 *display,
   unsigned long lastAction = PowerManager::getLastActivityTime();
   const Config cfg = ConfigManager::getCopy();
   const SharedStateData snap = SharedState::getSnapshot();
-  const bool bleConnected = BleManager::isConnected();
 
   auto handleOnlyOledTimeout = [&](unsigned long timeoutMs) {
-    const bool shouldKeepOledOn = bleConnected || cfg.alwaysScreenOn ||
-                                  ((nowMs - lastAction) <= timeoutMs);
+    const bool shouldKeepOledOn =
+        cfg.alwaysScreenOn || ((nowMs - lastAction) <= timeoutMs);
 
     if (!shouldKeepOledOn) {
       if (PowerManager::getCurrentMode() == MODE_ACTIVE) {
@@ -1080,7 +1058,6 @@ void SystemController::handlePowerManagement(U8G2 *display,
       if (display) {
         display->setPowerSave(1);
       }
-      syncBleWithOledState(false);
     } else {
       if (PowerManager::getCurrentMode() != MODE_ACTIVE) {
         PowerManager::setMode(MODE_ACTIVE);
@@ -1090,7 +1067,6 @@ void SystemController::handlePowerManagement(U8G2 *display,
       if (display) {
         display->setPowerSave(0);
       }
-      syncBleWithOledState(true);
     }
   };
 
@@ -1112,13 +1088,12 @@ void SystemController::handlePowerManagement(U8G2 *display,
   }
 
   if (!canEnterLightSleep(nowMs, lastAction)) {
-    bool keepInteractive = bleConnected || cfg.alwaysScreenOn ||
-                           ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
+    bool keepInteractive =
+        cfg.alwaysScreenOn || ((nowMs - lastAction) < NIGHT_INTERACTION_WINDOW_MS);
     if (display) {
       display->setPowerSave(keepInteractive ? 0 : 1);
     }
     PowerManager::setMode(keepInteractive ? MODE_ACTIVE : MODE_LOW_POWER);
-    syncBleWithOledState(keepInteractive);
     return;
   }
 
@@ -1128,7 +1103,6 @@ void SystemController::handlePowerManagement(U8G2 *display,
     display->setPowerSave(1);
   }
 
-  syncBleWithOledState(false);
   PowerManager::setMode(MODE_LIGHT_SLEEP);
   enterNightLightSleep();
 }

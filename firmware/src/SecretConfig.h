@@ -23,7 +23,3 @@
 #ifndef AP_PASSWORD
 #error "Missing AP_PASSWORD. Define it in arduino_secrets.h."
 #endif
-
-#ifndef SECRET_BLE_PASSKEY
-#error "Missing SECRET_BLE_PASSKEY. Define it in arduino_secrets.h."
-#endif

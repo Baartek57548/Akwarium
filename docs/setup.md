@@ -2,23 +2,19 @@
 
 ## Zakres
 
-Ten dokument opisuje wymagania środowiskowe oraz uruchamianie głównych części systemu: firmware, emulatorów i aplikacji UI.
+Ten dokument opisuje przygotowanie srodowiska i uruchamianie firmware.
 
-## Wymagania środowiskowe
+## Wymagania
 
 | Obszar | Wymaganie |
 | --- | --- |
-| Firmware | `Python 3`, `PlatformIO Core`, sterowniki USB dla płytki |
-| MAUI | `.NET 10 SDK`, workload `MAUI`, narzędzia Android i/lub Windows |
-| Emulator funkcjonalny | `.NET 10 SDK`, Windows |
-| Emulator UI OLED | `CMake`, kompilator `MSVC`, `.NET 8 SDK`, Windows |
-| BLE | adapter Bluetooth LE przy pracy z urządzeniem fizycznym |
+| Firmware | `Python 3`, `PlatformIO Core`, sterownik USB dla plytki |
+| Urzadzenie | `ESP32-S3`, OLED, RTC, DS18B20, przelazniki, serwo |
+| Siec | dane `STA` i `AP` w `arduino_secrets.h` |
 
-## Przygotowanie repozytorium
+## Przygotowanie secrets
 
-### 1. Firmware secrets
-
-Skopiuj plik:
+Skopiuj:
 
 ```text
 firmware/src/arduino_secrets.template.h
@@ -30,17 +26,16 @@ do:
 firmware/src/arduino_secrets.h
 ```
 
-Uzupełnij:
+Uzupelnij:
 
 - `SECRET_SSID`
 - `SECRET_PASS`
 - `AP_SSID`
 - `AP_PASSWORD`
-- `SECRET_BLE_PASSKEY`
 
-## Firmware
+## Build i upload
 
-Root `platformio.ini` deleguje build do `firmware/platformio.ini`, więc komendy można wykonywać z katalogu repozytorium.
+Root `platformio.ini` deleguje do `firmware/platformio.ini`, wiec komendy mozna uruchamiac z katalogu repozytorium.
 
 Build:
 
@@ -60,96 +55,29 @@ Monitor:
 python -m platformio device monitor -b 115200
 ```
 
-## Emulator funkcjonalny
-
-Uruchomienie:
+Mozesz tez pracowac bezposrednio z katalogu `firmware/`:
 
 ```powershell
-dotnet run --project apps/Aquarium.Emulator/Aquarium.Emulator.csproj
+python -m platformio run -d firmware
 ```
 
-Po starcie emulator wystawia lokalne API:
+## Panel WWW
 
-```text
-http://127.0.0.1:5080/
-```
+- zrodla panelu znajduja sie w `firmware/web/`
+- assety sa pakowane do `WebAssets.h` podczas builda
+- po nieudanej probie `STA` firmware przechodzi do `AP`
+- sesja `AP` zamyka sie automatycznie po `90 s` bez klientow
 
-## Aplikacja MAUI
-
-### Windows
-
-```powershell
-dotnet run --project mobile-app/AquariumController.Mobile.csproj -f net10.0-windows10.0.19041.0
-```
-
-### Android
-
-```powershell
-dotnet build mobile-app/AquariumController.Mobile.csproj -f net10.0-android
-```
-
-Jeżeli chcesz używać emulatora zamiast fizycznego urządzenia, przełącz tryb połączenia w UI na `Emulator`.
-
-## Emulator UI OLED
-
-### Build biblioteki natywnej
-
-```powershell
-cmake -S tools/simulator/FirmwareUI -B tools/simulator/FirmwareUI/build -A x64
-cmake --build tools/simulator/FirmwareUI/build --config Release
-```
-
-### Uruchomienie hosta WinForms
-
-```powershell
-dotnet run --project tools/simulator/Aquarium.ControllerEmulator/Aquarium.ControllerEmulator.csproj
-```
-
-## Rozwiązanie .NET
-
-Główne rozwiązanie repozytorium:
-
-```text
-AquariumController.slnx
-```
-
-Build całej części `.NET`:
-
-```powershell
-dotnet build AquariumController.slnx
-```
-
-## Najczęstsze problemy
+## Najczestsze problemy
 
 ### `PlatformIO` nie znajduje konfiguracji
 
-Uruchamiaj komendy z katalogu repozytorium lub `firmware/`. Root `platformio.ini` jest kompatybilnym shimem do fizycznej konfiguracji firmware.
+Uruchamiaj komendy z katalogu repozytorium albo `firmware/`.
 
-### `FirmwareUI.dll` nie ładuje się
+### Firmware nie laczy sie z `STA`
 
-Sprawdź, czy istnieje:
+Sprawdz dane w `arduino_secrets.h` i monitor szeregowy. Po okolo `6 s` firmware powinno przejsc do `AP`.
 
-```text
-tools/simulator/FirmwareUI/build/Release/FirmwareUI.dll
-```
+### Panel WWW nie odswieza danych
 
-### MAUI nie buduje targetu Windows
-
-Sprawdź instalację `.NET 10 SDK`, workload `MAUI` i komponentów Windows/Android wymaganych przez środowisko.
-
-## Design Decisions
-
-- Root repo utrzymuje kompatybilny `platformio.ini`, aby nie wymuszać pracy z podkatalogu `firmware/`.
-- OTA metadata są weryfikowane po stronie UI jeszcze przed rozpoczęciem transferu.
-- Ścieżki uruchomieniowe są rozdzielone według rzeczywistych przypadków użycia: firmware, emulator funkcjonalny, emulator OLED, MAUI.
-
-## Known Limitations
-
-- Konfiguracja środowiska dla MAUI i natywnego emulatora OLED jest Windows-centric.
-- Repozytorium nie dostarcza jeszcze jednego, automatycznego bootstrap script dla wszystkich narzędzi.
-
-## Future Improvements
-
-- Skrypt bootstrap dla środowiska developerskiego.
-- Zautomatyzowana walidacja wymaganych SDK i workloadów.
-- Kontener lub preset developerski dla części .NET i narzędzi pomocniczych.
+Sprawdz, czy przegladarka ma polaczenie z `GET /api/events` i czy urzadzenie pozostaje w `STA` albo `AP`.
