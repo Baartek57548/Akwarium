@@ -9,6 +9,7 @@
 #include "PowerManager.h"
 #include "SharedState.h"
 #include "SystemController.h"
+#include "WebApiProtocol.h"
 
 #include <ArduinoJson.h>
 #include <Arduino.h>
@@ -80,119 +81,6 @@ static bool parseBoolArg(const String &raw, bool &out) {
   return false;
 }
 
-static String buildStatusJson() {
-  const SharedStateData snap = SharedState::getSnapshot();
-  const Config cfg = ConfigManager::getCopy();
-
-  float voltage = PowerManager::getBatteryVoltage();
-  if (isnan(voltage)) {
-    voltage = 0.0f;
-  }
-
-  DynamicJsonDocument doc(5120);
-
-  JsonObject temperature = doc.createNestedObject("temperature");
-  temperature["current"] = isnan(snap.temperature) ? -99.9f : snap.temperature;
-  temperature["target"] = cfg.targetTemp;
-  temperature["threshold"] = cfg.targetTemp + cfg.tempHysteresis;
-  temperature["heaterMode"] = cfg.heaterMode;
-  temperature["hysteresis"] = cfg.tempHysteresis;
-  temperature["min"] = isnan(snap.minTemp) ? -99.9f : snap.minTemp;
-  temperature["minTimeEpoch"] = snap.minTempEpoch;
-  temperature["historyIntervalMinutes"] = 10;
-  temperature["historyCapacity"] = TEMP_HISTORY_SIZE;
-  JsonArray history = temperature.createNestedArray("history");
-  for (uint8_t i = 0; i < snap.temperatureHistoryCount; ++i) {
-    const TemperatureHistoryEntry &entry = snap.temperatureHistory[i];
-    if (isnan(entry.value)) {
-      continue;
-    }
-    JsonObject item = history.createNestedObject();
-    item["value"] = entry.value;
-    item["epoch"] = entry.epoch;
-  }
-
-  JsonObject battery = doc.createNestedObject("battery");
-  battery["voltage"] = voltage;
-  battery["percent"] = PowerManager::getBatteryPercent();
-
-  JsonObject relays = doc.createNestedObject("relays");
-  relays["light"] = snap.isLightOn;
-  relays["pump"] = snap.isFilterOn;
-  relays["heater"] = snap.isHeaterOn;
-  relays["aerationPercent"] = snap.aerationPercent;
-
-  JsonObject schedule = doc.createNestedObject("schedule");
-  schedule["lightMode"] = cfg.lightMode;
-  schedule["dayStartHour"] = cfg.dayStartHour;
-  schedule["dayStartMin"] = cfg.dayStartMinute;
-  schedule["dayEndHour"] = cfg.dayEndHour;
-  schedule["dayEndMin"] = cfg.dayEndMinute;
-  schedule["airMode"] = cfg.aerationMode;
-  schedule["airStartHour"] = cfg.aerationHourOn;
-  schedule["airStartMin"] = cfg.aerationMinuteOn;
-  schedule["airEndHour"] = cfg.aerationHourOff;
-  schedule["airEndMin"] = cfg.aerationMinuteOff;
-  schedule["filterMode"] = cfg.filterMode;
-  schedule["filterStartHour"] = cfg.filterHourOn;
-  schedule["filterStartMin"] = cfg.filterMinuteOn;
-  schedule["filterEndHour"] = cfg.filterHourOff;
-  schedule["filterEndMin"] = cfg.filterMinuteOff;
-  schedule["heaterMode"] = cfg.heaterMode;
-  schedule["servoPreOffMins"] = cfg.servoPreOffMins;
-
-  JsonObject feeding = doc.createNestedObject("feeding");
-  feeding["hour"] = cfg.feedHour;
-  feeding["minute"] = cfg.feedMinute;
-  feeding["freq"] = cfg.feedMode;
-  feeding["lastFeedEpoch"] = cfg.lastFeedEpoch;
-  feeding["active"] = SystemController::isFeedingNow();
-
-  JsonObject network = doc.createNestedObject("network");
-  network["ip"] = AkwariumWifi::getIP();
-  network["apMode"] = AkwariumWifi::getIsAPMode();
-  network["ssid"] = AkwariumWifi::getAPName();
-  network["clients"] = AkwariumWifi::getConnectedClients();
-  network["staConnected"] = AkwariumWifi::isStaConnected();
-  network["staConnecting"] = AkwariumWifi::isStaConnecting();
-  network["serviceMode"] = AkwariumWifi::isServiceModeActive();
-  network["staSsid"] = AkwariumWifi::getStaSsid();
-  network["configuredStaSsid"] = AkwariumWifi::getConfiguredStaSsid();
-  network["configuredApSsid"] = AkwariumWifi::getConfiguredAPName();
-  network["staLastConnectedEpoch"] = AkwariumWifi::getStaLastConnectedEpoch();
-  network["timeSyncInProgress"] = AkwariumWifi::isTimeSyncInProgress();
-  network["lastTimeSyncEpoch"] = AkwariumWifi::getLastTimeSyncEpoch();
-  network["lastTimeSyncOk"] = AkwariumWifi::wasLastTimeSyncSuccessful();
-  network["lastTimeSyncStatus"] = AkwariumWifi::getLastTimeSyncStatus();
-  const bool bleAdvertising = BleManager::isAdvertising();
-  const bool bleConnected = BleManager::isConnected();
-  network["bleAdvertising"] = bleAdvertising;
-  network["bleConnected"] = bleConnected;
-  network["bleActive"] = bleAdvertising || bleConnected;
-
-  JsonObject clock = doc.createNestedObject("clock");
-  clock["hour"] = snap.hour;
-  clock["minute"] = snap.minute;
-  clock["second"] = snap.second;
-  clock["day"] = snap.day;
-  clock["month"] = snap.month;
-  clock["year"] = snap.year;
-
-  const FirmwareRuntimeInfo firmwareInfo = FirmwareInfo::getRuntimeInfo();
-  JsonObject firmware = doc.createNestedObject("firmware");
-  firmware["name"] = firmwareInfo.firmwareName;
-  firmware["version"] = firmwareInfo.firmwareVersion;
-  firmware["buildRef"] = firmwareInfo.buildRef;
-  firmware["buildDate"] = firmwareInfo.buildDate;
-  firmware["buildTime"] = firmwareInfo.buildTime;
-  firmware["idfVersion"] = firmwareInfo.idfVersion;
-
-  String json;
-  json.reserve(3584);
-  serializeJson(doc, json);
-  return json;
-}
-
 static bool parseModeArg(WebServer &server, const char *name,
                          bool &hasValue, int &outValue) {
   hasValue = false;
@@ -211,8 +99,10 @@ static bool parseModeArg(WebServer &server, const char *name,
 }
 
 static void sendValidationError(WebServer &server, const char *code) {
-  server.send(400, "text/plain",
-              (code != nullptr && code[0] != '\0') ? code : "invalid_values");
+  sendWebActionResponse(server, 400, false,
+                        (code != nullptr && code[0] != '\0')
+                            ? code
+                            : "invalid_values");
 }
 
 } // namespace
@@ -224,18 +114,17 @@ void setupApiEndpoints() {
 
   server.on("/api/status", HTTP_GET, [&server]() {
     server.sendHeader("Connection", "close");
-    server.send(200, "application/json", buildStatusJson());
+    server.send(200, "application/json", buildWebStatusJson());
   });
 
   server.on("/api/logs", HTTP_GET, [&server]() {
-    String jsonLog = LogManager::getLogsAsJson();
     server.sendHeader("Connection", "close");
-    server.send(200, "application/json", jsonLog);
+    server.send(200, "application/json", buildWebLogsJson());
   });
 
   server.on("/api/action", HTTP_POST, [&server]() {
     if (!server.hasArg("action")) {
-      server.send(400, "text/plain", "missing_action");
+      sendWebActionResponse(server, 400, false, "missing_action");
       return;
     }
 
@@ -244,19 +133,19 @@ void setupApiEndpoints() {
 
     if (action == "feed_now") {
       SystemController::feedNow();
-      server.send(200, "text/plain", "OK");
+      sendWebActionResponse(server, 200, true, "feed_now");
       return;
     }
 
     if (action == "set_light" || action == "set_filter") {
       if (!server.hasArg("state")) {
-        server.send(400, "text/plain", "missing_state");
+        sendWebActionResponse(server, 400, false, "missing_state");
         return;
       }
 
       bool state = false;
       if (!parseBoolArg(server.arg("state"), state)) {
-        server.send(400, "text/plain", "invalid_state");
+        sendWebActionResponse(server, 400, false, "invalid_state");
         return;
       }
 
@@ -288,47 +177,47 @@ void setupApiEndpoints() {
                  action.c_str(), static_cast<unsigned>(saveResult.bytesWritten),
                  static_cast<unsigned>(saveResult.bytesReadBack));
         LogManager::logError(msg);
-        server.send(500, "text/plain", "save_failed");
+        sendWebActionResponse(server, 500, false, "save_failed");
         return;
       }
 
       requestUiSaveConfirmationAnimation();
-      server.send(200, "text/plain", "OK");
+      sendWebActionResponse(server, 200, true, "settings_saved");
       return;
     }
 
     if (action == "set_servo") {
       if (!server.hasArg("angle")) {
-        server.send(400, "text/plain", "missing_angle");
+        sendWebActionResponse(server, 400, false, "missing_angle");
         return;
       }
 
       long parsedAngle = 0;
       if (!parseLongStrict(server.arg("angle"), parsedAngle)) {
-        server.send(400, "text/plain", "invalid_angle");
+        sendWebActionResponse(server, 400, false, "invalid_angle");
         return;
       }
 
       int ang = constrain(static_cast<int>(parsedAngle), 0, 90);
       SystemController::setManualServo(ang);
-      server.send(200, "text/plain", "OK");
+      sendWebActionResponse(server, 200, true, "set_servo");
       return;
     }
 
     if (action == "clear_servo") {
       SystemController::clearManualServo();
-      server.send(200, "text/plain", "OK");
+      sendWebActionResponse(server, 200, true, "clear_servo");
       return;
     }
 
     if (action == "clear_critical_logs") {
       LogManager::clearCriticalLogs();
-      server.send(200, "text/plain", "OK");
+      sendWebActionResponse(server, 200, true, "clear_critical_logs");
       return;
     }
 
     if (action == "restart_device") {
-      server.send(200, "text/plain", "OK");
+      sendWebActionResponse(server, 200, true, "restart_device");
       delay(150);
       ESP.restart();
       return;
@@ -337,7 +226,7 @@ void setupApiEndpoints() {
     if (action == "factory_reset") {
       ConfigManager::resetToDefault();
       LogManager::clearCriticalLogs();
-      server.send(200, "text/plain", "OK");
+      sendWebActionResponse(server, 200, true, "factory_reset");
       delay(200);
       ESP.restart();
       return;
@@ -395,7 +284,7 @@ void setupApiEndpoints() {
       }
 
       if (!anyField) {
-        server.send(400, "text/plain", "empty_settings");
+        sendWebActionResponse(server, 400, false, "empty_settings");
         return;
       }
 
@@ -408,19 +297,19 @@ void setupApiEndpoints() {
                  static_cast<unsigned>(saveResult.bytesReadBack),
                  static_cast<unsigned>(saveResult.status));
         LogManager::logError(msg);
-        server.send(500, "text/plain", "save_failed");
+        sendWebActionResponse(server, 500, false, "save_failed");
         return;
       }
 
       LogManager::logInfo(
           "Ustawienia WiFi zapisane. Nowe SSID/hasla beda uzyte w kolejnej sesji WiFi.");
       requestUiSaveConfirmationAnimation();
-      server.send(200, "text/plain", "OK");
+      sendWebActionResponse(server, 200, true, "settings_saved");
       return;
     }
 
     if (action != "save_schedule") {
-      server.send(400, "text/plain", "unknown_action");
+      sendWebActionResponse(server, 400, false, "unknown_action");
       return;
     }
 
@@ -558,14 +447,15 @@ void setupApiEndpoints() {
                static_cast<unsigned>(saveResult.bytesReadBack),
                static_cast<unsigned>(saveResult.status));
       LogManager::logError(msg);
-      server.send(500, "text/plain", "save_failed");
+      sendWebActionResponse(server, 500, false, "save_failed");
       return;
     }
 
     requestUiSaveConfirmationAnimation();
-    server.send(200, "text/plain",
-                (parseInvalidFields > 0 || validation.hasInvalidFields())
-                    ? "OK_PARTIAL"
-                    : "OK");
+    sendWebActionResponse(server, 200, true,
+                          (parseInvalidFields > 0 ||
+                           validation.hasInvalidFields())
+                              ? "settings_partial"
+                              : "settings_saved");
   });
 }

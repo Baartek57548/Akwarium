@@ -6,5 +6,6 @@
     <LangVersion>preview</LangVersion>
     <AssemblyName>Aquarium.Models</AssemblyName>
     <RootNamespace>Aquarium.Models</RootNamespace>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>

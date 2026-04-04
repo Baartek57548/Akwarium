@@ -1547,7 +1547,7 @@ void BleManager::update() {
       break;
     case PendingBleCommand::Type::CLEAR_LOGS:
       LogManager::clearCriticalLogs();
-      publishResult("ack", "clear_logs");
+      publishResult("ack", "clear_critical_logs");
       Serial.println("[BLE] Deferred: clearCriticalLogs executed.");
       break;
     default:
