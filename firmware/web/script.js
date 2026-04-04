@@ -163,6 +163,12 @@ const LOCAL_ICON_SVGS = {
     'fa-check-circle': makeLocalIcon(`
         <circle cx="12" cy="12" r="9" fill="none"/>
         <path fill="none" d="m8.5 12.5 2.2 2.2 4.8-5.2"/>
+    `),
+    'fa-bars': makeLocalIcon(`
+        <path fill="none" d="M4 7h16M4 12h16M4 17h16"/>
+    `),
+    'fa-xmark': makeLocalIcon(`
+        <path fill="none" d="M6 6l12 12M18 6 6 18"/>
     `)
 };
 
@@ -397,12 +403,35 @@ function setBackendState(isConnected) {
     }
 }
 
+function syncLogTabButtons() {
+    const currentBtn = document.getElementById('logs-current-btn');
+    const criticalBtn = document.getElementById('logs-critical-btn');
+    const currentActive = activeLogType === 'normal';
+    const criticalActive = activeLogType === 'critical';
+
+    currentBtn?.classList.toggle('active', currentActive);
+    criticalBtn?.classList.toggle('active', criticalActive);
+
+    if (currentBtn) {
+        currentBtn.style.background = currentActive ? 'rgba(6, 182, 212, 0.1)' : 'transparent';
+        currentBtn.style.borderColor = currentActive ? 'rgba(6, 182, 212, 0.4)' : 'transparent';
+        currentBtn.style.color = currentActive ? 'var(--accent-cyan)' : 'var(--text-main)';
+    }
+
+    if (criticalBtn) {
+        criticalBtn.style.background = criticalActive ? 'rgba(239, 68, 68, 0.16)' : 'transparent';
+        criticalBtn.style.borderColor = criticalActive ? 'rgba(239, 68, 68, 0.34)' : 'transparent';
+        criticalBtn.style.color = criticalActive ? '#fca5a5' : 'var(--text-main)';
+    }
+}
+
 function createLogRow(level, text) {
+    const levelClass = level === 'CRITICAL' ? 'logs-level-critical' : 'logs-level-info';
     return `
-        <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 14px 20px; display: flex; align-items: center; font-size: 13px;">
-            <span style="color: ${level === 'CRITICAL' ? '#ef4444' : 'var(--accent-cyan)'}; font-weight: 600; width: 80px;">${level}</span>
-            <span style="color: var(--text-muted); width: 100px;">${new Date().toLocaleTimeString('pl-PL')}</span>
-            <span style="color: var(--text-main);">${text}</span>
+        <div class="logs-list-row">
+            <span class="logs-level ${levelClass}">${escapeHtml(level)}</span>
+            <span class="logs-time">${new Date().toLocaleTimeString('pl-PL')}</span>
+            <span class="logs-message">${escapeHtml(text)}</span>
         </div>`;
 }
 
@@ -412,6 +441,8 @@ function renderLogs() {
     const criticalCount = document.getElementById('critical-count');
     const searchInput = document.getElementById('logs-search');
     if (!list) return;
+
+    syncLogTabButtons();
 
     const query = (searchInput?.value || '').trim().toLowerCase();
     const source = activeLogType === 'critical' ? cachedLogs.critical : cachedLogs.normal;
@@ -1383,6 +1414,67 @@ function initScheduleTimeline() {
     });
 }
 
+function setMobileNavOpen(isOpen) {
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    const toggle = document.getElementById('mobile-nav-toggle');
+    const toggleLabel = document.getElementById('mobile-nav-toggle-label');
+    const toggleIcon = document.getElementById('mobile-nav-toggle-icon');
+    const open = Boolean(isOpen);
+
+    if (!sidebar || !backdrop || !toggle) {
+        return;
+    }
+
+    sidebar.classList.toggle('mobile-open', open);
+    backdrop.classList.toggle('visible', open);
+    backdrop.setAttribute('aria-hidden', open ? 'false' : 'true');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    document.body.classList.toggle('nav-open', open);
+
+    if (toggleLabel) {
+        toggleLabel.textContent = open ? 'Zamknij' : 'Menu';
+    }
+
+    if (toggleIcon) {
+        toggleIcon.className = open ? 'fa-solid fa-xmark' : 'fa-solid fa-bars';
+        renderLocalIcon(toggleIcon);
+    }
+}
+
+function initMobileNavigation() {
+    const toggle = document.getElementById('mobile-nav-toggle');
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+
+    if (!toggle || !sidebar) {
+        return;
+    }
+
+    toggle.addEventListener('click', () => {
+        const isOpen = sidebar.classList.contains('mobile-open');
+        setMobileNavOpen(!isOpen);
+    });
+
+    backdrop?.addEventListener('click', () => {
+        setMobileNavOpen(false);
+    });
+
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 960) {
+            setMobileNavOpen(false);
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            setMobileNavOpen(false);
+        }
+    });
+
+    setMobileNavOpen(false);
+}
+
 // Tab Switching Logic
 function initNavigation() {
     const navItems = document.querySelectorAll('.nav-item[data-target]');
@@ -1418,6 +1510,8 @@ function switchTab(tabId) {
     if(targetSection) {
         targetSection.classList.add('active');
     }
+
+    setMobileNavOpen(false);
 }
 
 // Feeder Logic
@@ -1582,6 +1676,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateClock();
     setInterval(updateClock, 1000);
     
+    initMobileNavigation();
     initNavigation();
     initOTA();
     initScheduleTimeline();
