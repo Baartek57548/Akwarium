@@ -539,17 +539,17 @@ void SystemController::updateDecisions() {
     if (cfg.heaterMode == static_cast<uint8_t>(HeaterMode::Off)) {
       if (!heaterModeOffIgnoredLogged) {
         LogManager::logWarn(
-            "Grzalka: heaterMode=Off zignorowany (aktywny tryb bezpiecznika awaryjnego).");
+            "Grzalka: heaterMode=Off aktywny, sterownik utrzymuje odciecie grzalki.");
         heaterModeOffIgnoredLogged = true;
       }
+      tempController.forceHeaterOff();
     } else {
       heaterModeOffIgnoredLogged = false;
-    }
-
-    tempController.setTargetTemperature(cfg.targetTemp);
-    tempController.setHysteresis(cfg.tempHysteresis);
-    if (!isnan(snap.temperature) && tempInvalidReadCount < 3) {
-      tempController.controlHeater(snap.temperature);
+      tempController.setTargetTemperature(cfg.targetTemp);
+      tempController.setHysteresis(cfg.tempHysteresis);
+      if (!isnan(snap.temperature) && tempInvalidReadCount < 3) {
+        tempController.controlHeater(snap.temperature);
+      }
     }
   }
 
@@ -670,14 +670,40 @@ void SystemController::update() {
   applyOutputs();
 }
 
-void SystemController::feedNow() {
-  Error err = feederController.startFeed(1500, true);
-  if (err == Error::NONE) {
-    LogManager::logInfo("Reczne karmienie uruchomione.");
+static void recordFeedTimestampIfAvailable() {
+  DateTime now = getCurrentDateTime();
+  const uint32_t epoch = static_cast<uint32_t>(now.unixtime());
+  if (epoch < 1700000000UL) {
+    return;
+  }
+
+  Config cfg = ConfigManager::getCopy();
+  cfg.lastFeedEpoch = epoch;
+  const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
+  if (!saveResult.ok) {
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+             "Blad zapisu czasu ostatniego karmienia (written=%u read=%u).",
+             static_cast<unsigned>(saveResult.bytesWritten),
+             static_cast<unsigned>(saveResult.bytesReadBack));
+    LogManager::logWarn(msg);
   }
 }
 
+Error SystemController::feedNow() {
+  Error err = feederController.startFeed(1500, true);
+  if (err == Error::NONE) {
+    recordFeedTimestampIfAvailable();
+    LogManager::logInfo("Reczne karmienie uruchomione.");
+  }
+  return err;
+}
+
 bool SystemController::isFeedingNow() { return feederController.isFeeding(); }
+
+Error SystemController::getLastFeederError() {
+  return feederController.getLastError();
+}
 
 void SystemController::setManualServo(int angle) {
   manualServoOverride = true;
@@ -777,32 +803,65 @@ static bool isNightTimeNow() {
 
 bool SystemController::canEnterLightSleep(unsigned long nowMs,
                                           unsigned long lastActionMs) {
+  return getLightSleepBlockers(nowMs, lastActionMs) == 0;
+}
+
+uint16_t SystemController::getLightSleepBlockers(unsigned long nowMs,
+                                                 unsigned long lastActionMs) {
+  uint16_t blockers = 0;
   if ((nowMs - lastActionMs) < LIGHT_SLEEP_IDLE_MS) {
-    return false;
+    blockers |= SLEEP_BLOCKER_IDLE_WINDOW;
   }
+
   const SharedStateData snap = SharedState::getSnapshot();
   if (snap.isLightOn || snap.isFilterOn) {
-    return false;
+    blockers |= SLEEP_BLOCKER_OUTPUTS_ACTIVE;
+  }
+  if (!isNightTimeNow()) {
+    blockers |= SLEEP_BLOCKER_NOT_NIGHT;
   }
   if (OtaManager::isOtaInProgress()) {
-    return false;
+    blockers |= SLEEP_BLOCKER_OTA;
   }
   if (AkwariumWifi::getIsAPMode()) {
-    return false;
+    blockers |= SLEEP_BLOCKER_AP_MODE;
   }
   if (AkwariumWifi::isServiceModeActive()) {
-    return false;
+    blockers |= SLEEP_BLOCKER_SERVICE_MODE;
   }
   if (AkwariumWifi::isTimeSyncInProgress()) {
-    return false;
+    blockers |= SLEEP_BLOCKER_TIME_SYNC;
   }
   if (!AkwariumWifi::isStaOff()) {
-    return false;
+    blockers |= SLEEP_BLOCKER_STA_ACTIVE;
   }
   if (SystemController::isFeedingNow()) {
-    return false;
+    blockers |= SLEEP_BLOCKER_FEEDING;
   }
-  return true;
+  return blockers;
+}
+
+uint16_t SystemController::getCurrentLightSleepBlockers() {
+  const unsigned long nowMs = millis();
+  const unsigned long lastActionMs = PowerManager::getLastActivityTime();
+  return getLightSleepBlockers(nowMs, lastActionMs);
+}
+
+const char *SystemController::powerModeToString(PowerMode mode) {
+  switch (mode) {
+  case MODE_ACTIVE:
+    return "active";
+  case MODE_LOW_POWER:
+    return "low_power";
+  case MODE_LIGHT_SLEEP:
+    return "light_sleep";
+  default:
+    return "unknown";
+  }
+}
+
+const char *SystemController::getPowerModeLabel() {
+  return powerModeToString(PowerManager::getCurrentMode());
 }
 
 static uint64_t computeSleepUsUntilDayStart(const DateTime &now) {

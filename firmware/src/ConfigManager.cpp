@@ -12,7 +12,7 @@ Config ConfigManager::sysConfig;
 static Preferences preferences;
 static const char *PREF_NAMESPACE = "Akwarium";
 static SemaphoreHandle_t configMutex = nullptr;
-static constexpr int PERSISTED_CRITICAL_LOG_SLOTS = 20;
+static constexpr int PERSISTED_CRITICAL_LOG_SLOTS = 32;
 
 static bool lockConfig(TickType_t timeoutTicks = portMAX_DELAY) {
   if (configMutex == nullptr) {

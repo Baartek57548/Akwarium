@@ -10,6 +10,7 @@
 #include "ConfigManager.h"
 #include "FirmwareInfo.h"
 #include "LogManager.h"
+#include "OledApp.h"
 #include "OtaManager.h"
 #include "PowerManager.h"
 #include "SharedState.h"
@@ -63,8 +64,6 @@ bool logsDeleteHoldTriggered = false;
 bool logsDeleteHoldActive = false;
 uint8_t logsDeleteHoldProgress = 0;
 uint16_t todayFeedingsCount = 0;
-unsigned long apIdleStartMs = 0;
-bool apAutoStopPending = false;
 uint8_t feedingsCounterDay = 1;
 uint8_t feedingsCounterMonth = 1;
 uint16_t feedingsCounterYear = 2025;
@@ -89,7 +88,6 @@ uint16_t feedingsCounterYear = 2025;
 #define MANUAL_FEED_SINGLE_GUARD_MS 140UL
 #define UI_IDLE_RETURN_HOME_MS 30000UL
 #define LOGS_DELETE_HOLD_MS 3000UL
-#define AP_IDLE_TIMEOUT_MS 90000UL
 
 static constexpr uint8_t BUTTON_MASK_UP = (1U << 0);
 static constexpr uint8_t BUTTON_MASK_SELECT = (1U << 1);
@@ -148,159 +146,6 @@ static void syncDailyFeedingsCounterDate() {
   }
 }
 
-static void resetApSessionIdleState() {
-  apIdleStartMs = 0;
-  apAutoStopPending = false;
-}
-
-static void maintainApSessionTimeout(unsigned long nowMs) {
-  const bool shouldTrackApSession =
-      (uiState == UiState::ACCESS_POINT) ||
-      (uiState == UiState::FEEDING &&
-       uiStateBeforeFeeding == UiState::ACCESS_POINT);
-
-  if (!shouldTrackApSession) {
-    resetApSessionIdleState();
-    return;
-  }
-
-  if (!AkwariumWifi::getIsAPMode()) {
-    resetApSessionIdleState();
-    return;
-  }
-
-  if (apAutoStopPending) {
-    return;
-  }
-
-  if (AkwariumWifi::getConnectedClients() > 0) {
-    apIdleStartMs = 0;
-    return;
-  }
-
-  if (apIdleStartMs == 0) {
-    apIdleStartMs = nowMs;
-    return;
-  }
-
-  if ((nowMs - apIdleStartMs) < AP_IDLE_TIMEOUT_MS) {
-    return;
-  }
-
-  AkwariumWifi::stopAP();
-  LogManager::logInfo("AP wylaczony automatycznie po 90 s bez klientow.");
-  apAutoStopPending = true;
-  apIdleStartMs = 0;
-
-  if (uiState == UiState::ACCESS_POINT) {
-    uiState = UiState::HOME;
-  }
-}
-
-struct PendingScheduleUpdate {
-  uint8_t lightMode;
-  uint8_t dayStartHour;
-  uint8_t dayStartMinute;
-  uint8_t dayEndHour;
-  uint8_t dayEndMinute;
-  uint8_t aerationMode;
-  uint8_t aerationHourOn;
-  uint8_t aerationMinuteOn;
-  uint8_t aerationHourOff;
-  uint8_t aerationMinuteOff;
-  uint8_t filterMode;
-  uint8_t filterHourOn;
-  uint8_t filterMinuteOn;
-  uint8_t filterHourOff;
-  uint8_t filterMinuteOff;
-  uint8_t heaterMode;
-  uint8_t feedHour;
-  uint8_t feedMinute;
-  uint8_t feedMode;
-  float targetTemp;
-};
-
-struct PendingTimeUpdate {
-  uint8_t hour;
-  uint8_t minute;
-  uint8_t second;
-  uint8_t day;
-  uint8_t month;
-  uint16_t year;
-};
-
-static portMUX_TYPE pendingUiMux = portMUX_INITIALIZER_UNLOCKED;
-static volatile bool hasPendingScheduleUpdate = false;
-static volatile bool hasPendingTimeUpdate = false;
-static volatile bool hasPendingSaveConfirmAnimation = false;
-static PendingScheduleUpdate pendingScheduleUpdate = {};
-static PendingTimeUpdate pendingTimeUpdate = {};
-static unsigned long suppressUiTimeSyncUntilMs = 0;
-
-static bool isUiTimeSyncSuppressed(unsigned long nowMs) {
-  if (suppressUiTimeSyncUntilMs == 0) {
-    return false;
-  }
-  return static_cast<long>(suppressUiTimeSyncUntilMs - nowMs) > 0;
-}
-
-static void suppressUiTimeSyncForManualFeed(unsigned long nowMs) {
-  // Krótkie okno ochronne: kombinacja 3 przycisków ma uruchamiać karmienie,
-  // bez jakiejkolwiek ingerencji w RTC.
-  suppressUiTimeSyncUntilMs = nowMs + 3000UL;
-
-  portENTER_CRITICAL(&pendingUiMux);
-  hasPendingTimeUpdate = false;
-  pendingTimeUpdate = {};
-  portEXIT_CRITICAL(&pendingUiMux);
-
-  if (animation) {
-    // Wyczyść ewentualne "pending" z edycji daty/czasu.
-    if (uiState == UiState::SETTINGS_DATETIME && animation->isEditingActive()) {
-      animation->cancelEditing();
-    }
-    animation->hasTimeChanged();
-  }
-}
-
-void requestUiSaveConfirmationAnimation() {
-  portENTER_CRITICAL(&pendingUiMux);
-  hasPendingSaveConfirmAnimation = true;
-  portEXIT_CRITICAL(&pendingUiMux);
-}
-
-static void consumePendingUiSaveConfirmationAnimation() {
-  bool shouldPlayAnimation = false;
-
-  portENTER_CRITICAL(&pendingUiMux);
-  shouldPlayAnimation = hasPendingSaveConfirmAnimation;
-  hasPendingSaveConfirmAnimation = false;
-  portEXIT_CRITICAL(&pendingUiMux);
-
-  if (shouldPlayAnimation && animation) {
-    animation->playConfirmAnimation();
-  }
-}
-
-static const char *configSaveStatusToString(ConfigSaveStatus status) {
-  switch (status) {
-  case ConfigSaveStatus::Ok:
-    return "ok";
-  case ConfigSaveStatus::OkVerifiedAfterWriteMismatch:
-    return "ok_verified_after_write_mismatch";
-  case ConfigSaveStatus::LockTimeout:
-    return "lock_timeout";
-  case ConfigSaveStatus::WriteFailed:
-    return "write_failed";
-  case ConfigSaveStatus::VerifyReadFailed:
-    return "verify_read_failed";
-  case ConfigSaveStatus::VerifyMismatch:
-    return "verify_mismatch";
-  default:
-    return "unknown";
-  }
-}
-
 static void logBootStage(const char *stage) {
   char line1[22] = {0};
   char line2[22] = {0};
@@ -327,92 +172,6 @@ static void logBootStage(const char *stage) {
   Serial.println(stage != nullptr ? stage : "stage");
   delay(1);
 }
-
-static void queueScheduleUpdateFromAnimation() {
-  if (!animation)
-    return;
-
-  PendingScheduleUpdate update = {};
-  update.lightMode = animation->getLightMode();
-  update.dayStartHour = animation->getScheduleHourOn();
-  update.dayStartMinute = animation->getScheduleMinOn();
-  update.dayEndHour = animation->getScheduleHourOff();
-  update.dayEndMinute = animation->getScheduleMinOff();
-
-  update.aerationMode = animation->getAerationMode();
-  update.aerationHourOn = animation->getAerationHourOn();
-  update.aerationMinuteOn = animation->getAerationMinOn();
-  update.aerationHourOff = animation->getAerationHourOff();
-  update.aerationMinuteOff = animation->getAerationMinOff();
-
-  update.filterMode = animation->getFilterMode();
-  update.filterHourOn = animation->getFilterHourOn();
-  update.filterMinuteOn = animation->getFilterMinOn();
-  update.filterHourOff = animation->getFilterHourOff();
-  update.filterMinuteOff = animation->getFilterMinOff();
-
-  update.heaterMode = animation->getHeaterMode();
-  update.targetTemp = animation->getTargetTemp();
-  update.feedHour = animation->getFeedHour();
-  update.feedMinute = animation->getFeedMinute();
-  update.feedMode = animation->getFeedFreq();
-
-  portENTER_CRITICAL(&pendingUiMux);
-  pendingScheduleUpdate = update;
-  hasPendingScheduleUpdate = true;
-  portEXIT_CRITICAL(&pendingUiMux);
-}
-
-static void queueTimeUpdateFromAnimation() {
-  if (!animation)
-    return;
-
-  PendingTimeUpdate update = {};
-  update.hour = animation->getNewHour();
-  update.minute = animation->getNewMinute();
-  update.second = animation->getNewSecond();
-  update.day = animation->getNewDay();
-  update.month = animation->getNewMonth();
-  update.year = animation->getNewYear();
-
-  portENTER_CRITICAL(&pendingUiMux);
-  pendingTimeUpdate = update;
-  hasPendingTimeUpdate = true;
-  portEXIT_CRITICAL(&pendingUiMux);
-}
-
-static void captureUiChanges() {
-  if (!animation)
-    return;
-
-  if (animation->hasScheduleChanged()) {
-    queueScheduleUpdateFromAnimation();
-  }
-
-  const bool timeChanged = animation->hasTimeChanged();
-  unsigned long nowMs = millis();
-  if (isUiTimeSyncSuppressed(nowMs)) {
-    if (timeChanged) {
-      LogManager::logWarn(
-          "Pominieto zapis czasu z UI podczas recznego karmienia.");
-    }
-    return;
-  }
-
-  if (!timeChanged) {
-    return;
-  }
-
-  // Accept RTC time changes only from Date/Time screen. Any pending flag seen
-  // in other views is treated as stale and must be dropped.
-  if (uiState == UiState::SETTINGS_DATETIME) {
-    queueTimeUpdateFromAnimation();
-  } else {
-    LogManager::logWarn(
-        "Odrzucono zalegla zmiane czasu poza ekranem daty/czasu.");
-  }
-}
-
 static void syncTestOverridesWithUiState() {
   if (!animation) {
     return;
@@ -425,93 +184,6 @@ static void syncTestOverridesWithUiState() {
         animation->getTestAeration());
   } else if (SystemController::isTestOverrideActive()) {
     SystemController::clearTestOverrides();
-  }
-}
-
-static void applyPendingUiChanges() {
-  PendingScheduleUpdate localSchedule = {};
-  PendingTimeUpdate localTime = {};
-  bool applySchedule = false;
-  bool applyTime = false;
-
-  portENTER_CRITICAL(&pendingUiMux);
-  if (hasPendingScheduleUpdate) {
-    localSchedule = pendingScheduleUpdate;
-    hasPendingScheduleUpdate = false;
-    applySchedule = true;
-  }
-  if (hasPendingTimeUpdate) {
-    localTime = pendingTimeUpdate;
-    hasPendingTimeUpdate = false;
-    applyTime = true;
-  }
-  portEXIT_CRITICAL(&pendingUiMux);
-
-  if (applySchedule) {
-    Config cfg = ConfigManager::getCopy();
-    cfg.lightMode = constrain(localSchedule.lightMode, 0, 2);
-    cfg.dayStartHour = constrain(localSchedule.dayStartHour, 0, 23);
-    cfg.dayStartMinute = constrain(localSchedule.dayStartMinute, 0, 59);
-    cfg.dayEndHour = constrain(localSchedule.dayEndHour, 0, 23);
-    cfg.dayEndMinute = constrain(localSchedule.dayEndMinute, 0, 59);
-
-    cfg.aerationMode = constrain(localSchedule.aerationMode, 0, 2);
-    cfg.aerationHourOn = constrain(localSchedule.aerationHourOn, 0, 23);
-    cfg.aerationMinuteOn = constrain(localSchedule.aerationMinuteOn, 0, 59);
-    cfg.aerationHourOff = constrain(localSchedule.aerationHourOff, 0, 23);
-    cfg.aerationMinuteOff = constrain(localSchedule.aerationMinuteOff, 0, 59);
-
-    cfg.filterMode = constrain(localSchedule.filterMode, 0, 2);
-    cfg.filterHourOn = constrain(localSchedule.filterHourOn, 0, 23);
-    cfg.filterMinuteOn = constrain(localSchedule.filterMinuteOn, 0, 59);
-    cfg.filterHourOff = constrain(localSchedule.filterHourOff, 0, 23);
-    cfg.filterMinuteOff = constrain(localSchedule.filterMinuteOff, 0, 59);
-
-    cfg.heaterMode = constrain(localSchedule.heaterMode, 0, 1);
-    cfg.targetTemp = constrain(localSchedule.targetTemp, 18.0f, 30.0f);
-    cfg.feedHour = constrain(localSchedule.feedHour, 0, 23);
-    cfg.feedMinute = constrain(localSchedule.feedMinute, 0, 59);
-    cfg.feedMode = constrain(localSchedule.feedMode, 0, 3);
-
-    const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
-    if (saveResult.ok) {
-      if (saveResult.sanitizedChanged) {
-        LogManager::logWarn(
-            "Harmonogram zapisany po korekcie wartosci do dozwolonego formatu.");
-      } else if (saveResult.status ==
-                 ConfigSaveStatus::OkVerifiedAfterWriteMismatch) {
-        LogManager::logWarn(
-            "Harmonogram zapisany i zweryfikowany mimo niejednoznacznej odpowiedzi storage.");
-      } else {
-        LogManager::logInfo("Zapisano harmonogramy.");
-      }
-    } else {
-      char msg[160];
-      snprintf(msg, sizeof(msg),
-               "Blad zapisu harmonogramow. status=%s written=%u read=%u",
-               configSaveStatusToString(saveResult.status),
-               static_cast<unsigned>(saveResult.bytesWritten),
-               static_cast<unsigned>(saveResult.bytesReadBack));
-      LogManager::logError(msg);
-    }
-  }
-
-  if (applyTime) {
-    uint8_t hour = constrain(localTime.hour, 0, 23);
-    uint8_t minute = constrain(localTime.minute, 0, 59);
-    uint8_t second = constrain(localTime.second, 0, 59);
-    uint8_t day = constrain(localTime.day, 1, 31);
-    uint8_t month = constrain(localTime.month, 1, 12);
-    uint16_t year = constrain(localTime.year, 2024, 2099);
-    DateTime newTime(year, month, day, hour, minute, second);
-    syncSystemTime(static_cast<uint32_t>(newTime.unixtime()));
-    char msg[96];
-    snprintf(msg, sizeof(msg),
-             "Menu Data/Czas: zapisano %04u-%02u-%02u %02u:%02u:%02u.", year,
-             static_cast<unsigned>(month), static_cast<unsigned>(day),
-             static_cast<unsigned>(hour), static_cast<unsigned>(minute),
-             static_cast<unsigned>(second));
-    LogManager::logInfo(msg);
   }
 }
 
@@ -533,6 +205,10 @@ void updateUiState() {
     lastUiInteractionMs = nowMs;
   }
   syncDailyFeedingsCounterDate();
+
+  if (uiState == UiState::ACCESS_POINT && !AkwariumWifi::getIsAPMode()) {
+    uiState = UiState::HOME;
+  }
 
   bool isUpPressed = (digitalRead(BUTTON_UP_PIN) == LOW);
   bool isSelectPressed = (digitalRead(BUTTON_SELECT_PIN) == LOW);
@@ -602,7 +278,7 @@ void updateUiState() {
   if (allButtonsPressed) {
     if (allButtonsHoldStartMs == 0) {
       allButtonsHoldStartMs = millis();
-      suppressUiTimeSyncForManualFeed(nowMs);
+      OledApp::suppressUiTimeSyncForManualFeed(nowMs, animation);
     } else if (!manualFeedComboTriggered &&
                (millis() - allButtonsHoldStartMs >= MANUAL_FEED_HOLD_MS)) {
       SystemController::feedNow();
@@ -662,8 +338,6 @@ void updateUiState() {
     uiState = UiState::HOME;
   }
 
-  maintainApSessionTimeout(nowMs);
-
   switch (uiState) {
   case UiState::HOME:
     if (selectJustPressed)
@@ -708,7 +382,6 @@ void updateUiState() {
     if (upJustPressed) {
       AkwariumWifi::stopAP();
       LogManager::logInfo("Sesja WiFi zakonczona z menu (wylaczono STA/AP).");
-      resetApSessionIdleState();
       uiState = UiState::MENU;
     }
     break;
@@ -960,7 +633,8 @@ void VideoTask(void *pvParameters) {
     if (animation != nullptr) {
       updateUiState();
       syncTestOverridesWithUiState();
-      captureUiChanges();
+      OledApp::captureUiChanges(animation,
+                                uiState == UiState::SETTINGS_DATETIME);
 
       bool isUp = (digitalRead(BUTTON_UP_PIN) == LOW);
       bool isSel = (digitalRead(BUTTON_SELECT_PIN) == LOW);
@@ -997,7 +671,7 @@ void VideoTask(void *pvParameters) {
       snprintf(feedTime, sizeof(feedTime), "%02u:%02u", cfg.feedHour,
                cfg.feedMinute);
       animation->setFeedingSchedule(feedTime, cfg.feedMode, 0);
-      consumePendingUiSaveConfirmationAnimation();
+      OledApp::consumePendingUiSaveConfirmationAnimation(animation);
 
       if (!animation->drawConfirmAnimationFrame()) {
         switch (uiState) {
@@ -1181,7 +855,7 @@ void setup() {
 }
 
 void loop() {
-  applyPendingUiChanges();
+  OledApp::applyPendingUiChanges();
 
   // Glowna petla obslugujaca sensory, decyzje i wykonawcze elementy na Core 1
   SystemController::update();

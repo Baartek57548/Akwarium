@@ -11,10 +11,12 @@ Po uproszczeniu repo testowanie skupia sie na firmware uruchamianym na fizycznym
 | `docs/manual_smoke_test.md` | checklista najwazniejszych scenariuszy runtime |
 | `tools/testing/` | miejsce na pomocnicze notatki, fixture'y i artefakty testowe |
 | `tools/testing/web-dashboard.spec.js` | automatyczny smoke test panelu WWW i mockowanego API |
+| `tools/testing/firmware-unit/` | hostowe testy jednostkowe logiki firmware z lokalnymi stubami Arduino |
 
 ## Co warto sprawdzac po zmianach
 
 - build firmware przez `PlatformIO`
+- testy jednostkowe `ConfigValidation`, `ScheduleManager`, `TemperatureController` i `FeederController`
 - panel WWW i endpointy HTTP
 - SSE na `GET /api/events`
 - `STA/AP` oraz fallback do `AP`
@@ -27,12 +29,13 @@ Po uproszczeniu repo testowanie skupia sie na firmware uruchamianym na fizycznym
 ## Zalecany workflow
 
 1. Zbudowac firmware.
-2. Dla zmian w panelu WWW uruchomic `npm run test:web-smoke` w `tools/testing/`.
-3. Wgrac firmware na urzadzenie.
-4. Przejsc `docs/manual_smoke_test.md`.
-5. Dla zmian w power management sprawdzic zachowanie po zmroku lub na wymuszonym czasie nocnym.
+2. Uruchomic `tools/testing/firmware-unit/run-tests.cmd`.
+3. Dla zmian w panelu WWW uruchomic `npm run test:web-smoke` w `tools/testing/`.
+4. Wgrac firmware na urzadzenie.
+5. Przejsc `docs/manual_smoke_test.md`.
+6. Dla zmian w power management sprawdzic zachowanie po zmroku lub na wymuszonym czasie nocnym.
 
 ## Ograniczenia
 
-- repo nie zawiera obecnie zautomatyzowanych testow jednostkowych firmware
-- najwazniejsza walidacja nadal odbywa sie na fizycznym urzadzeniu
+- testy hostowe pokrywaja logike, ale nie zastepuja walidacji na fizycznym ESP32
+- najwazniejsza walidacja runtime nadal odbywa sie na fizycznym urzadzeniu

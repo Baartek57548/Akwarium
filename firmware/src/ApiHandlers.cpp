@@ -2,6 +2,7 @@
 
 #include "AkwariumWifi.h"
 #include "ConfigManager.h"
+#include "ConfigService.h"
 #include "ConfigValidation.h"
 #include "FirmwareInfo.h"
 #include "LogManager.h"
@@ -104,6 +105,89 @@ static void sendValidationError(WebServer &server, const char *code) {
                             : "invalid_values");
 }
 
+static void sendConfigApplyResult(WebServer &server,
+                                  const ConfigApplyResult &applyResult,
+                                  bool forcePartial = false) {
+  if (!applyResult.ok) {
+    if (applyResult.status == ConfigApplyStatus::ValidationFailed) {
+      sendValidationError(server, applyResult.responseCode);
+      return;
+    }
+
+    sendWebActionResponse(server, 500, false, "save_failed");
+    return;
+  }
+
+  requestUiSaveConfirmationAnimation();
+  sendWebActionResponse(server, 200, true,
+                        forcePartial ? "settings_partial"
+                                     : applyResult.responseCode);
+}
+
+static const char *feederErrorCode(Error err) {
+  switch (err) {
+  case Error::NONE:
+    return "feed_started";
+  case Error::BUSY:
+    return "feed_busy";
+  case Error::SENSOR_NOT_OK:
+    return "feed_sensor_not_ok";
+  case Error::TIMEOUT:
+    return "feed_timeout";
+  default:
+    return "feed_failed";
+  }
+}
+
+static int feederErrorHttpStatus(Error err) {
+  switch (err) {
+  case Error::NONE:
+    return 200;
+  case Error::BUSY:
+    return 409;
+  case Error::SENSOR_NOT_OK:
+    return 422;
+  case Error::TIMEOUT:
+    return 504;
+  default:
+    return 500;
+  }
+}
+
+static const char *timeSyncCommandCode(TimeSyncCommandResult result) {
+  switch (result) {
+  case TimeSyncCommandResult::Ok:
+    return "time_sync_ok";
+  case TimeSyncCommandResult::Busy:
+    return "time_sync_busy";
+  case TimeSyncCommandResult::StaUnavailable:
+    return "time_sync_sta_unavailable";
+  case TimeSyncCommandResult::WifiConnectFailed:
+    return "time_sync_wifi_failed";
+  case TimeSyncCommandResult::SyncFailed:
+    return "time_sync_failed";
+  default:
+    return "time_sync_failed";
+  }
+}
+
+static int timeSyncCommandHttpStatus(TimeSyncCommandResult result) {
+  switch (result) {
+  case TimeSyncCommandResult::Ok:
+    return 200;
+  case TimeSyncCommandResult::Busy:
+    return 409;
+  case TimeSyncCommandResult::StaUnavailable:
+    return 409;
+  case TimeSyncCommandResult::WifiConnectFailed:
+    return 502;
+  case TimeSyncCommandResult::SyncFailed:
+    return 504;
+  default:
+    return 500;
+  }
+}
+
 } // namespace
 
 extern WebServer server;
@@ -118,6 +202,17 @@ void setupApiEndpoints() {
 
   server.on("/api/logs", HTTP_GET, [&server]() {
     server.sendHeader("Connection", "close");
+    const String format = server.hasArg("format") ? server.arg("format") : "";
+    const String type = server.hasArg("type") ? server.arg("type") : "all";
+
+    if (format.equalsIgnoreCase("text")) {
+      const String textPayload = LogManager::getLogsAsText(type.c_str());
+      server.sendHeader("Content-Disposition",
+                        "attachment; filename=akwarium_logs.txt");
+      server.send(200, "text/plain; charset=utf-8", textPayload);
+      return;
+    }
+
     server.send(200, "application/json", buildWebLogsJson());
   });
 
@@ -131,8 +226,10 @@ void setupApiEndpoints() {
     const String action = server.arg("action");
 
     if (action == "feed_now") {
-      SystemController::feedNow();
-      sendWebActionResponse(server, 200, true, "feed_now");
+      const Error feedResult = SystemController::feedNow();
+      const bool ok = feedResult == Error::NONE;
+      sendWebActionResponse(server, feederErrorHttpStatus(feedResult), ok,
+                            feederErrorCode(feedResult));
       return;
     }
 
@@ -159,29 +256,17 @@ void setupApiEndpoints() {
                                  : static_cast<int>(ScheduleMode::AlwaysOff);
       }
 
-      Config cfg = ConfigManager::getCopy();
-      ConfigValidationResult validation = {};
-      if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
-        sendValidationError(server,
-                            validation.errorCode[0] != '\0' ? validation.errorCode
-                                                             : "invalid_values");
-        return;
-      }
-
-      const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
-      if (!saveResult.ok) {
+      const ConfigApplyResult applyResult = ConfigService::applyPatch(patch);
+      if (!applyResult.ok && applyResult.status == ConfigApplyStatus::SaveFailed) {
         char msg[160];
         snprintf(msg, sizeof(msg),
                  "API save failed (%s, written=%u, read=%u)",
-                 action.c_str(), static_cast<unsigned>(saveResult.bytesWritten),
-                 static_cast<unsigned>(saveResult.bytesReadBack));
+                 action.c_str(),
+                 static_cast<unsigned>(applyResult.saveResult.bytesWritten),
+                 static_cast<unsigned>(applyResult.saveResult.bytesReadBack));
         LogManager::logError(msg);
-        sendWebActionResponse(server, 500, false, "save_failed");
-        return;
       }
-
-      requestUiSaveConfirmationAnimation();
-      sendWebActionResponse(server, 200, true, "settings_saved");
+      sendConfigApplyResult(server, applyResult);
       return;
     }
 
@@ -212,6 +297,64 @@ void setupApiEndpoints() {
     if (action == "clear_critical_logs") {
       LogManager::clearCriticalLogs();
       sendWebActionResponse(server, 200, true, "clear_critical_logs");
+      return;
+    }
+
+    if (action == "save_temperature") {
+      ConfigPatch patch = {};
+      uint8_t parseInvalidFields = 0;
+
+      if (server.hasArg("heaterMode")) {
+        long value = 0;
+        if (!parseLongStrict(server.arg("heaterMode"), value)) {
+          parseInvalidFields++;
+        } else {
+          patch.hasHeaterMode = true;
+          patch.heaterMode = static_cast<int>(value);
+        }
+      }
+
+      if (server.hasArg("targetTemp")) {
+        float value = 0.0f;
+        if (!parseFloatStrict(server.arg("targetTemp"), value)) {
+          parseInvalidFields++;
+        } else {
+          patch.hasTargetTemp = true;
+          patch.targetTemp = value;
+        }
+      }
+
+      if (server.hasArg("tempHyst")) {
+        float value = 0.0f;
+        if (!parseFloatStrict(server.arg("tempHyst"), value)) {
+          parseInvalidFields++;
+        } else {
+          patch.hasTempHysteresis = true;
+          patch.tempHysteresis = value;
+        }
+      }
+
+      const ConfigApplyResult applyResult = ConfigService::applyPatch(patch);
+      const bool forcePartial = parseInvalidFields > 0;
+      if (!applyResult.ok && applyResult.status == ConfigApplyStatus::SaveFailed) {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "API save_temperature failed (written=%u, read=%u, status=%u)",
+                 static_cast<unsigned>(applyResult.saveResult.bytesWritten),
+                 static_cast<unsigned>(applyResult.saveResult.bytesReadBack),
+                 static_cast<unsigned>(applyResult.saveResult.status));
+        LogManager::logError(msg);
+      }
+      sendConfigApplyResult(server, applyResult, forcePartial);
+      return;
+    }
+
+    if (action == "sync_time_ntp") {
+      const TimeSyncCommandResult result = AkwariumWifi::syncTimeWithNtpNow();
+      const bool ok = result == TimeSyncCommandResult::Ok;
+      const String status = AkwariumWifi::getLastTimeSyncStatus();
+      sendWebActionResponse(server, timeSyncCommandHttpStatus(result), ok,
+                            timeSyncCommandCode(result), status.c_str());
       return;
     }
 
@@ -426,35 +569,16 @@ void setupApiEndpoints() {
       }
     }
 
-    Config cfg = ConfigManager::getCopy();
-    ConfigValidationResult validation = {};
-    if (!ConfigValidation::applyRuntimePatch(cfg, patch, validation)) {
-      sendValidationError(server, parseInvalidFields > 0
-                                      ? "invalid_payload"
-                                      : validation.errorCode[0] != '\0'
-                                            ? validation.errorCode
-                                            : "invalid_values");
-      return;
-    }
-
-    const ConfigSaveResult saveResult = ConfigManager::updateAndSaveDetailed(cfg);
-    if (!saveResult.ok) {
+    const ConfigApplyResult applyResult = ConfigService::applyPatch(patch);
+    if (!applyResult.ok && applyResult.status == ConfigApplyStatus::SaveFailed) {
       char msg[160];
       snprintf(msg, sizeof(msg),
                "API save_schedule failed (written=%u, read=%u, status=%u)",
-               static_cast<unsigned>(saveResult.bytesWritten),
-               static_cast<unsigned>(saveResult.bytesReadBack),
-               static_cast<unsigned>(saveResult.status));
+               static_cast<unsigned>(applyResult.saveResult.bytesWritten),
+               static_cast<unsigned>(applyResult.saveResult.bytesReadBack),
+               static_cast<unsigned>(applyResult.saveResult.status));
       LogManager::logError(msg);
-      sendWebActionResponse(server, 500, false, "save_failed");
-      return;
     }
-
-    requestUiSaveConfirmationAnimation();
-    sendWebActionResponse(server, 200, true,
-                          (parseInvalidFields > 0 ||
-                           validation.hasInvalidFields())
-                              ? "settings_partial"
-                              : "settings_saved");
+    sendConfigApplyResult(server, applyResult, parseInvalidFields > 0);
   });
 }

@@ -1,0 +1,9 @@
+#ifndef UNIT_TEST_ARDUINO_SECRETS_H
+#define UNIT_TEST_ARDUINO_SECRETS_H
+
+#define SECRET_SSID "TestSSID"
+#define SECRET_PASS "TestPass123"
+#define AP_SSID "TestAP"
+#define AP_PASSWORD "TestApPass123"
+
+#endif // UNIT_TEST_ARDUINO_SECRETS_H

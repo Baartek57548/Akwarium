@@ -36,6 +36,7 @@ static const uint8_t DAILY_SYNC_HOUR = 9;
 static const uint8_t DAILY_SYNC_WINDOW_MINUTES = 5;
 static const unsigned long NTP_SYNC_TIMEOUT_MS = 8000UL;
 static const unsigned long WIFI_MODE_SWITCH_DELAY_MS = 25UL;
+static const unsigned long AP_IDLE_TIMEOUT_MS = 90000UL;
 
 static WebServer server(80);
 static DNSServer dnsServer;
@@ -65,6 +66,7 @@ static String lastTimeSyncStatus = "Brak proby synchronizacji czasu.";
 static int lastDailySyncAttemptDateStamp = -1;
 static bool webServerConfigured = false;
 static bool webServerRunning = false;
+static unsigned long apIdleStartedAtMs = 0;
 static WiFiClient sseClient;
 static bool sseClientActive = false;
 static unsigned long lastSseStatusPushMs = 0;
@@ -83,6 +85,7 @@ static void startWebServerIfNeeded(const char *reason = nullptr);
 static void stopWebServerIfNeeded();
 static void processWifiRequests();
 static void maintainWifiState();
+static void maintainApIdleTimeout();
 static void maybeRunDailyTimeSync();
 static void sendCaptiveRedirect();
 static void sendCompressedAsset(const WebAssetDescriptor &asset);
@@ -251,6 +254,7 @@ static void syncStaStatus() {
 }
 
 static void turnWifiOffInternal(const char *reason) {
+  apIdleStartedAtMs = 0;
   dnsServer.stop();
   stopWebServerIfNeeded();
   if (isAPMode) {
@@ -480,6 +484,7 @@ static void startAPInternal(const char *reason) {
   dnsServer.stop();
   dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
   isAPMode = true;
+  apIdleStartedAtMs = 0;
   startWebServerIfNeeded("AP aktywne");
 
   if (reason != nullptr && reason[0] != '\0') {
@@ -583,6 +588,36 @@ static void maintainWifiState() {
   maybeRunDailyTimeSync();
 }
 
+static void maintainApIdleTimeout() {
+  if (!isAPMode) {
+    apIdleStartedAtMs = 0;
+    return;
+  }
+
+  if (WiFi.softAPgetStationNum() > 0) {
+    apIdleStartedAtMs = 0;
+    return;
+  }
+
+  const unsigned long nowMs = millis();
+  if (apIdleStartedAtMs == 0) {
+    apIdleStartedAtMs = nowMs;
+    return;
+  }
+
+  if ((nowMs - apIdleStartedAtMs) < AP_IDLE_TIMEOUT_MS) {
+    return;
+  }
+
+  logWifiInfo("[WIFI-AP] AP wylaczono automatycznie po 90 s bez klientow.");
+  apIdleStartedAtMs = 0;
+  if (serviceModeActive) {
+    stopServiceModeInternal("AP auto-stop po 90 s bez klientow.");
+  } else {
+    turnWifiOffInternal("AP auto-stop po 90 s bez klientow.");
+  }
+}
+
 static void sendCaptiveRedirect() {
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.sendHeader("Pragma", "no-cache");
@@ -602,6 +637,36 @@ static void sendCompressedAsset(const WebAssetDescriptor &asset) {
   server.sendHeader("Vary", "Accept-Encoding");
   server.send_P(200, asset.contentType,
                 reinterpret_cast<PGM_P>(asset.data), asset.size);
+}
+
+static const WebAssetDescriptor *findEmbeddedAsset(String path) {
+  const int queryIndex = path.indexOf('?');
+  if (queryIndex >= 0) {
+    path.remove(queryIndex);
+  }
+
+  if (path.length() == 0 || path == "/") {
+    path = "/index.html";
+  }
+
+  for (size_t i = 0; i < web_asset_table_count; ++i) {
+    const WebAssetDescriptor *asset = web_asset_table[i];
+    if (asset != nullptr && path.equals(asset->path)) {
+      return asset;
+    }
+  }
+
+  return nullptr;
+}
+
+static bool trySendEmbeddedAsset(const String &path) {
+  const WebAssetDescriptor *asset = findEmbeddedAsset(path);
+  if (asset == nullptr) {
+    return false;
+  }
+
+  sendCompressedAsset(*asset);
+  return true;
 }
 
 static bool isSseStreamHealthy() {
@@ -719,14 +784,7 @@ static void setupWebServer() {
     return;
   }
 
-  server.on("/", HTTP_GET,
-            []() { sendCompressedAsset(web_index_html_gz_asset); });
-
-  server.on("/style.css", HTTP_GET,
-            []() { sendCompressedAsset(web_style_css_gz_asset); });
-
-  server.on("/script.js", HTTP_GET,
-            []() { sendCompressedAsset(web_script_js_gz_asset); });
+  server.on("/", HTTP_GET, []() { trySendEmbeddedAsset("/index.html"); });
 
   server.on("/api/events", HTTP_GET, []() { openSseStream(); });
 
@@ -769,6 +827,10 @@ static void setupWebServer() {
   });
 
   server.onNotFound([]() {
+    if (trySendEmbeddedAsset(server.uri())) {
+      return;
+    }
+
     if (isAPMode) {
       sendCaptiveRedirect();
     } else {
@@ -970,6 +1032,7 @@ static void WifiTask(void *parameter) {
   for (;;) {
     processWifiRequests();
     maintainWifiState();
+    maintainApIdleTimeout();
     if (isAPMode) {
       dnsServer.processNextRequest();
     }
@@ -1031,6 +1094,37 @@ bool AkwariumWifi::isServiceModeActive() { return serviceModeActive; }
 
 bool AkwariumWifi::isTimeSyncInProgress() { return timeSyncInProgress; }
 
+TimeSyncCommandResult AkwariumWifi::syncTimeWithNtpNow() {
+  if (timeSyncInProgress || staConnecting || OtaManager::isOtaInProgress()) {
+    return TimeSyncCommandResult::Busy;
+  }
+
+  if (staConnected) {
+    return syncTimeFromNtp("API /api/action")
+               ? TimeSyncCommandResult::Ok
+               : TimeSyncCommandResult::SyncFailed;
+  }
+
+  if (isAPMode) {
+    setTimeSyncStatus(false, 0,
+                      "NTP: synchronizacja wymaga aktywnego polaczenia STA.");
+    return TimeSyncCommandResult::StaUnavailable;
+  }
+
+  if (!connectStaWithTimeout("Reczna synchronizacja NTP")) {
+    setTimeSyncStatus(false, 0,
+                      "NTP: nie udalo sie polaczyc ze skonfigurowanym WiFi.");
+    return TimeSyncCommandResult::WifiConnectFailed;
+  }
+
+  const bool ok = syncTimeFromNtp("API /api/action");
+  if (!serviceModeActive) {
+    turnWifiOffInternal("Zakonczenie recznej synchronizacji NTP.");
+  }
+
+  return ok ? TimeSyncCommandResult::Ok : TimeSyncCommandResult::SyncFailed;
+}
+
 String AkwariumWifi::getAPName() {
   return isAPMode ? getConfiguredApSsidString() : getConfiguredStaSsidString();
 }
@@ -1066,10 +1160,31 @@ bool AkwariumWifi::wasLastTimeSyncSuccessful() {
 
 String AkwariumWifi::getLastTimeSyncStatus() { return lastTimeSyncStatus; }
 
+int AkwariumWifi::getStaRssi() {
+  return staConnected ? WiFi.RSSI() : -127;
+}
+
 String AkwariumWifi::getIP() {
   return isAPMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
 }
 
 uint8_t AkwariumWifi::getConnectedClients() {
   return isAPMode ? WiFi.softAPgetStationNum() : 0;
+}
+
+unsigned long AkwariumWifi::getApIdleRemainingMs() {
+  if (!isAPMode) {
+    return 0;
+  }
+
+  if (WiFi.softAPgetStationNum() > 0 || apIdleStartedAtMs == 0) {
+    return AP_IDLE_TIMEOUT_MS;
+  }
+
+  const unsigned long elapsed = millis() - apIdleStartedAtMs;
+  return elapsed >= AP_IDLE_TIMEOUT_MS ? 0 : (AP_IDLE_TIMEOUT_MS - elapsed);
+}
+
+bool AkwariumWifi::isApIdleCountdownActive() {
+  return isAPMode && WiFi.softAPgetStationNum() == 0;
 }
