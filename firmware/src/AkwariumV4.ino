@@ -196,6 +196,11 @@ static void resetUiStateAfterIdleTimeout() {
   }
 }
 
+static void returnUiToHomeAfterTimeout() {
+  resetUiStateAfterIdleTimeout();
+  uiState = UiState::HOME;
+}
+
 void updateUiState() {
   if (!animation)
     return;
@@ -207,7 +212,7 @@ void updateUiState() {
   syncDailyFeedingsCounterDate();
 
   if (uiState == UiState::ACCESS_POINT && !AkwariumWifi::getIsAPMode()) {
-    uiState = UiState::HOME;
+    returnUiToHomeAfterTimeout();
   }
 
   bool isUpPressed = (digitalRead(BUTTON_UP_PIN) == LOW);
@@ -312,7 +317,7 @@ void updateUiState() {
     if (uiState == UiState::FEEDING) {
       if (uiStateBeforeFeeding == UiState::ACCESS_POINT &&
           !AkwariumWifi::getIsAPMode()) {
-        uiState = UiState::HOME;
+        returnUiToHomeAfterTimeout();
       } else {
         uiState = uiStateBeforeFeeding;
       }
@@ -334,8 +339,7 @@ void updateUiState() {
 
   if (shouldApplyUiIdleHomeTimeout(uiState) &&
       (nowMs - lastUiInteractionMs >= UI_IDLE_RETURN_HOME_MS)) {
-    resetUiStateAfterIdleTimeout();
-    uiState = UiState::HOME;
+    returnUiToHomeAfterTimeout();
   }
 
   switch (uiState) {
