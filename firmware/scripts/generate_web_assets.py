@@ -3,6 +3,7 @@ Import("env")
 from pathlib import Path
 import gzip
 import io
+import re
 
 
 project_dir = Path(env["PROJECT_DIR"]).resolve()
@@ -14,11 +15,14 @@ FIRMWARE_DIR = (
 WEB_DIR = FIRMWARE_DIR / "web"
 OUTPUT_FILE = FIRMWARE_DIR / "src" / "WebAssets.h"
 
-ASSETS = [
-    ("index.html", "text/html; charset=utf-8", "web_index_html_gz"),
-    ("style.css", "text/css; charset=utf-8", "web_style_css_gz"),
-    ("script.js", "application/javascript; charset=utf-8", "web_script_js_gz"),
-]
+CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".txt": "text/plain; charset=utf-8",
+}
 
 
 def gzip_bytes(raw_bytes):
@@ -41,7 +45,33 @@ def format_bytes(data):
     return ",\n".join(chunks)
 
 
+def asset_symbol_for(relative_path):
+    normalized = relative_path.replace("\\", "/")
+    symbol = re.sub(r"[^a-zA-Z0-9]+", "_", normalized).strip("_").lower()
+    return f"web_{symbol}_gz"
+
+
+def detect_content_type(relative_path):
+    suffix = Path(relative_path).suffix.lower()
+    return CONTENT_TYPES.get(suffix, "application/octet-stream")
+
+
+def collect_assets():
+    assets = []
+    for source_path in sorted(path for path in WEB_DIR.rglob("*") if path.is_file()):
+        relative_path = source_path.relative_to(WEB_DIR).as_posix()
+        assets.append(
+            {
+                "relative_path": relative_path,
+                "content_type": detect_content_type(relative_path),
+                "symbol": asset_symbol_for(relative_path),
+            }
+        )
+    return assets
+
+
 def build_header():
+    assets = collect_assets()
     lines = [
         "#ifndef WEB_ASSETS_H",
         "#define WEB_ASSETS_H",
@@ -51,6 +81,7 @@ def build_header():
         "#include <stdint.h>",
         "",
         "struct WebAssetDescriptor {",
+        "  const char *path;",
         "  const char *contentType;",
         "  const uint8_t *data;",
         "  size_t size;",
@@ -58,9 +89,12 @@ def build_header():
         "",
     ]
 
-    descriptor_lines = []
+    descriptor_names = []
 
-    for relative_path, content_type, symbol in ASSETS:
+    for asset in assets:
+        relative_path = asset["relative_path"]
+        content_type = asset["content_type"]
+        symbol = asset["symbol"]
         source_path = WEB_DIR / relative_path
         raw_bytes = source_path.read_bytes()
         compressed = gzip_bytes(raw_bytes)
@@ -71,6 +105,7 @@ def build_header():
                 format_bytes(compressed),
                 "};",
                 f"static const WebAssetDescriptor {symbol}_asset = {{",
+                f'  "/{relative_path}",',
                 f'  "{content_type}",',
                 f"  {symbol},",
                 f"  sizeof({symbol})",
@@ -78,11 +113,21 @@ def build_header():
                 "",
             ]
         )
+        descriptor_names.append(f"  &{symbol}_asset,")
 
-        descriptor_lines.append(f"static constexpr const char *{symbol}_source = \"/{relative_path}\";")
-
-    lines.extend(descriptor_lines)
-    lines.extend(["", "#endif // WEB_ASSETS_H", ""])
+    lines.append("static const WebAssetDescriptor *const web_asset_table[] = {")
+    lines.extend(descriptor_names)
+    lines.extend(
+        [
+            "};",
+            "",
+            "static constexpr size_t web_asset_table_count =",
+            "    sizeof(web_asset_table) / sizeof(web_asset_table[0]);",
+            "",
+            "#endif // WEB_ASSETS_H",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

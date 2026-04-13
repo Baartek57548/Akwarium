@@ -1,6 +1,5 @@
 #include "ScheduleManager.h"
 #include "LogManager.h"
-#include "SharedState.h"
 
 
 FeederController *ScheduleManager::feederCtrl = nullptr;
