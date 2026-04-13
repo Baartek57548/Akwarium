@@ -4,120 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Aquarium Controller ESP32</title>
-    <link rel="stylesheet" href="style.css?v=20260405a">
-    <style>
-        /* Custom Time Inputs (Pills) */
-        input[type="time"].time-pill {
-            background: rgba(11, 19, 36, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            color: #f8fafc;
-            border-radius: 12px;
-            padding: 4px 6px;
-            font-size: 11px;
-            cursor: pointer;
-            font-family: inherit;
-            outline: none;
-            transition: background 0.2s, border-color 0.2s;
-            text-align: center;
-        }
-        input[type="time"].time-pill:hover {
-            background: rgba(0, 0, 0, 0.9);
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-        input[type="time"].time-pill::-webkit-calendar-picker-indicator {
-            filter: invert(0.6) sepia(1) saturate(5) hue-rotate(175deg);
-            cursor: pointer;
-            width: 12px;
-            height: 12px;
-            padding: 0;
-            margin-left: 2px;
-        }
-        
-        /* Temp Chart Styles */
-        .temp-chart {
-            display: flex;
-            align-items: flex-end;
-            justify-content: space-between;
-            height: 120px;
-            gap: 8px;
-            padding-top: 35px;
-            margin-bottom: 10px;
-            position: relative;
-        }
-        .target-temp-line {
-            position: absolute;
-            left: 0;
-            width: 100%;
-            height: 1px;
-            border-top: 1px dashed rgba(255, 255, 255, 0.6);
-            z-index: 5;
-            pointer-events: none;
-        }
-        .target-temp-label {
-            position: absolute;
-            right: 0;
-            top: -22px;
-            font-size: 10px;
-            font-weight: 500;
-            color: rgba(255, 255, 255, 0.9);
-            background: rgba(0,0,0,0.6);
-            padding: 4px 8px;
-            border-radius: 6px;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .hysteresis-zone {
-            position: absolute;
-            left: 0;
-            width: 100%;
-            background: rgba(34, 211, 238, 0.05);
-            z-index: 4;
-            pointer-events: none;
-            border-top: 1px solid rgba(34, 211, 238, 0.2);
-            border-bottom: 1px solid rgba(34, 211, 238, 0.2);
-        }
-        .temp-bar-wrap {
-            flex: 1;
-            display: flex;
-            align-items: flex-end;
-            height: 100%;
-        }
-        .temp-bar {
-            width: 100%;
-            background: rgba(139, 92, 246, 0.6);
-            border-radius: 6px 6px 2px 2px;
-            transition: all 0.3s;
-            min-height: 8px;
-            z-index: 10;
-        }
-        .temp-bar:hover {
-            background: rgba(139, 92, 246, 0.9);
-            transform: scaleY(1.05);
-            transform-origin: bottom;
-        }
-        .temp-bar.active {
-            background: var(--accent-cyan);
-            box-shadow: 0 0 12px rgba(34, 211, 238, 0.6);
-        }
-        .temp-bar.hot {
-            background: rgba(251, 146, 60, 0.85);
-            box-shadow: 0 0 12px rgba(251, 146, 60, 0.4);
-        }
-
-        /* Module Badges Additions */
-        .pulse-dot-cyan {
-            width: 8px;
-            height: 8px;
-            background: var(--accent-cyan);
-            border-radius: 50%;
-            box-shadow: 0 0 10px var(--accent-cyan);
-            animation: pulse-cyan 2s infinite;
-        }
-        @keyframes pulse-cyan {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
-        }
-    </style>
+    <link rel="stylesheet" href="style.css?v=20260405c">
 </head>
 <body>
     <div class="app-container">
@@ -255,6 +142,9 @@
                                 </div>
                                 <div class="relay-name">Światło</div>
                                 <div id="relay-light-meta" class="relay-meta">Harmonogram</div>
+                                <div class="relay-quick-actions">
+                                    <button id="relay-light-toggle" class="btn btn-secondary relay-quick-btn" type="button">Przelacz</button>
+                                </div>
                             </article>
 
                             <article id="relay-filter" class="relay-status relay-standby">
@@ -264,6 +154,9 @@
                                 </div>
                                 <div class="relay-name">Filtr</div>
                                 <div id="relay-filter-meta" class="relay-meta">Harmonogram</div>
+                                <div class="relay-quick-actions">
+                                    <button id="relay-filter-toggle" class="btn btn-secondary relay-quick-btn" type="button">Przelacz</button>
+                                </div>
                             </article>
 
                             <article id="relay-heater" class="relay-status relay-standby">
@@ -289,7 +182,7 @@
                     <div class="card glass dashboard-card schedule-panel">
                         <div class="card-header compact-header">
                             <span class="card-heading">Harmonogram dzisiaj</span>
-                            <button class="btn btn-secondary btn-pill" onclick="switchTab('harmonogramy')">Edytuj</button>
+                            <button id="dashboard-edit-schedule-btn" class="btn btn-secondary btn-pill" type="button">Edytuj</button>
                         </div>
                         <div id="today-schedule-list" class="schedule-summary-list">
                             <div class="schedule-summary-item">
@@ -302,11 +195,11 @@
                     <div class="card glass dashboard-card feeder-card">
                         <span class="card-heading">Karmnik</span>
                         <div class="feeder-orb">
-                            <button id="feed-now-btn" class="feed-now-btn" onclick="triggerFeed()">Karm teraz</button>
+                            <button id="feed-now-btn" class="feed-now-btn" type="button">Karm teraz</button>
                         </div>
                         <span id="feed-next-label" class="feeder-note">Codziennie 18:00</span>
                         <span id="feed-last-label" class="feeder-subnote">Ostatnie karmienie: brak danych</span>
-                        <button class="btn btn-secondary feeder-manage-btn" onclick="switchTab('harmonogramy')">Zarządzaj</button>
+                        <button id="feeder-manage-btn" class="btn btn-secondary feeder-manage-btn" type="button">Zarządzaj</button>
                     </div>
 
                     <div class="card glass dashboard-card chart-wide temp-history-card">
@@ -421,7 +314,7 @@
 
                     <div class="schedule-save-row" style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 26px;">
                         <div id="schedule-save-status" class="text-muted" style="font-size: 12px;">Zmiany harmonogramow wymagaja zapisania.</div>
-                        <button id="save-schedule-btn" class="btn btn-primary" onclick="saveScheduleSettings()" style="padding: 12px 18px; border-radius: 12px;">
+                        <button id="save-schedule-btn" class="btn btn-primary" type="button" style="padding: 12px 18px; border-radius: 12px;">
                             <i class="fa-solid fa-floppy-disk"></i> Zapisz harmonogramy
                         </button>
                     </div>
@@ -437,7 +330,7 @@
                     </div>
                     <div class="logs-actions" style="display: flex; gap: 15px;">
                         <button id="clear-logs-btn" class="btn btn-secondary" style="border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1);">Wyczysc widok</button>
-                        <button id="delete-critical-btn" class="btn btn-primary" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.15)'">Usun krytyczne</button>
+                        <button id="delete-critical-btn" class="btn btn-primary hover-danger-btn" type="button" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 10px 24px; font-weight: 500; font-size: 13px; transition: 0.2s;">Usun krytyczne</button>
                     </div>
                 </div>
                 
@@ -456,12 +349,20 @@
                     <div class="logs-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                         <div class="logs-toolbar-primary" style="display: flex; gap: 10px; align-items: center;">
                             <button id="logs-current-btn" class="btn btn-secondary active logs-tab-btn" style="padding: 8px 16px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.4); color: var(--accent-cyan); font-size: 13px; font-weight: 600; background: rgba(6, 182, 212, 0.1);">Biezace</button>
-                            <button id="logs-critical-btn" class="btn btn-secondary logs-tab-btn logs-tab-btn-critical" style="padding: 8px 16px; border-radius: 12px; border: 1px solid transparent; color: var(--text-main); font-size: 13px; font-weight: 600; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.color='#ef4444';" onmouseout="this.style.background='transparent'; this.style.color='var(--text-main)';">Krytyczne</button>
+                            <button id="logs-critical-btn" class="btn btn-secondary logs-tab-btn logs-tab-btn-critical" type="button" style="padding: 8px 16px; border-radius: 12px; border: 1px solid transparent; color: var(--text-main); font-size: 13px; font-weight: 600; transition: 0.2s;">Krytyczne</button>
                             <span id="logs-status" class="logs-status" style="font-size: 13px; color: var(--text-muted); margin-left: 10px;">Brak odpowiedzi sterownika.</span>
                         </div>
                         <div class="logs-toolbar-secondary" style="display: flex; gap: 10px; align-items: center;">
                             <input id="logs-search" class="logs-search-input" type="text" placeholder="Szukaj..." style="background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 8px; padding: 10px 16px; color: var(--text-main); font-size: 13px; width: 250px; outline: none;">
                             <button id="download-logs-btn" class="btn btn-secondary logs-download-btn" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.03);" title="Pobierz logi"><i class="fa-solid fa-download" style="color: var(--accent-cyan);"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="logs-pagination-row">
+                        <span id="logs-page-info" class="logs-page-info">Strona 1 / 1</span>
+                        <div class="logs-pagination-actions">
+                            <button id="logs-prev-btn" class="btn btn-secondary logs-page-btn" type="button">Poprzednia</button>
+                            <button id="logs-next-btn" class="btn btn-secondary logs-page-btn" type="button">Nastepna</button>
                         </div>
                     </div>
             
@@ -497,7 +398,7 @@
                         <h3 class="mb-2" style="font-size: 24px; font-weight: 600; color: #f8fafc;">Instalacja nowej wersji</h3>
                         <p class="text-muted mb-4" style="font-size: 14px; max-width: 400px; margin-left: auto; margin-right: auto; line-height: 1.5;">Prześlij skompilowany plik <code style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-family: monospace; color: var(--accent-cyan);">.bin</code> aby zaktualizować oprogramowanie bazowe mikrokontrolera ESP32-S3 sterującego akwarium.</p>
                         
-                        <div id="firmware-upload-wrapper" class="file-upload-wrapper mb-4" style="border: 2px dashed rgba(255,255,255,0.15); border-radius: 16px; padding: 40px 20px; transition: border-color 0.3s, background 0.3s; cursor: pointer; background: rgba(0,0,0,0.2);" onmouseover="this.style.borderColor='var(--accent-blue)'; this.style.background='rgba(59, 130, 246, 0.05)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.15)'; this.style.background='rgba(0,0,0,0.2)';" onclick="document.getElementById('firmware-file').click()">
+                        <div id="firmware-upload-wrapper" class="file-upload-wrapper file-upload-interactive mb-4" role="button" tabindex="0" style="border: 2px dashed rgba(255,255,255,0.15); border-radius: 16px; padding: 40px 20px; transition: border-color 0.3s, background 0.3s; cursor: pointer; background: rgba(0,0,0,0.2);">
                             <input type="file" id="firmware-file" accept=".bin" style="display: none;">
                             <i class="fa-solid fa-file-arrow-up mb-3" style="font-size: 32px; color: var(--text-muted);"></i>
                             <div style="font-size: 16px; font-weight: 500; color: var(--text-main); margin-bottom: 8px;">Przeciągnij plik tutaj lub kliknij</div>
@@ -516,7 +417,7 @@
                             <p class="text-muted" style="font-size: 12px; margin: 0;"><i class="fa-solid fa-triangle-exclamation" style="color: var(--accent-yellow); margin-right: 6px;"></i> Proszę nie wyłączać urządzenia ani nie odświeżać strony w trakcie aktualizacji.</p>
                         </div>
                         
-                        <button class="btn btn-primary w-100 ota-upload-btn" id="upload-btn" onclick="simulateOTA()" disabled style="padding: 14px; font-size: 15px; background: linear-gradient(135deg, var(--accent-blue), #2563eb); border: none; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; border-radius: 12px; transition: 0.3s; opacity: 0.5;">
+                        <button class="btn btn-primary w-100 ota-upload-btn" id="upload-btn" type="button" disabled style="padding: 14px; font-size: 15px; background: linear-gradient(135deg, var(--accent-blue), #2563eb); border: none; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; border-radius: 12px; transition: 0.3s; opacity: 0.5;">
                             <i class="fa-solid fa-microchip" style="margin-right: 8px;"></i> Rozpocznij Aktualizację
                         </button>
                     </div>
@@ -558,7 +459,7 @@
                             <label>Nowe haslo AP:</label>
                             <input id="settings-ap-password" type="password" class="form-control mb-3" maxlength="63" value="" placeholder="Pozostaw puste, aby nie zmieniac">
 
-                            <button id="save-network-btn" class="btn btn-secondary w-100" onclick="saveNetworkSettings()"><i class="fa-solid fa-floppy-disk"></i> Zapisz Ustawienia WiFi</button>
+                            <button id="save-network-btn" class="btn btn-secondary w-100" type="button"><i class="fa-solid fa-floppy-disk"></i> Zapisz Ustawienia WiFi</button>
                             <div id="settings-network-status" class="text-muted" style="margin-top: 10px; font-size: 12px;">Zmiany SSID i hasel sa stosowane przy kolejnej sesji WiFi.</div>
                         </div>
                     </div>
@@ -571,7 +472,7 @@
                                 <h2>Automatyka Temp.</h2>
                             </div>
                             <label class="switch" title="Włącz/Wyłącz Regulację">
-                                <input type="checkbox" checked>
+                                <input id="settings-temp-enabled" type="checkbox" checked>
                                 <span class="slider round"></span>
                             </label>
                         </div>
@@ -579,15 +480,16 @@
                             <div class="grid-2-col mb-4">
                                 <div>
                                     <label>Cel Temp. (°C):</label>
-                                    <input type="number" class="form-control" step="0.5" value="25.0">
+                                    <input id="settings-temp-target" type="number" class="form-control" step="1" min="18" max="30" value="25">
                                 </div>
                                 <div>
                                     <label>Histereza (°C):</label>
-                                    <input type="number" class="form-control" step="0.1" value="0.5">
+                                    <input id="settings-temp-hyst" type="number" class="form-control" step="0.1" min="0.1" max="5" value="0.5">
                                 </div>
                             </div>
                             
-                            <button class="btn btn-primary w-100"><i class="fa-solid fa-floppy-disk"></i> Zapisz Ustawienia Temp.</button>
+                            <button id="save-temperature-btn" class="btn btn-primary w-100" type="button"><i class="fa-solid fa-floppy-disk"></i> Zapisz Ustawienia Temp.</button>
+                            <div id="settings-temp-status" class="text-muted" style="margin-top: 10px; font-size: 12px;">Sterowanie grzalka jest synchronizowane ze sterownikiem.</div>
                         </div>
                     </div>
 
@@ -596,7 +498,7 @@
                         <div class="card-header">
                             <div class="card-title">
                                 <i class="fa-solid fa-circle-info" style="color: var(--accent-blue);"></i>
-                                <h2>Informacje Systemowe</h2>
+                                <h2>Diagnostyka</h2>
                             </div>
                         </div>
                         <div class="card-body info-list-body" style="gap: 12px;">
@@ -605,12 +507,36 @@
                                 <span id="system-firmware-version" style="font-weight: 600; color: var(--text-main); font-size: 13px;">v--</span>
                             </div>
                             <div class="info-list-row" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
-                                <span class="text-muted" style="font-size: 13px;">Środowisko RTOS:</span>
-                                <span style="font-weight: 600; color: var(--text-main); font-size: 13px;">FreeRTOS Core 1</span>
+                                <span class="text-muted" style="font-size: 13px;">Power mode:</span>
+                                <span id="system-power-mode" style="font-weight: 600; color: var(--text-main); font-size: 13px;">active</span>
                             </div>
                             <div class="info-list-row" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
                                 <span class="text-muted" style="font-size: 13px;">Czas pracy (Uptime):</span>
-                                <span style="font-weight: 600; color: var(--text-main); font-size: 13px;">14 dni, 08:31:02</span>
+                                <span id="system-uptime" style="font-weight: 600; color: var(--text-main); font-size: 13px;">--</span>
+                            </div>
+                            <div class="info-list-row" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">Reset:</span>
+                                <span id="system-reset-reason" style="font-weight: 600; color: var(--text-main); font-size: 13px;">--</span>
+                            </div>
+                            <div class="info-list-row" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">Liczba restartow:</span>
+                                <span id="system-reset-count" style="font-weight: 600; color: var(--text-main); font-size: 13px;">0</span>
+                            </div>
+                            <div class="info-list-row" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">Sleep blockers:</span>
+                                <span id="system-sleep-blockers" style="font-weight: 600; color: var(--text-main); font-size: 13px;">--</span>
+                            </div>
+                            <div class="info-list-row" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">Status NTP:</span>
+                                <span id="system-ntp-status" style="font-weight: 600; color: var(--text-main); font-size: 13px;">--</span>
+                            </div>
+                            <div class="info-list-row" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">Siec / RSSI:</span>
+                                <span id="system-network-quality" style="font-weight: 600; color: var(--text-main); font-size: 13px;">--</span>
+                            </div>
+                            <div class="info-list-row" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="text-muted" style="font-size: 13px;">AP auto-stop:</span>
+                                <span id="system-ap-idle" style="font-weight: 600; color: var(--text-main); font-size: 13px;">--</span>
                             </div>
                         </div>
                     </div>
@@ -629,8 +555,8 @@
                             <div id="settings-clock-status" class="text-muted" style="font-size: 12px; margin-bottom: 12px;">Czas urzadzenia jest pobierany automatycznie po polaczeniu.</div>
                             
                             <div class="grid-2-col">
-                                <button class="btn btn-secondary w-100" style="padding: 10px 14px; font-size: 13px;"><i class="fa-solid fa-arrows-rotate"></i> Synch. z NTP</button>
-                                <button class="btn btn-secondary w-100" style="padding: 10px 14px; font-size: 13px;"><i class="fa-solid fa-laptop"></i> Pobierz Czas Przeglądarki</button>
+                                <button id="sync-ntp-btn" class="btn btn-secondary w-100" type="button" style="padding: 10px 14px; font-size: 13px;"><i class="fa-solid fa-arrows-rotate"></i> Synch. z NTP</button>
+                                <button id="sync-browser-time-btn" class="btn btn-secondary w-100" type="button" style="padding: 10px 14px; font-size: 13px;"><i class="fa-solid fa-laptop"></i> Pobierz Czas Przeglądarki</button>
                             </div>
                         </div>
                     </div>
@@ -651,9 +577,10 @@
                                 </p>
                             </div>
                             <div class="grid-2-col device-actions-grid">
-                                <button class="btn btn-secondary w-100" style="padding: 14px; font-size: 14px;"><i class="fa-solid fa-rotate-right"></i> Zrestartuj Sterownik</button>
-                                <button class="btn btn-primary outline w-100" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); padding: 14px; background: rgba(239, 68, 68, 0.05); font-size: 14px;"><i class="fa-solid fa-triangle-exclamation"></i> Przywróć Ustawienia Fabryczne</button>
+                                <button id="restart-device-btn" class="btn btn-secondary w-100" type="button" style="padding: 14px; font-size: 14px;"><i class="fa-solid fa-rotate-right"></i> Zrestartuj Sterownik</button>
+                                <button id="factory-reset-btn" class="btn btn-primary outline w-100" type="button" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); padding: 14px; background: rgba(239, 68, 68, 0.05); font-size: 14px;"><i class="fa-solid fa-triangle-exclamation"></i> Przywróć Ustawienia Fabryczne</button>
                             </div>
+                            <div id="device-actions-status" class="text-muted" style="font-size: 12px;">Akcje administracyjne wymagaja potwierdzenia.</div>
                         </div>
                     </div>
                 </div>
@@ -697,6 +624,12 @@
         </div>
     </div>
 
-    <script src="script.js?v=20260405a"></script>
+    <script src="app-core.js?v=20260405c"></script>
+    <script src="logs.js?v=20260405c"></script>
+    <script src="settings.js?v=20260405c"></script>
+    <script src="schedules.js?v=20260405c"></script>
+    <script src="dashboard.js?v=20260405c"></script>
+    <script src="ota.js?v=20260405c"></script>
+    <script src="app-init.js?v=20260405c"></script>
 </body>
 </html>

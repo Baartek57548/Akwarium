@@ -22,12 +22,22 @@ const mockStatus = {
     },
     network: {
         staConnected: true,
+        staConnecting: false,
         apMode: false,
+        serviceMode: false,
         staSsid: 'DomowaSiec',
         staLastConnectedEpoch: 1775417820,
         configuredStaSsid: 'DomowaSiec',
         configuredApSsid: 'Aquarium-Backup',
-        ip: '192.168.0.57'
+        ip: '192.168.0.57',
+        clients: 0,
+        rssi: -51,
+        apIdleCountdownActive: false,
+        apIdleRemainingMs: 0,
+        timeSyncInProgress: false,
+        lastTimeSyncEpoch: 1775417400,
+        lastTimeSyncOk: true,
+        lastTimeSyncStatus: 'HTTP /settime: OK'
     },
     schedule: {
         lightMode: 0,
@@ -52,7 +62,8 @@ const mockStatus = {
         hour: 18,
         minute: 0,
         active: false,
-        lastFeedEpoch: 1775409600
+        lastFeedEpoch: 1775409600,
+        lastResult: 'ok'
     },
     relays: {
         light: true,
@@ -78,17 +89,51 @@ const mockStatus = {
             { value: 25.4, epoch: 1775415600 },
             { value: 25.4, epoch: 1775416200 }
         ]
+    },
+    system: {
+        uptimeSeconds: 86421,
+        resetCode: 1,
+        resetReason: 'power_on',
+        resetCount: 3,
+        powerMode: 'active',
+        sleepEligible: false,
+        sleepBlockers: ['not_night', 'sta_active']
     }
 };
 
 const mockLogs = {
+    schemaVersion: '2026-04-05',
+    counts: {
+        normal: 3,
+        critical: 1
+    },
     normal: [
-        'HTTP panel ready.',
-        'SSE status stream attached.',
-        'Dashboard rendered from mocked controller data.'
+        {
+            ts: 1775417400,
+            level: 'info',
+            code: 'http',
+            message: 'HTTP panel ready.'
+        },
+        {
+            ts: 1775417460,
+            level: 'info',
+            code: 'sse',
+            message: 'SSE status stream attached.'
+        },
+        {
+            ts: 1775417520,
+            level: 'warning',
+            code: 'ui',
+            message: 'Dashboard rendered from mocked controller data.'
+        }
     ],
     critical: [
-        'No critical entries in smoke test.'
+        {
+            ts: 1775417580,
+            level: 'error',
+            code: 'smoke',
+            message: 'No critical entries in smoke test.'
+        }
     ]
 };
 
