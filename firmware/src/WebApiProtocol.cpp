@@ -208,7 +208,7 @@ static void appendSleepBlockers(String &json, uint16_t flags) {
 
 } // namespace
 
-String buildWebStatusJson() {
+String buildWebStatusJson(bool includeHistory) {
   const SharedStateData snap = SharedState::getSnapshot();
   const Config cfg = ConfigManager::getCopy();
   const FirmwareRuntimeInfo firmwareInfo = FirmwareInfo::getRuntimeInfo();
@@ -218,7 +218,8 @@ String buildWebStatusJson() {
                             : PowerManager::getBatteryVoltage();
 
   String json;
-  json.reserve(4600);
+  json.reserve(includeHistory ? (5200U + (static_cast<size_t>(snap.temperatureHistoryCount) * 40U))
+                              : 5200U);
   json += '{';
 
   bool rootFirst = true;
@@ -243,32 +244,40 @@ String buildWebStatusJson() {
   appendJsonFloatField(json, "min", isnan(snap.minTemp) ? -99.9f : snap.minTemp,
                        temperatureFirst, 2);
   appendJsonUIntField(json, "minTimeEpoch", snap.minTempEpoch, temperatureFirst);
-  appendJsonUIntField(json, "historyIntervalMinutes", 10, temperatureFirst);
+  appendJsonUIntField(json, "historyIntervalMinutes",
+                      TEMP_HISTORY_INTERVAL_SEC / 60UL, temperatureFirst);
   appendJsonUIntField(json, "historyCapacity", TEMP_HISTORY_SIZE,
                       temperatureFirst);
-  if (!temperatureFirst) {
-    json += ',';
-  }
-  temperatureFirst = false;
-  appendJsonKey(json, "history");
-  json += '[';
-  bool historyFirst = true;
-  for (uint8_t i = 0; i < snap.temperatureHistoryCount; ++i) {
-    const TemperatureHistoryEntry &entry = snap.temperatureHistory[i];
-    if (isnan(entry.value)) {
-      continue;
-    }
-    if (!historyFirst) {
+  if (includeHistory) {
+    if (!temperatureFirst) {
       json += ',';
     }
-    historyFirst = false;
-    json += '{';
-    bool entryFirst = true;
-    appendJsonFloatField(json, "value", entry.value, entryFirst, 2);
-    appendJsonUIntField(json, "epoch", entry.epoch, entryFirst);
-    json += '}';
+    temperatureFirst = false;
+    appendJsonKey(json, "history");
+    json += '[';
+    bool historyFirst = true;
+    const uint16_t startIndex =
+        snap.temperatureHistoryCount < TEMP_HISTORY_SIZE
+            ? 0U
+            : snap.temperatureHistoryNextIndex;
+    for (uint16_t i = 0; i < snap.temperatureHistoryCount; ++i) {
+      const uint16_t index = (startIndex + i) % TEMP_HISTORY_SIZE;
+      const TemperatureHistoryEntry &entry = snap.temperatureHistory[index];
+      if (isnan(entry.value)) {
+        continue;
+      }
+      if (!historyFirst) {
+        json += ',';
+      }
+      historyFirst = false;
+      json += '{';
+      bool entryFirst = true;
+      appendJsonFloatField(json, "value", entry.value, entryFirst, 2);
+      appendJsonUIntField(json, "epoch", entry.epoch, entryFirst);
+      json += '}';
+    }
+    json += ']';
   }
-  json += ']';
   json += '}';
 
   json += ',';
@@ -349,6 +358,8 @@ String buildWebStatusJson() {
                       networkFirst);
   appendJsonBoolField(json, "serviceMode", AkwariumWifi::isServiceModeActive(),
                       networkFirst);
+  appendJsonBoolField(json, "serviceModePending",
+                      AkwariumWifi::isServiceModePending(), networkFirst);
   appendJsonStringField(json, "staSsid", AkwariumWifi::getStaSsid().c_str(),
                         networkFirst);
   appendJsonStringField(json, "configuredStaSsid",

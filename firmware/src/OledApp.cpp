@@ -285,7 +285,7 @@ void applyPendingUiChanges() {
     const uint8_t month = constrain(localTime.month, 1, 12);
     const uint16_t year = constrain(localTime.year, 2024, 2099);
     const DateTime newTime(year, month, day, hour, minute, second);
-    syncSystemTime(static_cast<uint32_t>(newTime.unixtime()));
+    syncSystemClock(newTime);
     char msg[96];
     snprintf(msg, sizeof(msg),
              "Menu Data/Czas: zapisano %04u-%02u-%02u %02u:%02u:%02u.", year,

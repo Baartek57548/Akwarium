@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Aquarium Controller ESP32</title>
     <link rel="stylesheet" href="style.css?v=20260413e">
-    <link rel="stylesheet" href="charts.css?v=20260415a">
+    <link rel="stylesheet" href="charts.css?v=20260413f">
 </head>
 <body>
+    <!-- Animated Aquarium Bubbles Background -->
     <canvas id="bubbles-canvas" class="bubbles-canvas"></canvas>
 
     <div class="app-container">
@@ -223,7 +224,7 @@
                             <div id="temperature-chart-summary" class="temp-chart-summary"></div>
                             <div id="temperature-chart-note" class="temp-chart-note" hidden></div>
                             <div id="temperature-chart-empty" class="temp-chart-empty">Oczekiwanie na historię temperatur ze sterownika...</div>
-                            <svg id="temperature-chart-svg" class="temp-line-chart" viewBox="0 0 960 320" preserveAspectRatio="xMidYMid meet" aria-label="Wykres temperatury"></svg>
+                            <svg id="temperature-chart-svg" class="temp-line-chart" viewBox="0 0 960 320" preserveAspectRatio="none" aria-label="Wykres temperatury"></svg>
                             <div id="temperature-chart-tooltip" class="temp-chart-tooltip" hidden></div>
                             <div class="temp-chart-axis">
                                 <span id="temperature-chart-start">Najstarszy pomiar</span>
@@ -389,167 +390,176 @@
                 </div>
             </section>
 
+
+            <!-- Wykresy View -->
             <section id="wykresy" class="view-section">
-                <section class="temp-summary-strip" id="temp-summary">
-                    <div class="summary-card summary-current glass">
-                        <div class="summary-label">Aktualna</div>
-                        <div class="summary-value" id="summary-current">--.-&deg;C</div>
-                        <div class="summary-trend" id="summary-trend">
-                            <svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 3v10M8 3l-3 3M8 3l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            <span>--</span>
-                        </div>
-                    </div>
-                    <div class="summary-card summary-target glass">
-                        <div class="summary-label">Cel</div>
-                        <div class="summary-value" id="summary-target">25.0&deg;C</div>
-                        <div class="summary-band" id="summary-band">&plusmn;0.5&deg;C</div>
-                    </div>
-                    <div class="summary-card summary-min glass">
-                        <div class="summary-label">Min (24h)</div>
-                        <div class="summary-value" id="summary-min">--.-&deg;C</div>
-                    </div>
-                    <div class="summary-card summary-max glass">
-                        <div class="summary-label">Max (24h)</div>
-                        <div class="summary-value" id="summary-max">--.-&deg;C</div>
-                    </div>
-                </section>
+                <!-- Temperature Summary Strip -->
+        <section class="temp-summary-strip" id="temp-summary">
+            <div class="summary-card summary-current">
+                <div class="summary-label">Aktualna</div>
+                <div class="summary-value" id="summary-current">--.-°C</div>
+                <div class="summary-trend" id="summary-trend">
+                    <svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 3v10M8 3l-3 3M8 3l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span>--</span>
+                </div>
+            </div>
+            <div class="summary-card summary-target">
+                <div class="summary-label">Cel</div>
+                <div class="summary-value" id="summary-target">25.0°C</div>
+                <div class="summary-band" id="summary-band">±0.5°C</div>
+            </div>
+            <div class="summary-card summary-min">
+                <div class="summary-label">Min (24h)</div>
+                <div class="summary-value" id="summary-min">--.-°C</div>
+            </div>
+            <div class="summary-card summary-max">
+                <div class="summary-label">Max (24h)</div>
+                <div class="summary-value" id="summary-max">--.-°C</div>
+            </div>
+        </section>
 
-                <section class="chart-section">
-                    <div class="chart-card glass">
-                        <div class="chart-header">
-                            <div class="chart-title-group">
-                                <h2 class="chart-title">Przebieg Temperatury</h2>
-                                <span class="chart-subtitle" id="chart-subtitle">Ostatnie 3 godziny</span>
-                            </div>
-                            <div class="chart-controls">
-                                <button class="fullscreen-btn" id="fullscreen-btn" type="button" title="Pelny ekran">
-                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
-                                </button>
-                                <div class="range-selector" id="range-selector">
-                                    <button class="range-btn" data-range="1h" type="button">1H</button>
-                                    <button class="range-btn active" data-range="3h" type="button">3H</button>
-                                    <button class="range-btn" data-range="6h" type="button">6H</button>
-                                    <button class="range-btn" data-range="12h" type="button">12H</button>
-                                    <button class="range-btn" data-range="24h" type="button">24H</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="chart-legend">
-                            <span class="legend-item">
-                                <span class="legend-swatch legend-swatch-live"></span>
-                                Temperatura
-                            </span>
-                            <span class="legend-item">
-                                <span class="legend-swatch legend-swatch-target"></span>
-                                Cel
-                            </span>
-                            <span class="legend-item">
-                                <span class="legend-swatch legend-swatch-band"></span>
-                                Pasmo histerezy
-                            </span>
-                        </div>
-                        <div class="chart-container" id="main-chart-container">
-                            <canvas id="main-chart-canvas"></canvas>
-                            <div class="chart-tooltip" id="chart-tooltip" hidden>
-                                <div class="tooltip-time"></div>
-                                <div class="tooltip-value"></div>
-                            </div>
-                            <div class="swipe-hint" id="swipe-hint">
-                                <span>&larr; Przesun aby zmienic zakres &rarr;</span>
-                            </div>
-                        </div>
-                        <div class="chart-time-axis" id="chart-time-axis"></div>
+        <!-- Main Chart -->
+        <section class="chart-section" id="main-chart-section">
+            <div class="chart-card glass">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <h2 class="chart-title">Przebieg Temperatury</h2>
+                        <span class="chart-subtitle" id="chart-subtitle">Ostatnie 3 godziny</span>
                     </div>
-                </section>
+                    <div class="chart-controls">
+                        <button class="fullscreen-btn" id="fullscreen-btn" type="button" title="Pełny ekran">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+                        </button>
+                        <div class="range-selector" id="range-selector">
+                            <button class="range-btn" data-range="1h">1H</button>
+                            <button class="range-btn active" data-range="3h">3H</button>
+                            <button class="range-btn" data-range="6h">6H</button>
+                            <button class="range-btn" data-range="12h">12H</button>
+                            <button class="range-btn" data-range="24h">24H</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-legend">
+                    <span class="legend-item">
+                        <span class="legend-swatch legend-swatch-live"></span>
+                        Temperatura
+                    </span>
+                    <span class="legend-item">
+                        <span class="legend-swatch legend-swatch-target"></span>
+                        Cel
+                    </span>
+                    <span class="legend-item">
+                        <span class="legend-swatch legend-swatch-band"></span>
+                        Pasmo histerezy
+                    </span>
+                </div>
+                <div class="chart-container" id="main-chart-container">
+                    <canvas id="main-chart-canvas"></canvas>
+                    <div class="chart-tooltip" id="chart-tooltip" hidden>
+                        <div class="tooltip-time"></div>
+                        <div class="tooltip-value"></div>
+                    </div>
+                    <div class="swipe-hint" id="swipe-hint">
+                        <span>← Przesuń aby zmienić zakres →</span>
+                    </div>
+                </div>
+                <div class="chart-time-axis" id="chart-time-axis"></div>
+            </div>
+        </section>
 
-                <section class="mini-charts-row">
-                    <div class="mini-chart-card glass" id="mini-variability">
-                        <div class="mini-chart-header">
-                            <span class="mini-chart-title">Zmiennosc</span>
-                            <span class="mini-chart-value" id="mini-var-value">--</span>
-                        </div>
-                        <canvas class="mini-chart-canvas" id="mini-var-canvas"></canvas>
-                    </div>
-                    <div class="mini-chart-card glass" id="mini-deviation">
-                        <div class="mini-chart-header">
-                            <span class="mini-chart-title">Odchylenie od celu</span>
-                            <span class="mini-chart-value" id="mini-dev-value">--</span>
-                        </div>
-                        <canvas class="mini-chart-canvas" id="mini-dev-canvas"></canvas>
-                    </div>
-                    <div class="mini-chart-card glass" id="mini-rate">
-                        <div class="mini-chart-header">
-                            <span class="mini-chart-title">Tempo zmian</span>
-                            <span class="mini-chart-value" id="mini-rate-value">--</span>
-                        </div>
-                        <canvas class="mini-chart-canvas" id="mini-rate-canvas"></canvas>
-                    </div>
-                </section>
+        <!-- Mini Charts Row -->
+        <section class="mini-charts-row" id="mini-charts">
+            <div class="mini-chart-card glass" id="mini-variability">
+                <div class="mini-chart-header">
+                    <span class="mini-chart-title">Zmienność</span>
+                    <span class="mini-chart-value" id="mini-var-value">--</span>
+                </div>
+                <canvas class="mini-chart-canvas" id="mini-var-canvas"></canvas>
+            </div>
+            <div class="mini-chart-card glass" id="mini-deviation">
+                <div class="mini-chart-header">
+                    <span class="mini-chart-title">Odchylenie od celu</span>
+                    <span class="mini-chart-value" id="mini-dev-value">--</span>
+                </div>
+                <canvas class="mini-chart-canvas" id="mini-dev-canvas"></canvas>
+            </div>
+            <div class="mini-chart-card glass" id="mini-rate">
+                <div class="mini-chart-header">
+                    <span class="mini-chart-title">Tempo zmian</span>
+                    <span class="mini-chart-value" id="mini-rate-value">--</span>
+                </div>
+                <canvas class="mini-chart-canvas" id="mini-rate-canvas"></canvas>
+            </div>
+        </section>
 
-                <section class="heatmap-section">
-                    <div class="heatmap-card glass">
-                        <div class="heatmap-header">
-                            <h2 class="chart-title">Mapa Ciepla - 7 Dni x 24H</h2>
-                            <div class="heatmap-scale">
-                                <span class="heatmap-scale-label">Zimno</span>
-                                <div class="heatmap-gradient"></div>
-                                <span class="heatmap-scale-label">Cieplo</span>
-                            </div>
-                        </div>
-                        <div class="heatmap-legend-extra">
-                            <span class="hm-legend-item"><span class="hm-legend-border" style="border-color: #3b82f6; box-shadow: 0 0 4px #3b82f6;"></span>Min</span>
-                            <span class="hm-legend-item"><span class="hm-legend-border" style="border-color: #fbbf24; box-shadow: 0 0 4px #fbbf24;"></span>Max</span>
-                            <span class="hm-legend-item"><span class="hm-legend-now"></span>Teraz</span>
-                        </div>
-                        <div class="heatmap-container" id="heatmap-container">
-                            <canvas id="heatmap-canvas"></canvas>
-                            <div class="heatmap-tooltip" id="heatmap-tooltip" hidden>
-                                <div class="hm-tip-day"></div>
-                                <div class="hm-tip-val"></div>
-                            </div>
-                        </div>
+        <!-- Heatmap Section -->
+        <section class="heatmap-section" id="heatmap-section">
+            <div class="heatmap-card glass">
+                <div class="heatmap-header">
+                    <h2 class="chart-title">Mapa Ciepła — 7 Dni × 24H</h2>
+                    <div class="heatmap-scale">
+                        <span class="heatmap-scale-label">Zimno</span>
+                        <div class="heatmap-gradient"></div>
+                        <span class="heatmap-scale-label">Ciepło</span>
                     </div>
-                </section>
+                </div>
+                <div class="heatmap-legend-extra">
+                    <span class="hm-legend-item"><span class="hm-legend-border" style="border-color: #3b82f6; box-shadow: 0 0 4px #3b82f6;"></span>Min</span>
+                    <span class="hm-legend-item"><span class="hm-legend-border" style="border-color: #fbbf24; box-shadow: 0 0 4px #fbbf24;"></span>Max</span>
+                    <span class="hm-legend-item"><span class="hm-legend-now"></span>Teraz</span>
+                </div>
+                <div class="heatmap-container" id="heatmap-container">
+                    <canvas id="heatmap-canvas"></canvas>
+                    <div class="heatmap-tooltip" id="heatmap-tooltip" hidden>
+                        <div class="hm-tip-day"></div>
+                        <div class="hm-tip-val"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-                <section class="comparison-section">
-                    <div class="comparison-card glass">
-                        <div class="comparison-header">
-                            <h2 class="chart-title">Porownanie Dni</h2>
-                            <div class="comparison-legend" id="comparison-legend"></div>
-                        </div>
-                        <div class="comparison-container" id="comparison-container">
-                            <canvas id="comparison-canvas"></canvas>
-                        </div>
-                    </div>
-                </section>
+        <!-- Day Comparison Section -->
+        <section class="comparison-section" id="comparison-section">
+            <div class="comparison-card glass">
+                <div class="comparison-header">
+                    <h2 class="chart-title">Porównanie Dni</h2>
+                    <div class="comparison-legend" id="comparison-legend"></div>
+                </div>
+                <div class="comparison-container" id="comparison-container">
+                    <canvas id="comparison-canvas"></canvas>
+                </div>
+            </div>
+        </section>
 
-                <section class="history-section">
-                    <div class="history-card glass">
-                        <div class="history-header">
-                            <h2 class="chart-title">Historia Pomiarow</h2>
-                            <button class="btn-export" id="btn-export" type="button">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="m8 10 4 4 4-4"/><path d="M5 19h14"/></svg>
-                                Eksportuj CSV
-                            </button>
-                        </div>
-                        <div class="history-table-wrapper" id="history-table-wrapper">
-                            <table class="history-table" id="history-table">
-                                <thead>
-                                    <tr>
-                                        <th>Czas</th>
-                                        <th>Temperatura</th>
-                                        <th>Trend</th>
-                                        <th>Odchylenie</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="history-tbody"></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </section>
+        <!-- History Table -->
+        <section class="history-section" id="history-section">
+            <div class="history-card glass">
+                <div class="history-header">
+                    <h2 class="chart-title">Historia Pomiarów</h2>
+                    <button class="btn-export" id="btn-export" type="button">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="m8 10 4 4 4-4"/><path d="M5 19h14"/></svg>
+                        Eksportuj CSV
+                    </button>
+                </div>
+                <div class="history-table-wrapper" id="history-table-wrapper">
+                    <table class="history-table" id="history-table">
+                        <thead>
+                            <tr>
+                                <th>Czas</th>
+                                <th>Temperatura</th>
+                                <th>Trend</th>
+                                <th>Odchylenie</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        
             </section>
-
 
             <!-- OTA View -->
             <section id="ota" class="view-section">
@@ -803,6 +813,7 @@
         </div>
     </div>
 
+    <!-- Fullscreen Chart Overlay -->
     <div class="fullscreen-overlay" id="fullscreen-overlay" hidden>
         <div class="fullscreen-header">
             <h2>Przebieg Temperatury</h2>
@@ -818,17 +829,19 @@
             </div>
         </div>
         <div class="fullscreen-range-selector" id="fullscreen-range-selector">
-            <button class="range-btn" data-range="1h" type="button">1H</button>
-            <button class="range-btn active" data-range="3h" type="button">3H</button>
-            <button class="range-btn" data-range="6h" type="button">6H</button>
-            <button class="range-btn" data-range="12h" type="button">12H</button>
-            <button class="range-btn" data-range="24h" type="button">24H</button>
+            <button class="range-btn" data-range="1h">1H</button>
+            <button class="range-btn active" data-range="3h">3H</button>
+            <button class="range-btn" data-range="6h">6H</button>
+            <button class="range-btn" data-range="12h">12H</button>
+            <button class="range-btn" data-range="24h">24H</button>
         </div>
         <div class="chart-time-axis fullscreen-time-axis" id="fullscreen-time-axis"></div>
     </div>
 
-    <script src="chart-engine.js?v=20260415a"></script>
-    <script src="charts.js?v=20260415a"></script>
+    
+
+    <script src="chart-engine.js?v=20260413f"></script>
+    <script src="charts.js?v=20260413h"></script>
     <script src="app-core.js?v=20260413e"></script>
     <script src="logs.js?v=20260413e"></script>
     <script src="settings.js?v=20260413e"></script>
@@ -838,3 +851,4 @@
     <script src="app-init.js?v=20260413e"></script>
 </body>
 </html>
+

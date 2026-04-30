@@ -463,39 +463,16 @@ function setBackendState(isConnected) {
     }
 }
 
-function mergeTemperaturePayload(previousTemperature, nextTemperature) {
-    if (!nextTemperature || typeof nextTemperature !== 'object') {
-        return previousTemperature || null;
-    }
-
-    const merged = {
-        ...(previousTemperature && typeof previousTemperature === 'object' ? previousTemperature : {}),
-        ...nextTemperature
-    };
-
-    if (!Array.isArray(nextTemperature.history) && Array.isArray(previousTemperature?.history)) {
-        merged.history = previousTemperature.history;
-    }
-
-    return merged;
-}
-
 function applyStatusPayload(data) {
     if (!data || typeof data !== 'object') {
         return;
     }
-
-    const mergedData = {
-        ...data,
-        temperature: mergeTemperaturePayload(lastStatusData?.temperature, data.temperature)
-    };
-
     setBackendState(true);
-    syncClockFromController(mergedData.clock);
-    renderDashboard(mergedData);
-
-    if (window.ChartsApp && typeof window.ChartsApp.updateData === 'function' && mergedData.temperature) {
-        window.ChartsApp.updateData(mergedData.temperature);
+    syncClockFromController(data.clock);
+    renderDashboard(data);
+    
+    if (window.ChartsApp && typeof window.ChartsApp.updateData === 'function' && data.temperature) {
+        window.ChartsApp.updateData(data.temperature);
     }
 }
 
@@ -505,9 +482,7 @@ async function fetchStatus(force = false) {
     }
 
     try {
-        const response = await fetch(force ? `${API_STATUS}?history=1` : API_STATUS, {
-            cache: 'no-store'
-        });
+        const response = await fetch(API_STATUS, { cache: 'no-store' });
         if (!response.ok) throw new Error('status http');
         const data = await response.json();
         applyStatusPayload(data);
