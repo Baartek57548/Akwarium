@@ -5,7 +5,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-constexpr uint8_t TEMP_HISTORY_SIZE = 20;
+constexpr uint32_t TEMP_HISTORY_INTERVAL_SEC = 600UL;
+constexpr uint16_t TEMP_HISTORY_SIZE = 7U * 24U * 6U;
 
 struct TemperatureHistoryEntry {
   float value;
@@ -38,7 +39,8 @@ struct SharedStateData {
   int year;
 
   TemperatureHistoryEntry temperatureHistory[TEMP_HISTORY_SIZE];
-  uint8_t temperatureHistoryCount;
+  uint16_t temperatureHistoryCount;
+  uint16_t temperatureHistoryNextIndex;
 };
 
 // Singleton zarządzający dostępem równoległym do stuktury poprzez FreeRTOS

@@ -448,11 +448,6 @@ function hideChartTooltip() {
     }
 }
 
-let temperatureChartResizeObserver = null;
-let temperatureChartResizeFrame = 0;
-let observedTemperatureChartShell = null;
-let observedTemperatureChartWidth = 0;
-
 function formatChartTemperature(value, digits = 1) {
     return `${Number(value).toFixed(digits)}\u00B0C`;
 }
@@ -970,145 +965,24 @@ function appendTemperatureChartFrame(svg, padding, plotWidth, plotHeight) {
     }));
 }
 
-function getTemperatureChartLayout(shellWidth, snapshotMode) {
-    const width = Math.round(Number(shellWidth) || 0);
-
-    if (width > 0 && width < 560) {
-        return snapshotMode
-            ? {
-                name: 'phone',
-                width: 420,
-                height: 380,
-                padding: { top: 18, right: 18, bottom: 28, left: 18 },
-                gridSteps: 4,
-                compact: true,
-                snapshotStacked: true
-            }
-            : {
-                name: 'phone',
-                width: 420,
-                height: 360,
-                padding: { top: 18, right: 20, bottom: 42, left: 42 },
-                gridSteps: 3,
-                compact: true,
-                snapshotStacked: false
-            };
-    }
-
-    if (width > 0 && width < 920) {
-        return snapshotMode
-            ? {
-                name: 'tablet',
-                width: 720,
-                height: 340,
-                padding: { top: 18, right: 24, bottom: 30, left: 30 },
-                gridSteps: 4,
-                compact: true,
-                snapshotStacked: false
-            }
-            : {
-                name: 'tablet',
-                width: 720,
-                height: 312,
-                padding: { top: 18, right: 28, bottom: 38, left: 50 },
-                gridSteps: 4,
-                compact: true,
-                snapshotStacked: false
-            };
-    }
-
-    return {
-        name: 'desktop',
-        width: 960,
-        height: 320,
-        padding: { top: 20, right: 34, bottom: 34, left: 58 },
-        gridSteps: 4,
-        compact: false,
-        snapshotStacked: false
-    };
-}
-
-function applyTemperatureChartLayout(svg, shell, layout, snapshotMode) {
-    if (!svg || !layout) return;
-
-    svg.setAttribute('viewBox', `0 0 ${layout.width} ${layout.height}`);
-    svg.style.aspectRatio = `${layout.width} / ${layout.height}`;
-
-    if (!shell) return;
-
-    shell.dataset.chartLayout = layout.name;
-    shell.classList.toggle('temp-chart-shell-snapshot', snapshotMode);
-    shell.classList.toggle('temp-chart-shell-snapshot-stacked', snapshotMode && layout.snapshotStacked);
-}
-
-function ensureTemperatureChartResizeObserver(shell) {
-    if (!shell || typeof ResizeObserver === 'undefined') {
-        return;
-    }
-
-    if (temperatureChartResizeObserver && observedTemperatureChartShell === shell) {
-        return;
-    }
-
-    if (temperatureChartResizeObserver && observedTemperatureChartShell) {
-        temperatureChartResizeObserver.unobserve(observedTemperatureChartShell);
-    }
-
-    observedTemperatureChartShell = shell;
-    observedTemperatureChartWidth = Math.round(shell.getBoundingClientRect().width);
-    temperatureChartResizeObserver = new ResizeObserver((entries) => {
-        const entry = entries[entries.length - 1];
-        const nextWidth = Math.round(entry?.contentRect?.width || 0);
-
-        if (!nextWidth || Math.abs(nextWidth - observedTemperatureChartWidth) < 2) {
-            return;
-        }
-
-        observedTemperatureChartWidth = nextWidth;
-        if (temperatureChartResizeFrame) {
-            cancelAnimationFrame(temperatureChartResizeFrame);
-        }
-
-        temperatureChartResizeFrame = requestAnimationFrame(() => {
-            temperatureChartResizeFrame = 0;
-            if (lastStatusData?.temperature) {
-                renderTemperatureChart(lastStatusData.temperature || {});
-            }
-        });
-    });
-
-    temperatureChartResizeObserver.observe(shell);
-}
-
-function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layout) {
-    const width = layout.width;
-    const height = layout.height;
-    const padding = layout.padding;
+function renderTemperatureSnapshot(svg, points, target, hysteresis, domain) {
+    const width = 960;
+    const height = 320;
+    const padding = { top: 20, right: 34, bottom: 34, left: 58 };
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
     const latest = points[points.length - 1];
     const relation = describeTargetRelationship(latest.value, target, hysteresis);
-    const compact = !!layout.compact;
-    const stacked = !!layout.snapshotStacked;
-    const panelInset = compact ? 14 : 18;
-    const panelX = padding.left + panelInset;
-    const panelY = padding.top + (stacked ? 12 : 18);
-    const panelWidth = stacked
-        ? plotWidth - panelInset * 2
-        : Math.min(232, Math.max(206, plotWidth * 0.28));
-    const panelHeight = stacked ? 132 : plotHeight - 36;
-    const dividerX = panelX + panelWidth + (compact ? 18 : 22);
-    const rail = stacked
-        ? {
-            startX: padding.left + 30,
-            endX: padding.left + plotWidth - 30,
-            y: panelY + panelHeight + 86
-        }
-        : {
-            startX: dividerX + (compact ? 42 : 58),
-            endX: padding.left + plotWidth - (compact ? 28 : 44),
-            y: padding.top + Math.round(plotHeight * 0.48)
-        };
+    const panelX = padding.left + 18;
+    const panelY = padding.top + 18;
+    const panelWidth = 226;
+    const panelHeight = plotHeight - 36;
+    const dividerX = panelX + panelWidth + 22;
+    const rail = {
+        startX: dividerX + 58,
+        endX: padding.left + plotWidth - 44,
+        y: padding.top + 132
+    };
     const span = Math.max(0.1, domain.maxValue - domain.minValue);
     const valueToX = (value) => rail.startX + ((value - domain.minValue) / span) * (rail.endX - rail.startX);
     const currentX = valueToX(latest.value);
@@ -1116,7 +990,7 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
         minX: rail.startX - 8,
         maxX: rail.endX + 8,
         minY: padding.top + 8,
-        maxY: height - padding.bottom - 8
+        maxY: padding.top + plotHeight - 8
     };
 
     appendTemperatureChartDefs(svg);
@@ -1127,54 +1001,52 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
         y: panelY,
         width: panelWidth,
         height: panelHeight,
-        rx: compact ? 18 : 22,
+        rx: 22,
         class: 'chart-snapshot-panel'
     }));
-    if (!stacked) {
-        svg.appendChild(createSvgEl('line', {
-            x1: dividerX,
-            y1: padding.top + 24,
-            x2: dividerX,
-            y2: padding.top + plotHeight - 24,
-            class: 'chart-snapshot-divider'
-        }));
-    }
+    svg.appendChild(createSvgEl('line', {
+        x1: dividerX,
+        y1: padding.top + 24,
+        x2: dividerX,
+        y2: padding.top + plotHeight - 24,
+        class: 'chart-snapshot-divider'
+    }));
 
     const eyebrow = createSvgEl('text', {
-        x: panelX + 20,
-        y: panelY + (stacked ? 24 : 30),
+        x: panelX + 22,
+        y: panelY + 30,
         class: 'chart-snapshot-eyebrow'
     });
     eyebrow.textContent = 'AKTUALNY ODCZYT';
     svg.appendChild(eyebrow);
 
     const value = createSvgEl('text', {
-        x: panelX + 20,
-        y: panelY + (stacked ? 66 : 96),
+        x: panelX + 22,
+        y: panelY + 96,
         class: 'chart-snapshot-value'
     });
     value.textContent = latest.value.toFixed(2);
     svg.appendChild(value);
 
     const unit = createSvgEl('text', {
-        x: panelX + (stacked ? Math.min(panelWidth - 54, 164) : 168),
-        y: panelY + (stacked ? 66 : 96),
+        x: panelX + 168,
+        y: panelY + 96,
         class: 'chart-snapshot-unit'
     });
     unit.textContent = '\u00B0C';
     svg.appendChild(unit);
 
     const status = createSvgEl('text', {
-        x: panelX + 20,
-        y: panelY + (stacked ? 94 : 130),
+        x: panelX + 22,
+        y: panelY + 130,
         class: `chart-snapshot-status chart-snapshot-status-${relation?.tone || 'neutral'}`
     });
     status.textContent = relation ? relation.detailLabel : 'Brak temperatury docelowej.';
     svg.appendChild(status);
 
     const time = createSvgEl('text', {
-        x: panelX + 20,
-        y: panelY + (stacked ? 112 : 156),
+        x: panelX + 22,
+        y: panelY + 156,
         class: 'chart-snapshot-time'
     });
     time.textContent = `Pomiar ${latest.timeLabel}`;
@@ -1183,8 +1055,8 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
     if (points.length > 1) {
         const trend = describeTemperatureTrend(points);
         const trendText = createSvgEl('text', {
-            x: panelX + 20,
-            y: panelY + (stacked ? 128 : 182),
+            x: panelX + 22,
+            y: panelY + 182,
             class: 'chart-snapshot-time'
         });
         trendText.textContent = trend.label;
@@ -1193,7 +1065,7 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
 
     const railTitle = createSvgEl('text', {
         x: rail.startX,
-        y: stacked ? panelY + panelHeight + 36 : padding.top + 52,
+        y: padding.top + 52,
         class: 'chart-snapshot-rail-title'
     });
     railTitle.textContent = target !== null ? 'Stan wzgledem celu' : 'Biezaca skala temperatury';
@@ -1207,24 +1079,23 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
         class: 'chart-snapshot-rail-track'
     }));
 
-    const tickSteps = layout.gridSteps || 4;
-    const guideHalf = compact ? 14 : 18;
+    const tickSteps = 4;
     for (let step = 0; step <= tickSteps; step += 1) {
         const ratio = step / tickSteps;
         const x = rail.startX + ratio * (rail.endX - rail.startX);
         const sampleValue = domain.minValue + ratio * (domain.maxValue - domain.minValue);
         svg.appendChild(createSvgEl('line', {
             x1: x,
-            y1: rail.y - guideHalf,
+            y1: rail.y - 18,
             x2: x,
-            y2: rail.y + guideHalf,
+            y2: rail.y + 18,
             class: 'chart-snapshot-guide'
         }));
 
         if (step === 0 || step === Math.floor(tickSteps / 2) || step === tickSteps) {
             const label = createSvgEl('text', {
                 x,
-                y: rail.y + (stacked ? 40 : 46),
+                y: rail.y + 46,
                 class: 'chart-snapshot-scale-label'
             });
             label.setAttribute('text-anchor', step === 0 ? 'start' : (step === tickSteps ? 'end' : 'middle'));
@@ -1257,15 +1128,15 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
         const targetX = valueToX(target);
         svg.appendChild(createSvgEl('line', {
             x1: targetX,
-            y1: rail.y - (stacked ? 26 : 34),
+            y1: rail.y - 34,
             x2: targetX,
-            y2: rail.y + (stacked ? 24 : 30),
+            y2: rail.y + 30,
             class: 'chart-snapshot-target'
         }));
 
         const targetLabel = createSvgEl('text', {
             x: targetX,
-            y: rail.y + (stacked ? 64 : 76),
+            y: rail.y + 76,
             class: 'chart-snapshot-target-label'
         });
         targetLabel.setAttribute('text-anchor', 'middle');
@@ -1282,27 +1153,27 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
     }));
     svg.appendChild(createSvgEl('line', {
         x1: currentX,
-        y1: rail.y - (stacked ? 40 : 48),
+        y1: rail.y - 48,
         x2: currentX,
-        y2: rail.y + (stacked ? 20 : 26),
+        y2: rail.y + 26,
         class: 'chart-snapshot-stem'
     }));
     svg.appendChild(createSvgEl('circle', {
         cx: currentX,
         cy: rail.y,
-        r: compact ? 14 : 17,
+        r: 17,
         class: 'chart-point-current'
     }));
     svg.appendChild(createSvgEl('circle', {
         cx: currentX,
         cy: rail.y,
-        r: compact ? 6 : 7,
+        r: 7,
         class: 'chart-point-core'
     }));
 
     appendChartChip(svg, {
-        x: currentX - (stacked ? 52 : 58),
-        y: rail.y - (stacked ? 66 : 88),
+        x: currentX - 58,
+        y: rail.y - 88,
         text: `Teraz ${latest.valueLabel}`,
         tone: 'live',
         bounds: chipBounds
@@ -1311,7 +1182,7 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
     const currentHit = createSvgEl('circle', {
         cx: currentX,
         cy: rail.y,
-        r: compact ? 14 : 16,
+        r: 16,
         tabindex: 0,
         class: 'chart-point-hit'
     });
@@ -1326,16 +1197,15 @@ function renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layo
     svg.appendChild(currentHit);
 }
 
-function renderTemperatureTrendChart(svg, points, target, hysteresis, domain, layout) {
-    const width = layout.width;
-    const height = layout.height;
-    const padding = layout.padding;
+function renderTemperatureTrendChart(svg, points, target, hysteresis, domain) {
+    const width = 960;
+    const height = 320;
+    const padding = { top: 20, right: 34, bottom: 34, left: 58 };
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
     const minValue = domain.minValue;
     const maxValue = domain.maxValue;
     const guidesVisible = domain.guidesVisible;
-    const compact = !!layout.compact;
     const xFor = (index) => padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
     const yFor = (value) => padding.top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
     const chipBounds = {
@@ -1365,7 +1235,7 @@ function renderTemperatureTrendChart(svg, points, target, hysteresis, domain, la
         }));
     }
 
-    const gridSteps = layout.gridSteps || 4;
+    const gridSteps = 4;
     for (let index = 0; index <= gridSteps; index += 1) {
         const ratio = index / gridSteps;
         const y = padding.top + ratio * plotHeight;
@@ -1379,7 +1249,7 @@ function renderTemperatureTrendChart(svg, points, target, hysteresis, domain, la
         }));
 
         const label = createSvgEl('text', {
-            x: Math.max(6, padding.left - (compact ? 34 : 52)),
+            x: 6,
             y: y + 4,
             class: 'chart-grid-label'
         });
@@ -1431,9 +1301,7 @@ function renderTemperatureTrendChart(svg, points, target, hysteresis, domain, la
     }
 
     const latestChipAnchor = lastCoord.x > padding.left + plotWidth * 0.72 ? 'end' : 'start';
-    const latestChipY = lastCoord.y < padding.top + (compact ? 50 : 42)
-        ? lastCoord.y + (compact ? 16 : 12)
-        : lastCoord.y - (compact ? 30 : 34);
+    const latestChipY = lastCoord.y < padding.top + 42 ? lastCoord.y + 12 : lastCoord.y - 34;
     appendChartChip(svg, {
         x: latestChipAnchor === 'end' ? lastCoord.x - 14 : lastCoord.x + 14,
         y: latestChipY,
@@ -1446,13 +1314,13 @@ function renderTemperatureTrendChart(svg, points, target, hysteresis, domain, la
     svg.appendChild(createSvgEl('circle', {
         cx: lastCoord.x,
         cy: lastCoord.y,
-        r: compact ? 12 : 14,
+        r: 14,
         class: 'chart-point-current'
     }));
     svg.appendChild(createSvgEl('circle', {
         cx: lastCoord.x,
         cy: lastCoord.y,
-        r: compact ? 6 : 7,
+        r: 7,
         class: 'chart-point-core'
     }));
 
@@ -1463,7 +1331,7 @@ function renderTemperatureTrendChart(svg, points, target, hysteresis, domain, la
         const circle = createSvgEl('circle', {
             cx: x,
             cy: y,
-            r: isLatest ? (compact ? 4.5 : 5) : (compact ? 3.5 : 4),
+            r: isLatest ? 5 : 4,
             class: isLatest ? 'chart-point chart-point-latest' : 'chart-point'
         });
         const title = createSvgEl('title');
@@ -1474,7 +1342,7 @@ function renderTemperatureTrendChart(svg, points, target, hysteresis, domain, la
         const hit = createSvgEl('circle', {
             cx: x,
             cy: y,
-            r: compact ? 11 : 13,
+            r: 13,
             tabindex: 0,
             class: 'chart-point-hit'
         });
@@ -1531,12 +1399,9 @@ function renderTemperatureChart(temperature) {
     const axis = shell ? shell.querySelector('.temp-chart-axis') : null;
     if (!svg || !empty) return;
 
-    ensureTemperatureChartResizeObserver(shell);
-
     const rawHistory = Array.isArray(temperature?.history) ? temperature.history : [];
     const historyCapacity = Math.max(1, Math.round(toFiniteNumber(temperature?.historyCapacity) ?? 20));
     const historyIntervalMinutes = Math.max(1, Math.round(toFiniteNumber(temperature?.historyIntervalMinutes) ?? 10));
-    const dashboardHistoryLimit = Math.min(historyCapacity, 36);
     const snapshotThreshold = 4;
     const points = rawHistory
         .map((item, index) => ({
@@ -1545,7 +1410,7 @@ function renderTemperatureChart(temperature) {
             index
         }))
         .filter((item) => isValidTemperature(item.value))
-        .slice(-dashboardHistoryLimit)
+        .slice(-historyCapacity)
         .map((item, index, arr) => ({
             value: item.value,
             epoch: item.epoch,
@@ -1564,20 +1429,11 @@ function renderTemperatureChart(temperature) {
         note.textContent = '';
     }
     hideChartTooltip();
-    const visibleHours = Math.max(
-        1,
-        Math.round(((Math.max(points.length, dashboardHistoryLimit) - 1) * historyIntervalMinutes) / 60)
-    );
-    setText(
-        'temperature-chart-meta',
-        `${points.length || 0} z ${historyCapacity} pomiarow | ostatnie ~${visibleHours} h`
-    );
-
-    const emptyLayout = getTemperatureChartLayout(shell ? shell.clientWidth : 0, false);
-    applyTemperatureChartLayout(svg, shell, emptyLayout, false);
+    setText('temperature-chart-meta', `${points.length || 0} / ${historyCapacity} pomiarow co ${historyIntervalMinutes} min`);
 
     if (points.length === 0) {
         empty.hidden = false;
+        if (shell) shell.classList.remove('temp-chart-shell-snapshot');
         if (axis) axis.hidden = false;
         setText('temperature-chart-start', 'Najstarszy pomiar');
         setText('temperature-chart-end', 'Teraz');
@@ -1589,10 +1445,11 @@ function renderTemperatureChart(temperature) {
     const target = toFiniteNumber(temperature?.target);
     const hysteresis = Math.abs(toFiniteNumber(temperature?.hysteresis) ?? 0);
     const snapshotMode = points.length < snapshotThreshold;
-    const layout = getTemperatureChartLayout(shell ? shell.clientWidth : 0, snapshotMode);
     const domain = buildTemperatureDomain(points, target, hysteresis, snapshotMode);
 
-    applyTemperatureChartLayout(svg, shell, layout, snapshotMode);
+    if (shell) {
+        shell.classList.toggle('temp-chart-shell-snapshot', snapshotMode);
+    }
     if (axis) {
         axis.hidden = snapshotMode;
     }
@@ -1604,13 +1461,13 @@ function renderTemperatureChart(temperature) {
             note.hidden = false;
             note.textContent = `Tryb podgladu: pelny trend wlaczy sie po ${snapshotThreshold} probkach. Kolejny odczyt za okolo ${historyIntervalMinutes} min.`;
         }
-        renderTemperatureSnapshot(svg, points, target, hysteresis, domain, layout);
+        renderTemperatureSnapshot(svg, points, target, hysteresis, domain);
         return;
     }
 
     setText('temperature-chart-start', points[0].timeLabel);
     setText('temperature-chart-end', points[points.length - 1].timeLabel);
-    renderTemperatureTrendChart(svg, points, target, hysteresis, domain, layout);
+    renderTemperatureTrendChart(svg, points, target, hysteresis, domain);
 }
 
 function renderDashboard(data) {

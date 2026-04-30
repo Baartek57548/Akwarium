@@ -5,7 +5,6 @@
 
 SemaphoreHandle_t SharedState::mutex = NULL;
 SharedStateData SharedState::state = {};
-static constexpr uint32_t TEMP_HISTORY_INTERVAL_SEC = 600UL;
 
 void SharedState::init() {
   mutex = xSemaphoreCreateMutex();
@@ -28,7 +27,8 @@ void SharedState::init() {
   state.month = 1;
   state.year = 2025;
   state.temperatureHistoryCount = 0;
-  for (uint8_t i = 0; i < TEMP_HISTORY_SIZE; ++i) {
+  state.temperatureHistoryNextIndex = 0;
+  for (uint16_t i = 0; i < TEMP_HISTORY_SIZE; ++i) {
     state.temperatureHistory[i].value = NAN;
     state.temperatureHistory[i].epoch = 0;
   }
@@ -62,8 +62,11 @@ void SharedState::updateTemperature(float current, float min, uint32_t minEp,
     if (validTemperature) {
       bool shouldAppend = state.temperatureHistoryCount == 0;
       if (!shouldAppend) {
+        const uint16_t lastIndex =
+            (state.temperatureHistoryNextIndex + TEMP_HISTORY_SIZE - 1U) %
+            TEMP_HISTORY_SIZE;
         const TemperatureHistoryEntry &lastEntry =
-            state.temperatureHistory[state.temperatureHistoryCount - 1];
+            state.temperatureHistory[lastIndex];
         if (lastEntry.epoch == 0 || currentEpoch == 0) {
           shouldAppend = true;
         } else if (currentEpoch >= lastEntry.epoch) {
@@ -75,16 +78,15 @@ void SharedState::updateTemperature(float current, float min, uint32_t minEp,
       }
 
       if (shouldAppend) {
-        if (state.temperatureHistoryCount >= TEMP_HISTORY_SIZE) {
-          memmove(&state.temperatureHistory[0], &state.temperatureHistory[1],
-                  sizeof(TemperatureHistoryEntry) * (TEMP_HISTORY_SIZE - 1));
-          state.temperatureHistoryCount = TEMP_HISTORY_SIZE - 1;
-        }
-
         TemperatureHistoryEntry &entry =
-            state.temperatureHistory[state.temperatureHistoryCount++];
+            state.temperatureHistory[state.temperatureHistoryNextIndex];
         entry.value = current;
         entry.epoch = currentEpoch;
+        if (state.temperatureHistoryCount < TEMP_HISTORY_SIZE) {
+          state.temperatureHistoryCount++;
+        }
+        state.temperatureHistoryNextIndex =
+            (state.temperatureHistoryNextIndex + 1U) % TEMP_HISTORY_SIZE;
       }
     }
 

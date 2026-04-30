@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <WebServer.h>
 
-String buildWebStatusJson();
+String buildWebStatusJson(bool includeHistory = false);
 String buildWebLogsJson();
 String buildWebActionResponseJson(bool success, const char *code,
                                   const char *message = nullptr);

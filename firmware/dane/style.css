@@ -1686,9 +1686,6 @@ input:checked + .slider:before {
 
 .temp-history-card {
     min-height: auto;
-    width: 100%;
-    max-width: 1120px;
-    justify-self: center;
 }
 
 .temp-chart-header {
@@ -1702,7 +1699,6 @@ input:checked + .slider:before {
 .temp-chart-shell {
     position: relative;
     min-height: 384px;
-    width: 100%;
     padding: 18px;
     border-radius: 24px;
     background:
@@ -1986,10 +1982,7 @@ input:checked + .slider:before {
 }
 
 .temp-line-chart {
-    display: block;
-    width: 100%;
-    height: auto;
-    aspect-ratio: 960 / 320;
+    height: 282px;
 }
 
 .temp-chart-tooltip {
@@ -2195,7 +2188,7 @@ input:checked + .slider:before {
     }
 
     .temp-line-chart {
-        height: auto;
+        height: 230px;
     }
 }
 
@@ -2488,7 +2481,7 @@ input:checked + .slider:before {
     }
 
     .temp-line-chart {
-        height: auto;
+        height: 210px;
     }
 
     input[type="time"].time-pill {
@@ -2716,57 +2709,7 @@ input[type="time"].time-pill::-webkit-calendar-picker-indicator {
 }
 
 .temp-chart-shell.temp-chart-shell-snapshot .temp-line-chart {
-    height: auto;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .temp-chart-legend {
-    display: none;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .temp-chart-summary {
-    gap: 6px;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .temp-chart-pill {
-    font-size: 11px;
-    padding: 4px 8px;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .temp-chart-note {
-    display: block;
-    padding: 8px 10px;
-    border-radius: 14px;
-    line-height: 1.45;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .temp-chart-axis {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .chart-chip .chart-chip-text {
-    font-size: 10px;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .chart-snapshot-value {
-    font-size: 42px;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .chart-snapshot-unit {
-    font-size: 16px;
-}
-
-.temp-chart-shell[data-chart-layout='phone'] .chart-snapshot-status,
-.temp-chart-shell[data-chart-layout='phone'] .chart-snapshot-time,
-.temp-chart-shell[data-chart-layout='phone'] .chart-snapshot-rail-title,
-.temp-chart-shell[data-chart-layout='phone'] .chart-snapshot-target-label,
-.temp-chart-shell[data-chart-layout='phone'] .chart-snapshot-scale-label {
-    font-size: 11px;
-}
-
-.temp-chart-shell[data-chart-layout='tablet'] .chart-snapshot-value {
-    font-size: 48px;
+    height: 248px;
 }
 
 .chart-snapshot-panel {

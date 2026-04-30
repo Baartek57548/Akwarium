@@ -197,7 +197,9 @@ void setupApiEndpoints() {
 
   server.on("/api/status", HTTP_GET, [&server]() {
     server.sendHeader("Connection", "close");
-    server.send(200, "application/json", buildWebStatusJson());
+    const bool includeHistory =
+        server.hasArg("history") && server.arg("history") != "0";
+    server.send(200, "application/json", buildWebStatusJson(includeHistory));
   });
 
   server.on("/api/logs", HTTP_GET, [&server]() {
@@ -355,6 +357,21 @@ void setupApiEndpoints() {
       const String status = AkwariumWifi::getLastTimeSyncStatus();
       sendWebActionResponse(server, timeSyncCommandHttpStatus(result), ok,
                             timeSyncCommandCode(result), status.c_str());
+      return;
+    }
+
+    if (action == "wifi_session_start") {
+      AkwariumWifi::startAP();
+      sendWebActionResponse(
+          server, 200, true, "wifi_session_start",
+          "Uruchamiam lub ponawiam sesje WiFi: najpierw STA, potem fallback do AP.");
+      return;
+    }
+
+    if (action == "wifi_session_stop") {
+      AkwariumWifi::stopAP();
+      sendWebActionResponse(server, 200, true, "wifi_session_stop",
+                            "Wylaczam aktywna sesje WiFi.");
       return;
     }
 

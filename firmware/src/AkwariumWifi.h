@@ -2,10 +2,12 @@
 #define AKWARIUM_WIFI_H
 
 #include <Arduino.h>
+#include <RTClib.h>
 #include <WebServer.h>
 #include <WiFi.h>
 
 extern void syncSystemTime(uint32_t epoch);
+extern void syncSystemClock(const DateTime &localTime);
 
 enum class TimeSyncCommandResult : uint8_t {
   Ok = 0,
@@ -27,6 +29,7 @@ public:
   static bool isStaConnected();
   static bool isStaConnecting();
   static bool isServiceModeActive();
+  static bool isServiceModePending();
   static bool isTimeSyncInProgress();
   static TimeSyncCommandResult syncTimeWithNtpNow();
   static String getAPName();

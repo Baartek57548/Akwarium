@@ -201,6 +201,14 @@ static void returnUiToHomeAfterTimeout() {
   uiState = UiState::HOME;
 }
 
+static bool isWifiSessionVisibleOnOled() {
+  return AkwariumWifi::isServiceModePending() ||
+         AkwariumWifi::isServiceModeActive() ||
+         AkwariumWifi::isStaConnecting() ||
+         AkwariumWifi::isStaConnected() ||
+         AkwariumWifi::getIsAPMode();
+}
+
 void updateUiState() {
   if (!animation)
     return;
@@ -211,7 +219,7 @@ void updateUiState() {
   }
   syncDailyFeedingsCounterDate();
 
-  if (uiState == UiState::ACCESS_POINT && !AkwariumWifi::getIsAPMode()) {
+  if (uiState == UiState::ACCESS_POINT && !isWifiSessionVisibleOnOled()) {
     returnUiToHomeAfterTimeout();
   }
 
@@ -316,7 +324,7 @@ void updateUiState() {
     animation->setFeedingAnimation(false);
     if (uiState == UiState::FEEDING) {
       if (uiStateBeforeFeeding == UiState::ACCESS_POINT &&
-          !AkwariumWifi::getIsAPMode()) {
+          !isWifiSessionVisibleOnOled()) {
         returnUiToHomeAfterTimeout();
       } else {
         uiState = uiStateBeforeFeeding;
@@ -731,6 +739,9 @@ void VideoTask(void *pvParameters) {
             primaryLine = String("SSID: ") + AkwariumWifi::getConfiguredAPName();
             secondaryLine =
                 String("Haslo: ") + AkwariumWifi::getConfiguredAPPassword();
+          } else if (AkwariumWifi::isServiceModePending()) {
+            primaryLine = "Start sesji WiFi...";
+            secondaryLine = "STA, potem fallback AP";
           } else if (AkwariumWifi::isStaConnecting()) {
             primaryLine = "Proba polaczenia STA...";
             secondaryLine = "Po 6 s fallback do AP";

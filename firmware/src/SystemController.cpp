@@ -13,6 +13,9 @@
 #include <esp_sleep.h>
 #include <esp_task_wdt.h>
 #include <nvs_flash.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <time.h>
 
 #ifndef RELAY_HEATER_PIN
 #define RELAY_HEATER_PIN 4
@@ -47,6 +50,7 @@ static constexpr bool PUMP_OUTPUT_ACTIVE_HIGH = false;
 // przelaczenie przekaźnika na przeciwny poziom.
 static constexpr bool HEATER_OUTPUT_ACTIVE_HIGH = true;
 static constexpr bool FEEDER_OUTPUT_ACTIVE_HIGH = false;
+static constexpr const char *LOCAL_TIME_TZ = "CET-1CEST,M3.5.0/2,M10.5.0/3";
 
 static uint8_t outputLevelForState(bool enabled, bool activeHigh) {
   return enabled ? (activeHigh ? HIGH : LOW) : (activeHigh ? LOW : HIGH);
@@ -54,6 +58,76 @@ static uint8_t outputLevelForState(bool enabled, bool activeHigh) {
 
 static void writeManagedOutput(uint8_t pin, bool enabled, bool activeHigh) {
   digitalWrite(pin, outputLevelForState(enabled, activeHigh));
+}
+
+static void ensureLocalTimezoneConfigured() {
+  static bool configured = false;
+  if (configured) {
+    return;
+  }
+
+#if defined(_WIN32)
+  _putenv_s("TZ", LOCAL_TIME_TZ);
+  _tzset();
+#else
+  setenv("TZ", LOCAL_TIME_TZ, 1);
+  tzset();
+#endif
+  configured = true;
+}
+
+static bool toLocalCalendar(time_t epoch, struct tm &out) {
+#if defined(_WIN32)
+  return localtime_s(&out, &epoch) == 0;
+#else
+  return localtime_r(&epoch, &out) != nullptr;
+#endif
+}
+
+static bool utcEpochFromLocalDateTime(const DateTime &localTime,
+                                      uint32_t &epochOut) {
+  ensureLocalTimezoneConfigured();
+
+  struct tm localInfo = {};
+  localInfo.tm_year = static_cast<int>(localTime.year()) - 1900;
+  localInfo.tm_mon = static_cast<int>(localTime.month()) - 1;
+  localInfo.tm_mday = static_cast<int>(localTime.day());
+  localInfo.tm_hour = static_cast<int>(localTime.hour());
+  localInfo.tm_min = static_cast<int>(localTime.minute());
+  localInfo.tm_sec = static_cast<int>(localTime.second());
+  localInfo.tm_isdst = -1;
+
+  const time_t rawEpoch = mktime(&localInfo);
+  if (rawEpoch < 0) {
+    return false;
+  }
+
+  epochOut = static_cast<uint32_t>(rawEpoch);
+  return true;
+}
+
+static DateTime localDateTimeFromUtcEpoch(uint32_t epoch) {
+  ensureLocalTimezoneConfigured();
+
+  const time_t rawEpoch = static_cast<time_t>(epoch);
+  struct tm localInfo = {};
+  if (toLocalCalendar(rawEpoch, localInfo)) {
+    return DateTime(static_cast<uint16_t>(localInfo.tm_year + 1900),
+                    static_cast<uint8_t>(localInfo.tm_mon + 1),
+                    static_cast<uint8_t>(localInfo.tm_mday),
+                    static_cast<uint8_t>(localInfo.tm_hour),
+                    static_cast<uint8_t>(localInfo.tm_min),
+                    static_cast<uint8_t>(localInfo.tm_sec));
+  }
+
+  return DateTime(epoch);
+}
+
+static void updateSystemEpoch(uint32_t epoch) {
+  struct timeval tv = {};
+  tv.tv_sec = static_cast<time_t>(epoch);
+  tv.tv_usec = 0;
+  settimeofday(&tv, nullptr);
 }
 
 static void logWakeupCauseOnBoot();
@@ -224,10 +298,23 @@ static void persistRtcIfNeeded(const DateTime &now) {
 }
 
 void syncSystemTime(uint32_t epoch) {
+  ensureLocalTimezoneConfigured();
+  updateSystemEpoch(epoch);
+  syncSystemClock(localDateTimeFromUtcEpoch(epoch));
+}
+
+void syncSystemClock(const DateTime &localTime) {
+  ensureLocalTimezoneConfigured();
+
+  uint32_t epoch = 0;
+  if (utcEpochFromLocalDateTime(localTime, epoch)) {
+    updateSystemEpoch(epoch);
+  }
+
   if (SystemController::isRtcReady()) {
-    SystemController::rtc.adjust(DateTime(epoch));
+    SystemController::rtc.adjust(localTime);
     nextRtcPersistAttemptMs = millis();
-    saveRtcBackupEpoch(epoch);
+    saveRtcBackupEpoch(localTime.unixtime());
   }
 }
 
@@ -384,6 +471,7 @@ void SystemController::init() {
   SharedState::init();
   ConfigManager::init();
   LogManager::init();
+  ensureLocalTimezoneConfigured();
 
   systemBootStartMs = millis();
   systemStatsReady = systemStatsPrefs.begin("SysStats", false);
@@ -448,7 +536,11 @@ void SystemController::updateSensors() {
     lastTempCheckMs = nowMs;
     float tempVal = tempController.readTemperature();
     bool disconnected = (tempVal <= -127.0f);
-    const uint32_t currentEpoch = static_cast<uint32_t>(getCurrentDateTime().unixtime());
+    const DateTime currentLocalTime = getCurrentDateTime();
+    uint32_t currentEpoch = 0;
+    if (!utcEpochFromLocalDateTime(currentLocalTime, currentEpoch)) {
+      currentEpoch = static_cast<uint32_t>(currentLocalTime.unixtime());
+    }
 
     if (!disconnected && tempVal > -50.0f && tempVal < 100.0f) {
       tempInvalidReadCount = 0;
@@ -672,7 +764,10 @@ void SystemController::update() {
 
 static void recordFeedTimestampIfAvailable() {
   DateTime now = getCurrentDateTime();
-  const uint32_t epoch = static_cast<uint32_t>(now.unixtime());
+  uint32_t epoch = 0;
+  if (!utcEpochFromLocalDateTime(now, epoch)) {
+    epoch = static_cast<uint32_t>(now.unixtime());
+  }
   if (epoch < 1700000000UL) {
     return;
   }

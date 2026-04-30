@@ -104,6 +104,30 @@ static String getConfiguredStaSsidString();
 static String getConfiguredApSsidString();
 static String getConfiguredApPasswordString();
 
+static void ensureLocalTimezoneConfigured() {
+  static bool configured = false;
+  if (configured) {
+    return;
+  }
+
+#if defined(_WIN32)
+  _putenv_s("TZ", NTP_TZ);
+  _tzset();
+#else
+  setenv("TZ", NTP_TZ, 1);
+  tzset();
+#endif
+  configured = true;
+}
+
+static bool toLocalCalendar(time_t epoch, struct tm &out) {
+#if defined(_WIN32)
+  return localtime_s(&out, &epoch) == 0;
+#else
+  return localtime_r(&epoch, &out) != nullptr;
+#endif
+}
+
 static void logWifiInfo(const char *format, ...) {
   char buffer[192];
   va_list args;
@@ -165,6 +189,45 @@ static bool hasReasonableDateTime(const DateTime &dt) {
   return dt.year() >= 2024 && dt.year() <= 2099;
 }
 
+static DateTime localDateTimeFromUtcEpoch(uint32_t epoch) {
+  ensureLocalTimezoneConfigured();
+
+  const time_t rawEpoch = static_cast<time_t>(epoch);
+  struct tm localInfo = {};
+  if (toLocalCalendar(rawEpoch, localInfo)) {
+    return DateTime(static_cast<uint16_t>(localInfo.tm_year + 1900),
+                    static_cast<uint8_t>(localInfo.tm_mon + 1),
+                    static_cast<uint8_t>(localInfo.tm_mday),
+                    static_cast<uint8_t>(localInfo.tm_hour),
+                    static_cast<uint8_t>(localInfo.tm_min),
+                    static_cast<uint8_t>(localInfo.tm_sec));
+  }
+
+  return DateTime(epoch);
+}
+
+static bool utcEpochFromLocalDateTime(const DateTime &localTime,
+                                      uint32_t &epochOut) {
+  ensureLocalTimezoneConfigured();
+
+  struct tm localInfo = {};
+  localInfo.tm_year = static_cast<int>(localTime.year()) - 1900;
+  localInfo.tm_mon = static_cast<int>(localTime.month()) - 1;
+  localInfo.tm_mday = static_cast<int>(localTime.day());
+  localInfo.tm_hour = static_cast<int>(localTime.hour());
+  localInfo.tm_min = static_cast<int>(localTime.minute());
+  localInfo.tm_sec = static_cast<int>(localTime.second());
+  localInfo.tm_isdst = -1;
+
+  const time_t rawEpoch = mktime(&localInfo);
+  if (rawEpoch < 0) {
+    return false;
+  }
+
+  epochOut = static_cast<uint32_t>(rawEpoch);
+  return true;
+}
+
 static bool getControllerClockNow(DateTime &out) {
   const SharedStateData snap = SharedState::getSnapshot();
   const DateTime now(snap.year, snap.month, snap.day, snap.hour, snap.minute,
@@ -215,8 +278,10 @@ static uint32_t getBestEffortEpoch() {
   }
 
   DateTime controllerNow;
-  if (getControllerClockNow(controllerNow)) {
-    return static_cast<uint32_t>(controllerNow.unixtime());
+  uint32_t controllerEpoch = 0;
+  if (getControllerClockNow(controllerNow) &&
+      utcEpochFromLocalDateTime(controllerNow, controllerEpoch)) {
+    return controllerEpoch;
   }
 
   return 0;
@@ -277,14 +342,13 @@ static void turnWifiOffInternal(const char *reason) {
 static void applySynchronizedTime(uint32_t epoch, const char *source) {
   DateTime oldTime(2000, 1, 1, 0, 0, 0);
   const bool hadOldTime = getControllerClockNow(oldTime);
+  uint32_t oldEpoch = 0;
+  const bool hadOldEpoch =
+      hadOldTime && utcEpochFromLocalDateTime(oldTime, oldEpoch);
 
-  struct timeval tv;
-  tv.tv_sec = epoch;
-  tv.tv_usec = 0;
-  settimeofday(&tv, nullptr);
   syncSystemTime(epoch);
 
-  const DateTime newTime(epoch);
+  const DateTime newTime = localDateTimeFromUtcEpoch(epoch);
   char timeBuf[32];
   formatDateTime(newTime, timeBuf, sizeof(timeBuf));
 
@@ -292,9 +356,9 @@ static void applySynchronizedTime(uint32_t epoch, const char *source) {
   snprintf(statusBuf, sizeof(statusBuf), "%s: OK (%s)", source, timeBuf);
   setTimeSyncStatus(true, epoch, statusBuf);
 
-  if (hadOldTime) {
+  if (hadOldEpoch) {
     const long diffSec =
-        static_cast<long>(epoch) - static_cast<long>(oldTime.unixtime());
+        static_cast<long>(epoch) - static_cast<long>(oldEpoch);
     logWifiInfo("[TIME] %s: ustawiono %s (delta %+lds).", source, timeBuf,
                 diffSec);
   } else {
@@ -304,6 +368,7 @@ static void applySynchronizedTime(uint32_t epoch, const char *source) {
 
 static bool syncTimeFromNtp(const char *source) {
   timeSyncInProgress = true;
+  ensureLocalTimezoneConfigured();
   logWifiInfo("[TIME] %s: start synchronizacji NTP (%s, %s, %s).", source,
               NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
 
@@ -722,7 +787,7 @@ static void updateSseStream(bool forcePush) {
   const unsigned long nowMs = millis();
   if (forcePush || lastSseStatusPushMs == 0 ||
       (nowMs - lastSseStatusPushMs) >= SSE_STATUS_INTERVAL_MS) {
-    const String statusPayload = buildWebStatusJson();
+    const String statusPayload = buildWebStatusJson(false);
     if (forcePush || statusPayload != lastSseStatusPayload) {
       sendSseEvent("status", statusPayload);
       lastSseStatusPayload = statusPayload;
@@ -806,11 +871,13 @@ static void setupWebServer() {
 
     DateTime rtcTime(2000, 1, 1, 0, 0, 0);
     const bool hasKnownClock = getControllerClockNow(rtcTime);
-    const DateTime newTime(rawEpoch);
-    const long diff = hasKnownClock
-                          ? labs(static_cast<long>(newTime.unixtime()) -
-                                 static_cast<long>(rtcTime.unixtime()))
-                          : LONG_MAX;
+    uint32_t rtcEpoch = 0;
+    const bool hasKnownEpoch =
+        hasKnownClock && utcEpochFromLocalDateTime(rtcTime, rtcEpoch);
+    const long diff =
+        hasKnownEpoch
+            ? labs(static_cast<long>(rawEpoch) - static_cast<long>(rtcEpoch))
+            : LONG_MAX;
 
     if (diff > 60 || !hasKnownClock) {
       applySynchronizedTime(static_cast<uint32_t>(rawEpoch), "HTTP /settime");
@@ -958,6 +1025,10 @@ static void setupWebServer() {
   // Catch-all route, aby WebServer nie raportowal "request handler not found"
   // dla probe requestow captive portal i nieznanych sciezek.
   server.on(UriRegex("^/.*"), HTTP_ANY, []() {
+    if (trySendEmbeddedAsset(server.uri())) {
+      return;
+    }
+
     if (isAPMode) {
       sendCaptiveRedirect();
     } else {
@@ -999,9 +1070,11 @@ static void processWifiRequests() {
 
   if (serviceModeStartRequested) {
     serviceModeStartRequested = false;
-    if (!serviceModeActive) {
-      startServiceModeInternal();
+    if (serviceModeActive || isAPMode || staConnecting ||
+        WiFi.status() == WL_CONNECTED) {
+      stopServiceModeInternal("Restart sesji WiFi.");
     }
+    startServiceModeInternal();
   }
 
   if (staOffRequested) {
@@ -1014,6 +1087,10 @@ static void processWifiRequests() {
 
   if (staOnRequested) {
     staOnRequested = false;
+    if (!serviceModeActive && !timeSyncInProgress && !isAPMode &&
+        !staConnecting && WiFi.status() != WL_CONNECTED) {
+      connectStaWithTimeout("Reczne wlaczenie WiFi");
+    }
   }
 }
 
@@ -1045,6 +1122,7 @@ static void WifiTask(void *parameter) {
 }
 
 void AkwariumWifi::begin() {
+  ensureLocalTimezoneConfigured();
   BaseType_t result =
       xTaskCreatePinnedToCore(WifiTask, "WifiTask", 10240, nullptr, 1, nullptr, 1);
   if (result == pdPASS) {
@@ -1059,11 +1137,14 @@ bool AkwariumWifi::getIsAPMode() { return isAPMode; }
 void AkwariumWifi::startAP() {
   serviceModeStopRequested = false;
   staOffRequested = false;
+  staOnRequested = false;
   serviceModeStartRequested = true;
 }
 
 void AkwariumWifi::stopAP() {
   serviceModeStartRequested = false;
+  staOffRequested = false;
+  staOnRequested = false;
   serviceModeStopRequested = true;
 }
 
@@ -1077,7 +1158,7 @@ void AkwariumWifi::requestStaOffForSleep() {
 }
 
 void AkwariumWifi::requestStaOn() {
-  if (serviceModeActive || isAPMode) {
+  if (serviceModeActive || isAPMode || timeSyncInProgress) {
     return;
   }
   staOffRequested = false;
@@ -1091,6 +1172,10 @@ bool AkwariumWifi::isStaConnected() { return staConnected; }
 bool AkwariumWifi::isStaConnecting() { return staConnecting; }
 
 bool AkwariumWifi::isServiceModeActive() { return serviceModeActive; }
+
+bool AkwariumWifi::isServiceModePending() {
+  return serviceModeStartRequested;
+}
 
 bool AkwariumWifi::isTimeSyncInProgress() { return timeSyncInProgress; }
 

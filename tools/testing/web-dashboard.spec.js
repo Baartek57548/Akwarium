@@ -196,7 +196,7 @@ async function installApiMocks(page) {
         { status: mockStatus, logs: mockLogs }
     );
 
-    await page.route('**/api/status', async (route) => {
+    await page.route('**/api/status*', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json; charset=utf-8',
@@ -281,6 +281,14 @@ for (const viewport of viewports) {
             await expect(page.locator('#logi')).toHaveClass(/active/);
         }
 
+        await page.locator('.nav-item[data-target="wykresy"]').click();
+        await expect(page.locator('#wykresy')).toHaveClass(/active/);
+        await expect(page.locator('#main-chart-canvas')).toBeVisible();
+
+        if (viewport.width <= 960) {
+            await page.locator('#mobile-nav-toggle').click();
+            await expect(page.locator('#app-sidebar')).toHaveClass(/mobile-open/);
+        }
         await page.locator('.nav-item[data-target="ustawienia"]').click();
         await expect(page.locator('#ustawienia')).toHaveClass(/active/);
         await expect(page.locator('#settings-network-ip')).toHaveValue('192.168.0.57');
