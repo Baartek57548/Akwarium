@@ -13,6 +13,12 @@ struct TemperatureHistoryEntry {
   uint32_t epoch;
 };
 
+struct TemperatureHistoryCursor {
+  uint16_t count;
+  uint16_t startIndex;
+  uint16_t capacity;
+};
+
 // STRUKTURA PRZEKAZYWANA POMIĘDZY RDZENIAMI (ZNAJDUJE SIE W TYM SAMYM
 // PAMIECIOWYM BLOKU)
 struct SharedStateData {
@@ -38,9 +44,6 @@ struct SharedStateData {
   int month;
   int year;
 
-  TemperatureHistoryEntry temperatureHistory[TEMP_HISTORY_SIZE];
-  uint16_t temperatureHistoryCount;
-  uint16_t temperatureHistoryNextIndex;
 };
 
 // Singleton zarządzający dostępem równoległym do stuktury poprzez FreeRTOS
@@ -59,10 +62,17 @@ public:
   static void updateRelays(bool heater, bool filter, bool light, bool dayMode);
   static void updateTime(int h, int m, int s, int d, int mo, int y);
   static void updateAeration(uint8_t pct);
+  static TemperatureHistoryCursor getTemperatureHistoryCursor();
+  static bool getTemperatureHistoryEntry(const TemperatureHistoryCursor &cursor,
+                                         uint16_t indexFromOldest,
+                                         TemperatureHistoryEntry &entryOut);
 
 private:
   static SemaphoreHandle_t mutex;
   static SharedStateData state;
+  static TemperatureHistoryEntry temperatureHistory[TEMP_HISTORY_SIZE];
+  static uint16_t temperatureHistoryCount;
+  static uint16_t temperatureHistoryNextIndex;
 };
 
 #endif // SHARED_STATE_H

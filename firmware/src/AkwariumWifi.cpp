@@ -15,6 +15,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <esp_err.h>
+#include <esp_task_wdt.h>
 #include <esp_wifi.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -70,12 +71,17 @@ static unsigned long apIdleStartedAtMs = 0;
 static WiFiClient sseClient;
 static bool sseClientActive = false;
 static unsigned long lastSseStatusPushMs = 0;
+static unsigned long lastSseLogsPushMs = 0;
 static unsigned long lastSseHeartbeatMs = 0;
+static uint32_t lastSseLogsSequence = 0;
 static String lastSseStatusPayload;
 static String lastSseLogsPayload;
 
 static constexpr unsigned long SSE_STATUS_INTERVAL_MS = 1000UL;
+static constexpr unsigned long SSE_LOGS_INTERVAL_MS = 5000UL;
 static constexpr unsigned long SSE_HEARTBEAT_INTERVAL_MS = 15000UL;
+static constexpr uint32_t WIFI_TASK_STACK_BYTES = 16384;
+static constexpr TickType_t WIFI_TASK_DELAY = pdMS_TO_TICKS(10);
 
 WebServer &AkwariumWifi::getServer() { return server; }
 
@@ -378,6 +384,7 @@ static bool syncTimeFromNtp(const char *source) {
   bool gotTime = false;
   const unsigned long startedAtMs = millis();
   while (millis() - startedAtMs < NTP_SYNC_TIMEOUT_MS) {
+    esp_task_wdt_reset();
     if (getLocalTime(&timeinfo, 1000)) {
       gotTime = true;
       break;
@@ -454,6 +461,7 @@ static bool connectStaWithTimeout(const char *context) {
   const unsigned long startedAtMs = millis();
   while (WiFi.status() != WL_CONNECTED &&
          (millis() - startedAtMs) < static_cast<unsigned long>(WIFI_TIMEOUT)) {
+    esp_task_wdt_reset();
     delay(100);
   }
 
@@ -754,7 +762,9 @@ static void closeSseStream() {
   sseClient = WiFiClient();
   sseClientActive = false;
   lastSseStatusPushMs = 0;
+  lastSseLogsPushMs = 0;
   lastSseHeartbeatMs = 0;
+  lastSseLogsSequence = 0;
   lastSseStatusPayload = "";
   lastSseLogsPayload = "";
 }
@@ -793,13 +803,21 @@ static void updateSseStream(bool forcePush) {
       lastSseStatusPayload = statusPayload;
     }
 
+    lastSseStatusPushMs = nowMs;
+  }
+
+  const uint32_t currentLogsSequence = LogManager::getChangeSequence();
+  const bool logsDue =
+      forcePush || lastSseLogsPushMs == 0 ||
+      (nowMs - lastSseLogsPushMs) >= SSE_LOGS_INTERVAL_MS;
+  if (logsDue && (forcePush || currentLogsSequence != lastSseLogsSequence)) {
     const String logsPayload = buildWebLogsJson();
     if (forcePush || logsPayload != lastSseLogsPayload) {
       sendSseEvent("logs", logsPayload);
       lastSseLogsPayload = logsPayload;
     }
-
-    lastSseStatusPushMs = nowMs;
+    lastSseLogsSequence = currentLogsSequence;
+    lastSseLogsPushMs = nowMs;
   }
 
   if (isSseStreamHealthy() &&
@@ -834,7 +852,9 @@ static void openSseStream() {
   sseClient = client;
   sseClientActive = true;
   lastSseStatusPushMs = 0;
+  lastSseLogsPushMs = 0;
   lastSseHeartbeatMs = millis();
+  lastSseLogsSequence = 0;
   lastSseStatusPayload = "";
   lastSseLogsPayload = "";
 
@@ -1096,6 +1116,7 @@ static void processWifiRequests() {
 
 static void WifiTask(void *parameter) {
   (void)parameter;
+  const bool wifiWdtRegistered = esp_task_wdt_add(NULL) == ESP_OK;
 
   setupWebServer();
   WiFi.persistent(false);
@@ -1107,6 +1128,9 @@ static void WifiTask(void *parameter) {
       "[WIFI] Start: radio wylaczone. Dzienna synchronizacja o 09:00, AP tylko jako fallback z menu WiFi.");
 
   for (;;) {
+    if (wifiWdtRegistered) {
+      esp_task_wdt_reset();
+    }
     processWifiRequests();
     maintainWifiState();
     maintainApIdleTimeout();
@@ -1115,16 +1139,20 @@ static void WifiTask(void *parameter) {
     }
     if (webServerRunning) {
       server.handleClient();
+      if (wifiWdtRegistered) {
+        esp_task_wdt_reset();
+      }
       updateSseStream(false);
     }
-    vTaskDelay(10 / portTICK_PERIOD_MS);
+    vTaskDelay(WIFI_TASK_DELAY);
   }
 }
 
 void AkwariumWifi::begin() {
   ensureLocalTimezoneConfigured();
   BaseType_t result =
-      xTaskCreatePinnedToCore(WifiTask, "WifiTask", 10240, nullptr, 1, nullptr, 1);
+      xTaskCreatePinnedToCore(WifiTask, "WifiTask", WIFI_TASK_STACK_BYTES,
+                              nullptr, 1, nullptr, 1);
   if (result == pdPASS) {
     LogManager::logInfo("WIFI: uruchomiono zadanie sieciowe.");
   } else {

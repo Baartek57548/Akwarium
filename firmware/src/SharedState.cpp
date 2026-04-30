@@ -5,6 +5,9 @@
 
 SemaphoreHandle_t SharedState::mutex = NULL;
 SharedStateData SharedState::state = {};
+TemperatureHistoryEntry SharedState::temperatureHistory[TEMP_HISTORY_SIZE] = {};
+uint16_t SharedState::temperatureHistoryCount = 0;
+uint16_t SharedState::temperatureHistoryNextIndex = 0;
 
 void SharedState::init() {
   mutex = xSemaphoreCreateMutex();
@@ -26,11 +29,11 @@ void SharedState::init() {
   state.day = 1;
   state.month = 1;
   state.year = 2025;
-  state.temperatureHistoryCount = 0;
-  state.temperatureHistoryNextIndex = 0;
+  temperatureHistoryCount = 0;
+  temperatureHistoryNextIndex = 0;
   for (uint16_t i = 0; i < TEMP_HISTORY_SIZE; ++i) {
-    state.temperatureHistory[i].value = NAN;
-    state.temperatureHistory[i].epoch = 0;
+    temperatureHistory[i].value = NAN;
+    temperatureHistory[i].epoch = 0;
   }
 }
 
@@ -60,13 +63,13 @@ void SharedState::updateTemperature(float current, float min, uint32_t minEp,
     const bool validTemperature =
         !isnan(current) && current > -50.0f && current < 100.0f;
     if (validTemperature) {
-      bool shouldAppend = state.temperatureHistoryCount == 0;
+      bool shouldAppend = temperatureHistoryCount == 0;
       if (!shouldAppend) {
         const uint16_t lastIndex =
-            (state.temperatureHistoryNextIndex + TEMP_HISTORY_SIZE - 1U) %
+            (temperatureHistoryNextIndex + TEMP_HISTORY_SIZE - 1U) %
             TEMP_HISTORY_SIZE;
         const TemperatureHistoryEntry &lastEntry =
-            state.temperatureHistory[lastIndex];
+            temperatureHistory[lastIndex];
         if (lastEntry.epoch == 0 || currentEpoch == 0) {
           shouldAppend = true;
         } else if (currentEpoch >= lastEntry.epoch) {
@@ -79,14 +82,14 @@ void SharedState::updateTemperature(float current, float min, uint32_t minEp,
 
       if (shouldAppend) {
         TemperatureHistoryEntry &entry =
-            state.temperatureHistory[state.temperatureHistoryNextIndex];
+            temperatureHistory[temperatureHistoryNextIndex];
         entry.value = current;
         entry.epoch = currentEpoch;
-        if (state.temperatureHistoryCount < TEMP_HISTORY_SIZE) {
-          state.temperatureHistoryCount++;
+        if (temperatureHistoryCount < TEMP_HISTORY_SIZE) {
+          temperatureHistoryCount++;
         }
-        state.temperatureHistoryNextIndex =
-            (state.temperatureHistoryNextIndex + 1U) % TEMP_HISTORY_SIZE;
+        temperatureHistoryNextIndex =
+            (temperatureHistoryNextIndex + 1U) % TEMP_HISTORY_SIZE;
       }
     }
 
@@ -130,4 +133,33 @@ void SharedState::updateAeration(uint8_t pct) {
     state.aerationPercent = pct;
     xSemaphoreGive(mutex);
   }
+}
+
+TemperatureHistoryCursor SharedState::getTemperatureHistoryCursor() {
+  TemperatureHistoryCursor cursor = {0, 0, TEMP_HISTORY_SIZE};
+  if (mutex != NULL && xSemaphoreTake(mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    cursor.count = temperatureHistoryCount;
+    cursor.startIndex =
+        temperatureHistoryCount < TEMP_HISTORY_SIZE ? 0 : temperatureHistoryNextIndex;
+    xSemaphoreGive(mutex);
+  }
+  return cursor;
+}
+
+bool SharedState::getTemperatureHistoryEntry(
+    const TemperatureHistoryCursor &cursor, uint16_t indexFromOldest,
+    TemperatureHistoryEntry &entryOut) {
+  if (cursor.count == 0 || indexFromOldest >= cursor.count ||
+      cursor.capacity != TEMP_HISTORY_SIZE) {
+    return false;
+  }
+
+  const uint16_t physicalIndex =
+      (cursor.startIndex + indexFromOldest) % TEMP_HISTORY_SIZE;
+  if (mutex != NULL && xSemaphoreTake(mutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+    entryOut = temperatureHistory[physicalIndex];
+    xSemaphoreGive(mutex);
+    return true;
+  }
+  return false;
 }
