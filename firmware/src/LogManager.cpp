@@ -10,12 +10,15 @@
 namespace {
 
 static constexpr const char *LOG_SCHEMA_VERSION = "2026-04-05";
+static constexpr unsigned long CRITICAL_LOG_NVS_MIN_INTERVAL_MS = 60000UL;
 
 static Preferences logPrefs;
 static SemaphoreHandle_t logMutex = nullptr;
 static portMUX_TYPE logMutexInitMux = portMUX_INITIALIZER_UNLOCKED;
 static bool persistentCriticalLogsEnabled = true;
 static bool persistentCriticalLogsErrorPrinted = false;
+static unsigned long lastCriticalLogPersistMs = 0;
+static uint32_t lastCriticalLogPersistHash = 0;
 
 static const char *levelToLabel(LogLevel level) {
   switch (level) {
@@ -259,6 +262,7 @@ static void appendLogGroupText(String &text, const char *title,
 LogEntrySnapshot LogManager::webLogs[WEB_MAX_LOGS];
 int LogManager::webLogsHead = 0;
 int LogManager::webLogsCount = 0;
+uint32_t LogManager::logChangeSequence = 0;
 
 LogEntrySnapshot LogManager::criticalLogs[MAX_CRITICAL_LOGS];
 int LogManager::criticalLogsCount = 0;
@@ -336,6 +340,43 @@ void LogManager::appendWebLog(LogLevel level, const char *code,
                               const char *msg) {
   appendRingEntry(webLogs, WEB_MAX_LOGS, webLogsHead, webLogsCount, level, code,
                   msg);
+  logChangeSequence++;
+}
+
+static uint32_t hashCriticalLog(const LogEntrySnapshot &entry) {
+  uint32_t hash = 2166136261UL;
+  const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&entry.level);
+  hash ^= *bytes;
+  hash *= 16777619UL;
+
+  for (const char *p = entry.code; *p != '\0'; ++p) {
+    hash ^= static_cast<uint8_t>(*p);
+    hash *= 16777619UL;
+  }
+  for (const char *p = entry.message; *p != '\0'; ++p) {
+    hash ^= static_cast<uint8_t>(*p);
+    hash *= 16777619UL;
+  }
+  return hash;
+}
+
+static bool shouldPersistCriticalLog(const LogEntrySnapshot &entry) {
+  if (!persistentCriticalLogsEnabled) {
+    return false;
+  }
+
+  const unsigned long nowMs = millis();
+  const uint32_t hash = hashCriticalLog(entry);
+  const bool repeatedSoon =
+      hash == lastCriticalLogPersistHash &&
+      (nowMs - lastCriticalLogPersistMs) < CRITICAL_LOG_NVS_MIN_INTERVAL_MS;
+  if (repeatedSoon) {
+    return false;
+  }
+
+  lastCriticalLogPersistHash = hash;
+  lastCriticalLogPersistMs = nowMs;
+  return true;
 }
 
 void LogManager::logInfo(const char *msg) {
@@ -361,26 +402,39 @@ void LogManager::logWarn(const char *msg) {
 void LogManager::logError(const char *msg) {
   Serial.print("[ERROR] ");
   Serial.println(msg);
+
+  LogEntrySnapshot persistEntry = {};
+  int persistIndex = 0;
+  int persistCount = 0;
+  int persistHead = 0;
+  bool shouldPersist = false;
+
   if (ensureMutex() && logMutex != nullptr &&
       xSemaphoreTake(logMutex, pdMS_TO_TICKS(250)) == pdTRUE) {
     appendWebLog(LogLevel::Error, "error", msg);
 
     appendRingEntry(criticalLogs, MAX_CRITICAL_LOGS, criticalLogsHead,
                     criticalLogsCount, LogLevel::Error, "error", msg);
+    logChangeSequence++;
     const int savedIndex =
         (criticalLogsHead + MAX_CRITICAL_LOGS - 1) % MAX_CRITICAL_LOGS;
-    if (persistentCriticalLogsEnabled) {
-      saveCriticalLog(criticalLogs[savedIndex], savedIndex);
-    }
+    persistEntry = criticalLogs[savedIndex];
+    persistIndex = savedIndex;
+    persistCount = criticalLogsCount;
+    persistHead = criticalLogsHead;
+    shouldPersist = shouldPersistCriticalLog(persistEntry);
+    xSemaphoreGive(logMutex);
+  }
 
+  if (shouldPersist) {
+    saveCriticalLog(persistEntry, persistIndex);
     if (persistentCriticalLogsEnabled) {
-      const size_t countWritten = logPrefs.putInt("critCount", criticalLogsCount);
-      const size_t headWritten = logPrefs.putInt("critHead", criticalLogsHead);
+      const size_t countWritten = logPrefs.putInt("critCount", persistCount);
+      const size_t headWritten = logPrefs.putInt("critHead", persistHead);
       if (countWritten != sizeof(int32_t) || headWritten != sizeof(int32_t)) {
         disablePersistentCriticalLogs("nvs_set_i32 failed");
       }
     }
-    xSemaphoreGive(logMutex);
   }
 }
 
@@ -390,6 +444,9 @@ void LogManager::clearCriticalLogs() {
     criticalLogsCount = 0;
     criticalLogsHead = 0;
     memset(criticalLogs, 0, sizeof(criticalLogs));
+    logChangeSequence++;
+    lastCriticalLogPersistHash = 0;
+    lastCriticalLogPersistMs = 0;
     if (persistentCriticalLogsEnabled) {
       logPrefs.putInt("critCount", 0);
       logPrefs.putInt("critHead", 0);
@@ -405,6 +462,7 @@ void LogManager::clearNormalLogs() {
     webLogsCount = 0;
     webLogsHead = 0;
     memset(webLogs, 0, sizeof(webLogs));
+    logChangeSequence++;
     xSemaphoreGive(logMutex);
   }
   Serial.println("[LOGS] WYCZYSZCZONO LOGI ZWYKLE");
@@ -418,6 +476,16 @@ uint8_t LogManager::getNormalLogsCount() {
     xSemaphoreGive(logMutex);
   }
   return count;
+}
+
+uint32_t LogManager::getChangeSequence() {
+  uint32_t sequence = logChangeSequence;
+  if (ensureMutex() && logMutex != nullptr &&
+      xSemaphoreTake(logMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    sequence = logChangeSequence;
+    xSemaphoreGive(logMutex);
+  }
+  return sequence;
 }
 
 uint8_t LogManager::getCriticalLogsCount() {

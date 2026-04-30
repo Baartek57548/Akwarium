@@ -216,9 +216,12 @@ String buildWebStatusJson(bool includeHistory) {
   const float voltage = isnan(PowerManager::getBatteryVoltage())
                             ? 0.0f
                             : PowerManager::getBatteryVoltage();
+  const TemperatureHistoryCursor historyCursor =
+      includeHistory ? SharedState::getTemperatureHistoryCursor()
+                     : TemperatureHistoryCursor{0, 0, TEMP_HISTORY_SIZE};
 
   String json;
-  json.reserve(includeHistory ? (5200U + (static_cast<size_t>(snap.temperatureHistoryCount) * 40U))
+  json.reserve(includeHistory ? (5200U + (static_cast<size_t>(historyCursor.count) * 40U))
                               : 5200U);
   json += '{';
 
@@ -256,13 +259,11 @@ String buildWebStatusJson(bool includeHistory) {
     appendJsonKey(json, "history");
     json += '[';
     bool historyFirst = true;
-    const uint16_t startIndex =
-        snap.temperatureHistoryCount < TEMP_HISTORY_SIZE
-            ? 0U
-            : snap.temperatureHistoryNextIndex;
-    for (uint16_t i = 0; i < snap.temperatureHistoryCount; ++i) {
-      const uint16_t index = (startIndex + i) % TEMP_HISTORY_SIZE;
-      const TemperatureHistoryEntry &entry = snap.temperatureHistory[index];
+    for (uint16_t i = 0; i < historyCursor.count; ++i) {
+      TemperatureHistoryEntry entry = {};
+      if (!SharedState::getTemperatureHistoryEntry(historyCursor, i, entry)) {
+        continue;
+      }
       if (isnan(entry.value)) {
         continue;
       }

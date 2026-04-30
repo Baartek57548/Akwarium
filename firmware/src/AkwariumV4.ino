@@ -27,6 +27,10 @@ U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C display(U8G2_R0, /* reset=*/-1);
 AquariumAnimation *animation = nullptr;
 
 // Osobne zadanie wyswietlacza
+static constexpr uint32_t VIDEO_TASK_STACK_BYTES = 20480;
+static constexpr BaseType_t VIDEO_TASK_CORE = 0;
+static constexpr UBaseType_t VIDEO_TASK_PRIORITY = 1;
+static constexpr TickType_t VIDEO_FRAME_DELAY = pdMS_TO_TICKS(42);
 
 // --- UI STATE MACHINE ---
 enum class UiState {
@@ -641,7 +645,14 @@ void updateUiState() {
 }
 
 void VideoTask(void *pvParameters) {
+  (void)pvParameters;
+  const bool videoWdtRegistered = esp_task_wdt_add(NULL) == ESP_OK;
+
   while (true) {
+    if (videoWdtRegistered) {
+      esp_task_wdt_reset();
+    }
+
     if (animation != nullptr) {
       updateUiState();
       syncTestOverridesWithUiState();
@@ -684,6 +695,10 @@ void VideoTask(void *pvParameters) {
                cfg.feedMinute);
       animation->setFeedingSchedule(feedTime, cfg.feedMode, 0);
       OledApp::consumePendingUiSaveConfirmationAnimation(animation);
+
+      if (videoWdtRegistered) {
+        esp_task_wdt_reset();
+      }
 
       if (!animation->drawConfirmAnimationFrame()) {
         switch (uiState) {
@@ -765,12 +780,15 @@ void VideoTask(void *pvParameters) {
         }
       }
       display.sendBuffer();
+      if (videoWdtRegistered) {
+        esp_task_wdt_reset();
+      }
     }
 
     // Obsluga usypiania po uplywie SCREEN_TIMEOUT
     SystemController::handlePowerManagement(&display, animation);
 
-    vTaskDelay(pdMS_TO_TICKS(42)); // OkoĹ‚o 24 FPS
+    vTaskDelay(VIDEO_FRAME_DELAY); // Okolo 24 FPS
   }
 }
 
@@ -781,6 +799,7 @@ void setup() {
 
   // ESP32-S3 Zero: stabilna magistrala I2C dla OLED/RTC na GPIO8(GPIO SDA) i GPIO9(GPIO SCL)
   Wire.begin(8, 9);
+  Wire.setTimeOut(50);
   Wire.setClock(100000L);
 
   // Natychmiastowa odpowiedz po starcie urzadzenia.
@@ -843,11 +862,13 @@ void setup() {
 
   // UI uruchamiamy jak najwczesniej, aby nie zostawiac sterownika na samym
   // splash screen przy ciezszej inicjalizacji pozostalych modulow.
-  if (xTaskCreatePinnedToCore(VideoTask, "VideoTask", 12288, NULL, 1, NULL, 0) ==
-      pdPASS) {
+  if (xTaskCreatePinnedToCore(VideoTask, "VideoTask", VIDEO_TASK_STACK_BYTES,
+                              NULL, VIDEO_TASK_PRIORITY, NULL,
+                              VIDEO_TASK_CORE) == pdPASS) {
     logBootStage("VideoTask started");
   } else {
     Serial.println("[BOOT] ERROR: VideoTask start failed");
+    logBootStage("VideoTask start FAIL");
   }
 
   AkwariumWifi::begin();

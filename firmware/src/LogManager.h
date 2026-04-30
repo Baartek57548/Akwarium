@@ -31,6 +31,7 @@ public:
   static void clearNormalLogs();
   static String getLogsAsJson();
   static String getLogsAsText(const char *type = nullptr);
+  static uint32_t getChangeSequence();
   static uint8_t getNormalLogsCount();
   static uint8_t getCriticalLogsCount();
   static bool getNormalLogEntryAt(uint8_t indexFromOldest,
@@ -52,6 +53,7 @@ private:
   static LogEntrySnapshot webLogs[WEB_MAX_LOGS];
   static int webLogsHead;
   static int webLogsCount;
+  static uint32_t logChangeSequence;
 
   static const int MAX_CRITICAL_LOGS = 32;
   static LogEntrySnapshot criticalLogs[MAX_CRITICAL_LOGS];
