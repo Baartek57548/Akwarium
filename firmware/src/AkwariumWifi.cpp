@@ -870,6 +870,8 @@ static void setupWebServer() {
   }
 
   server.on("/", HTTP_GET, []() { trySendEmbeddedAsset("/index.html"); });
+  server.on("/settings", HTTP_GET,
+            []() { trySendEmbeddedAsset("/settings.html"); });
 
   server.on("/api/events", HTTP_GET, []() { openSseStream(); });
 
@@ -1000,6 +1002,7 @@ static void setupWebServer() {
       []() {
         HTTPUpload &upload = server.upload();
         if (upload.status == UPLOAD_FILE_START) {
+          esp_task_wdt_reset();
           otaUploadRejected = false;
           otaUploadRejectReason = "";
 
@@ -1019,15 +1022,21 @@ static void setupWebServer() {
             OtaManager::endOtaUpdate(false);
             otaUploadActive = false;
           }
+          esp_task_wdt_reset();
         } else if (otaUploadRejected) {
           return;
         } else if (upload.status == UPLOAD_FILE_WRITE) {
-          if (Update.write(upload.buf, upload.currentSize) !=
-              upload.currentSize) {
+          esp_task_wdt_reset();
+          const size_t written = Update.write(upload.buf, upload.currentSize);
+          esp_task_wdt_reset();
+          yield();
+          if (written != upload.currentSize) {
             Update.printError(Serial);
           }
         } else if (upload.status == UPLOAD_FILE_END) {
+          esp_task_wdt_reset();
           const bool ok = Update.end(true);
+          esp_task_wdt_reset();
           if (ok) {
             logWifiInfo("[OTA] Zakonczono pomyslnie (%u bajtow).",
                         upload.totalSize);

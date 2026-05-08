@@ -15,6 +15,7 @@
 #define isFilterOn ctx->isFilterOn
 #define isLightOn ctx->isLightOn
 #define isHeaterOn ctx->isHeaterOn
+#define isFeedingAnim ctx->isFeedingAnim
 #define feedFreq ctx->feedFreq
 #define feedDaysPassed ctx->feedDaysPassed
 #define feedHour ctx->feedHour
@@ -121,40 +122,27 @@ static void formatHomeTemperature(const char *rawTemp, char *out,
   out[outIdx] = '\0';
 }
 
-static void drawRelayStatusBadge(U8G2 *oled, int x, int y, char label,
-                                 bool on) {
-  char labelText[2] = {label, '\0'};
-  oled->drawFrame(x, y, 12, 8);
-
-  if (on) {
-    oled->drawBox(x + 1, y + 1, 10, 6);
-    oled->setDrawColor(0);
-    oled->drawStr(x + 4, y + 7, labelText);
-    oled->setDrawColor(1);
-    oled->drawPixel(x + 1, y + 1);
-  } else {
-    oled->drawStr(x + 4, y + 7, labelText);
-    oled->drawCircle(x + 2, y + 2, 1, U8G2_DRAW_ALL);
-  }
-}
-
-static void drawStaticBadge(U8G2 *oled, int x, int y, char label) {
-  char labelText[2] = {label, '\0'};
-  oled->drawFrame(x, y, 10, 8);
-  oled->drawStr(x + 3, y + 7, labelText);
-}
-
 static void drawBatteryIndicator(U8G2 *oled, int x, int y, uint8_t percent) {
   if (percent > 100) {
     percent = 100;
   }
-  oled->drawFrame(x, y, 14, 8);
-  oled->drawFrame(x + 14, y + 2, 2, 4);
+  oled->drawFrame(x, y, 13, 7);
+  oled->drawFrame(x + 13, y + 2, 2, 3);
 
-  int fillWidth = (12 * percent) / 100;
+  int fillWidth = (11 * percent) / 100;
   if (fillWidth > 0) {
-    oled->drawBox(x + 1, y + 1, fillWidth, 6);
+    oled->drawBox(x + 1, y + 1, fillWidth, 5);
   }
+}
+
+static void drawTinyFeedingIndicator(U8G2 *oled, int x, int y) {
+  oled->drawTriangle(x, y + 3, x + 4, y + 1, x + 4, y + 5);
+  oled->drawDisc(x + 8, y + 3, 4, U8G2_DRAW_ALL);
+  oled->setDrawColor(0);
+  oled->drawPixel(x + 9, y + 2);
+  oled->setDrawColor(1);
+  oled->drawPixel(x + 14, y + 1);
+  oled->drawPixel(x + 15, y + 4);
 }
 
 } // namespace
@@ -165,44 +153,35 @@ void HomeRenderer::drawFrame(AquariumAnimation *ctx) {
   display->setFontMode(1);
   display->setBitmapMode(1);
 
-  // Sekcja gorna 0..21: czas + temperatura.
+  // Home pokazuje tylko dwa komunikaty: czas oraz jedna informacja o akwarium.
   char timeMain[6];
   snprintf(timeMain, sizeof(timeMain), "%02d:%02d", currentHour, currentMinute);
-  char secondsText[3];
-  snprintf(secondsText, sizeof(secondsText), "%02d", currentSecond);
 
   char temperatureDisplay[12];
   formatHomeTemperature(tempBuffer, temperatureDisplay, sizeof(temperatureDisplay));
 
-  display->setFont(u8g2_font_logisoso16_tn);
-  display->drawStr(0, 18, timeMain);
-
-  const int16_t timeMainWidth = display->getStrWidth(timeMain);
-  display->setFont(u8g2_font_6x10_tr);
-  display->drawStr(timeMainWidth + 2, 18, secondsText);
-
-  display->setFont(u8g2_font_logisoso16_tn);
-  int16_t tempWidth = display->getStrWidth(temperatureDisplay);
-  int16_t tempX = 127 - tempWidth + 1;
-  if (tempX < 77) {
-    tempX = 77;
+  display->setFont(u8g2_font_timR24_tr);
+  int16_t timeX = (128 - display->getStrWidth(timeMain)) / 2;
+  if (timeX < 0) {
+    timeX = 0;
   }
-  display->drawStr(tempX, 18, temperatureDisplay);
+  display->drawStr(timeX, 23, timeMain);
 
-  // Separatory zgodnie z blueprintem.
-  display->drawLine(0, 22, 127, 22);
-  display->drawLine(74, 0, 74, 21);
+  display->drawHLine(7, 24, 101);
 
-  // Pasek statusu 24..31 (czytelne statusy przekaźnikow).
-  display->setFont(u8g2_font_4x6_tr);
-  drawRelayStatusBadge(display, 0, 24, 'L', isLightOn);
-  drawRelayStatusBadge(display, 13, 24, 'F', isFilterOn);
-  drawRelayStatusBadge(display, 26, 24, 'H', isHeaterOn);
-  drawStaticBadge(display, 40, 24, 'A');
-  drawStaticBadge(display, 52, 24, 'K');
+  display->setFont(u8g2_font_5x7_tr);
+  int16_t tempX = (128 - display->getStrWidth(temperatureDisplay)) / 2;
+  if (tempX < 0) {
+    tempX = 0;
+  }
+  display->drawStr(tempX, 31, temperatureDisplay);
 
-  // Bateria wyrownana do prawej (ok. 16x8 px).
-  drawBatteryIndicator(display, 112, 24, batteryPercent);
+  // Jeden maly wskaznik: karmienie ma priorytet, w innym razie bateria.
+  if (isFeedingAnim) {
+    drawTinyFeedingIndicator(display, 112, 25);
+  } else {
+    drawBatteryIndicator(display, 112, 25, batteryPercent);
+  }
 }
 
 void HomeRenderer::drawFeedingScreen(AquariumAnimation *ctx) {

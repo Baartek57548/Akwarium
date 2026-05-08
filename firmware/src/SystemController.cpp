@@ -757,6 +757,12 @@ void SystemController::applyOutputs() {
 void SystemController::update() {
   esp_task_wdt_reset();
 
+  if (OtaManager::isOtaInProgress()) {
+    applyOutputs();
+    esp_task_wdt_reset();
+    return;
+  }
+
   updateSensors();
   updateDecisions();
   applyOutputs();

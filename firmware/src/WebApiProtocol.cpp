@@ -14,7 +14,7 @@
 
 namespace {
 
-static constexpr const char *WEB_API_SCHEMA_VERSION = "2026-04-05";
+static constexpr const char *WEB_API_SCHEMA_VERSION = "2026-04-30";
 
 static const char *feedErrorToCode(Error err) {
   switch (err) {
@@ -291,6 +291,14 @@ String buildWebStatusJson(bool includeHistory) {
   json += '}';
 
   json += ',';
+  appendJsonKey(json, "display");
+  json += '{';
+  bool displayFirst = true;
+  appendJsonBoolField(json, "alwaysScreenOn", cfg.alwaysScreenOn,
+                      displayFirst);
+  json += '}';
+
+  json += ',';
   appendJsonKey(json, "relays");
   json += '{';
   bool relaysFirst = true;
@@ -412,6 +420,17 @@ String buildWebStatusJson(bool includeHistory) {
                         firmwareFirst);
   appendJsonStringField(json, "idfVersion", firmwareInfo.idfVersion,
                         firmwareFirst);
+  json += '}';
+
+  json += ',';
+  appendJsonKey(json, "web");
+  json += '{';
+  bool webFirst = true;
+  appendJsonBoolField(json, "embeddedAssets", true, webFirst);
+  appendJsonStringField(json, "settingsStylesheet",
+                        "/vendor/tailwind.min.css", webFirst);
+  appendJsonStringField(json, "settingsScript", "/vendor/alpine.min.js",
+                        webFirst);
   json += '}';
 
   json += ',';

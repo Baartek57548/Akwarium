@@ -1,11 +1,23 @@
 #ifndef AQUARIUM_ANIMATION_H
 #define AQUARIUM_ANIMATION_H
 
+#include <Arduino.h>
 #include <U8g2lib.h>
 
 struct LogEntry {
   char message[20];
   char time[6];
+};
+
+enum class SettingsScreen : uint8_t {
+  NONE = 0,
+  HARMONOGRAMY = 6,
+  TEMPERATURE_AND_HEATER,
+  AERATION_CO2,
+  FEEDING,
+  WIFI,
+  DISPLAY_AND_POWER,
+  SYSTEM
 };
 
 // Struktury do animacji proceduralnej (rybki)
@@ -34,6 +46,7 @@ class AquariumAnimation {
   friend class ScheduleRenderer;
   friend class TestRenderer;
   friend class OtaRenderer;
+  friend class SettingsRenderer;
 
 private:
   U8G2 *display;
@@ -148,6 +161,7 @@ private:
   void moveFish();
   void drawFood();
   void drawWaves(int offset);
+  void setActiveScheduleRaw(uint8_t id);
 
 public:
   AquariumAnimation(U8G2 *u8g2_instance);
@@ -169,6 +183,11 @@ public:
   // Rysowanie EKRANĂ“W
   void drawFrame(); // Ekran GĹ‚Ăłwny
   void drawMenu(bool btnBack, bool btnSelect, bool btnNext);
+  void drawSettingsMenu(bool btnBack, bool btnSelect, bool btnNext);
+  void drawSettingsSchedules(bool btnBack, bool btnSelect, bool btnNext);
+  void drawSettingsAerationCo2(bool btnBack, bool btnSelect, bool btnNext);
+  void drawSettingsDisplayPower(bool btnBack, bool btnSelect, bool btnNext);
+  void drawSettingsSystem(bool btnBack, bool btnSelect, bool btnNext);
   void drawSchedule(bool btnBack, bool btnSelect, bool btnNext); // ĹšwiatĹ‚o
   void drawScheduleAeration(bool btnBack, bool btnSelect,
                             bool btnNext); // Napowietrzanie
@@ -201,7 +220,7 @@ public:
   void menuNext();
   uint8_t getMenuSelection();
   void scheduleNext();
-  void setActiveScheduleId(uint8_t id);
+  void setActiveScheduleId(SettingsScreen screen);
   uint8_t getScheduleSelection();
   void setLightSchedule(uint8_t hourOn, uint8_t minuteOn, uint8_t hourOff,
                         uint8_t minuteOff);

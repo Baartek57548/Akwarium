@@ -1,8 +1,71 @@
 #include "AquariumAnimation.h"
 #include "ConfigData.h"
 #include "LogManager.h"
+#include "SettingsRenderer.h"
 #include "UIRenderers.h"
 #include <Arduino.h>
+
+namespace {
+
+constexpr uint8_t LEGACY_LIGHT_SCHEDULE = 0;
+constexpr uint8_t LEGACY_AERATION_SCHEDULE = 1;
+constexpr uint8_t LEGACY_FILTER_SCHEDULE = 2;
+constexpr uint8_t LEGACY_TEMPERATURE_SCREEN = 3;
+constexpr uint8_t LEGACY_FEEDING_SCREEN = 4;
+constexpr uint8_t LEGACY_DATETIME_SCREEN = 5;
+
+static uint8_t screenId(SettingsScreen screen) {
+  return static_cast<uint8_t>(screen);
+}
+
+static bool isSettingsScreen(uint8_t id, SettingsScreen screen) {
+  return id == screenId(screen);
+}
+
+static bool isLegacyScheduleScreen(uint8_t id) {
+  return id <= LEGACY_FILTER_SCHEDULE;
+}
+
+static bool isLightScheduleScreen(uint8_t id) {
+  return id == LEGACY_LIGHT_SCHEDULE;
+}
+
+static bool isAerationScheduleScreen(uint8_t id) {
+  return id == LEGACY_AERATION_SCHEDULE ||
+         isSettingsScreen(id, SettingsScreen::AERATION_CO2);
+}
+
+static bool isFilterScheduleScreen(uint8_t id) {
+  return id == LEGACY_FILTER_SCHEDULE;
+}
+
+static bool isTemperatureSettingsScreen(uint8_t id) {
+  return id == LEGACY_TEMPERATURE_SCREEN ||
+         isSettingsScreen(id, SettingsScreen::TEMPERATURE_AND_HEATER);
+}
+
+static bool isFeedingSettingsScreen(uint8_t id) {
+  return id == LEGACY_FEEDING_SCREEN ||
+         isSettingsScreen(id, SettingsScreen::FEEDING);
+}
+
+static bool isDateTimeSettingsScreen(uint8_t id) {
+  return id == LEGACY_DATETIME_SCREEN;
+}
+
+static bool isUnifiedSchedulesScreen(uint8_t id) {
+  return isSettingsScreen(id, SettingsScreen::HARMONOGRAMY);
+}
+
+static bool isDisplayPowerSettingsScreen(uint8_t id) {
+  return isSettingsScreen(id, SettingsScreen::DISPLAY_AND_POWER);
+}
+
+static bool isSystemSettingsScreen(uint8_t id) {
+  return isSettingsScreen(id, SettingsScreen::SYSTEM);
+}
+
+} // namespace
 
 // ==========================================
 // 1. BITMAPY - EKRAN GĹĂ“WNY (ZAKTUALIZOWANE)
@@ -442,7 +505,7 @@ AquariumAnimation::AquariumAnimation(U8G2 *u8g2_instance) {
 
   scheduleChangePending = false;
   timeChangePending = false;
-  activeScheduleId = 0;
+  activeScheduleId = screenId(SettingsScreen::NONE);
 
   isEditing = false;
   editState = 0;
@@ -660,7 +723,7 @@ void AquariumAnimation::updatePhysics() {
 // --- LOGIKA NAWIGACJI MENU ---
 void AquariumAnimation::menuNext() {
   menuSelection++;
-  if (menuSelection > 5) {
+  if (menuSelection > 6) {
     menuSelection = 0;
     menuScrollOffset = 0;
   } else if (menuSelection > menuScrollOffset + 2) {
@@ -670,11 +733,15 @@ void AquariumAnimation::menuNext() {
 
 uint8_t AquariumAnimation::getMenuSelection() { return menuSelection; }
 
-void AquariumAnimation::setActiveScheduleId(uint8_t id) {
-  if (id > 5)
-    id = 0;
+void AquariumAnimation::setActiveScheduleRaw(uint8_t id) {
+  if (id > screenId(SettingsScreen::SYSTEM))
+    id = screenId(SettingsScreen::NONE);
   activeScheduleId = id;
   scheduleSelection = 0;
+}
+
+void AquariumAnimation::setActiveScheduleId(SettingsScreen screen) {
+  setActiveScheduleRaw(screenId(screen));
 }
 
 uint8_t AquariumAnimation::getScheduleSelection() { return scheduleSelection; }
@@ -727,9 +794,17 @@ void AquariumAnimation::setHeaterMode(uint8_t mode) {
 void AquariumAnimation::scheduleNext() {
   if (!isEditing) {
     scheduleSelection++;
-    uint8_t maxSelection = 1;
-    if (activeScheduleId <= 2) {
+    uint8_t maxSelection = 0;
+    if (isLegacyScheduleScreen(activeScheduleId) ||
+        isAerationScheduleScreen(activeScheduleId)) {
       maxSelection = 2;
+    } else if (isUnifiedSchedulesScreen(activeScheduleId) ||
+               isSystemSettingsScreen(activeScheduleId)) {
+      maxSelection = 3;
+    } else if (isDateTimeSettingsScreen(activeScheduleId) ||
+               isFeedingSettingsScreen(activeScheduleId) ||
+               isDisplayPowerSettingsScreen(activeScheduleId)) {
+      maxSelection = 1;
     }
     if (scheduleSelection > maxSelection)
       scheduleSelection = 0;
@@ -738,11 +813,14 @@ void AquariumAnimation::scheduleNext() {
 
 // --- LOGIKA EDYCJI ---
 void AquariumAnimation::startEditing() {
-  if (activeScheduleId <= 2 && scheduleSelection > 0) {
-    const uint8_t currentMode = activeScheduleId == 0
-                                    ? lightMode
-                                    : (activeScheduleId == 1 ? aerationMode
-                                                             : filterMode);
+  if ((isLegacyScheduleScreen(activeScheduleId) ||
+       isSettingsScreen(activeScheduleId, SettingsScreen::AERATION_CO2)) &&
+      scheduleSelection > 0) {
+    const uint8_t currentMode =
+        isLightScheduleScreen(activeScheduleId)
+            ? lightMode
+            : (isAerationScheduleScreen(activeScheduleId) ? aerationMode
+                                                          : filterMode);
     if (currentMode != static_cast<uint8_t>(ScheduleMode::Schedule)) {
       return;
     }
@@ -751,7 +829,7 @@ void AquariumAnimation::startEditing() {
   isEditing = true;
   editState = 1;
 
-  if (activeScheduleId == 0) { // Light
+  if (isLightScheduleScreen(activeScheduleId)) {
     if (scheduleSelection == 0) {
       tempHour = lightMode;
       tempMinute = 0;
@@ -762,7 +840,7 @@ void AquariumAnimation::startEditing() {
       tempHour = scheduleHourOff;
       tempMinute = scheduleMinOff;
     }
-  } else if (activeScheduleId == 1) { // Aeration
+  } else if (isAerationScheduleScreen(activeScheduleId)) {
     if (scheduleSelection == 0) {
       tempHour = aerationMode;
       tempMinute = 0;
@@ -773,7 +851,7 @@ void AquariumAnimation::startEditing() {
       tempHour = aerationHourOff;
       tempMinute = aerationMinOff;
     }
-  } else if (activeScheduleId == 2) { // Filter
+  } else if (isFilterScheduleScreen(activeScheduleId)) {
     if (scheduleSelection == 0) {
       tempHour = filterMode;
       tempMinute = 0;
@@ -784,16 +862,16 @@ void AquariumAnimation::startEditing() {
       tempHour = filterHourOff;
       tempMinute = filterMinOff;
     }
-  } else if (activeScheduleId == 3) { // Temp
+  } else if (isTemperatureSettingsScreen(activeScheduleId)) {
     tempHour = heaterMode == static_cast<uint8_t>(HeaterMode::Off) ? 0 : targetTemp;
-  } else if (activeScheduleId == 4) { // Feeding
+  } else if (isFeedingSettingsScreen(activeScheduleId)) {
     if (scheduleSelection == 0) {
       tempHour = feedHour;
       tempMinute = feedMinute;
     } else {
       tempHour = feedFreq;
     }
-  } else if (activeScheduleId == 5) { // Date/time
+  } else if (isDateTimeSettingsScreen(activeScheduleId)) {
     // Always preload full date/time state so saving only one row (date or time)
     // cannot reuse stale values from previous edits.
     tempHour = currentHour;
@@ -808,10 +886,24 @@ void AquariumAnimation::startEditing() {
     } else {
       // Date row edit.
     }
+  } else if (isUnifiedSchedulesScreen(activeScheduleId)) {
+    if (scheduleSelection == 0) {
+      tempHour = lightMode;
+    } else if (scheduleSelection == 1) {
+      tempHour = aerationMode;
+    } else if (scheduleSelection == 2) {
+      tempHour = filterMode;
+    } else {
+      tempHour = feedFreq == 0 ? 2 : (feedFreq == 1 ? 1 : 0);
+    }
+    tempMinute = 0;
+  } else if (isSystemSettingsScreen(activeScheduleId)) {
+    tempHour = scheduleSelection;
+    tempMinute = 0;
   }
 }
 void AquariumAnimation::scheduleEditIncrement() {
-  if (activeScheduleId == 0) {
+  if (isLightScheduleScreen(activeScheduleId)) {
     if (scheduleSelection == 0) {
       tempHour++;
       if (tempHour > 2)
@@ -825,7 +917,8 @@ void AquariumAnimation::scheduleEditIncrement() {
       if (tempMinute > 59)
         tempMinute = 0;
     }
-  } else if (activeScheduleId == 1 || activeScheduleId == 2) {
+  } else if (isAerationScheduleScreen(activeScheduleId) ||
+             isFilterScheduleScreen(activeScheduleId)) {
     if (scheduleSelection == 0) {
       tempHour++;
       if (tempHour > 2)
@@ -839,7 +932,7 @@ void AquariumAnimation::scheduleEditIncrement() {
       if (tempMinute > 59)
         tempMinute = 0;
     }
-  } else if (activeScheduleId == 3) {
+  } else if (isTemperatureSettingsScreen(activeScheduleId)) {
     if (tempHour == 0)
       tempHour = 18;
     else {
@@ -847,7 +940,7 @@ void AquariumAnimation::scheduleEditIncrement() {
       if (tempHour > 30)
         tempHour = 0;
     }
-  } else if (activeScheduleId == 4) {
+  } else if (isFeedingSettingsScreen(activeScheduleId)) {
     if (scheduleSelection == 0) {
       if (editState == 1) {
         tempHour++;
@@ -863,7 +956,11 @@ void AquariumAnimation::scheduleEditIncrement() {
       if (tempHour > 3)
         tempHour = 0;
     }
-  } else if (activeScheduleId == 5) {
+  } else if (isUnifiedSchedulesScreen(activeScheduleId)) {
+    tempHour++;
+    if (tempHour > 2)
+      tempHour = 0;
+  } else if (isDateTimeSettingsScreen(activeScheduleId)) {
     if (scheduleSelection == 0) {
       if (editState == 1) {
         tempHour++;
@@ -896,16 +993,42 @@ void AquariumAnimation::scheduleEditIncrement() {
   }
 }
 void AquariumAnimation::nextEditStep() {
-  // One-step edits: target temperature or feeding frequency.
-  if ((activeScheduleId <= 2 && scheduleSelection == 0) || activeScheduleId == 3 ||
-      (activeScheduleId == 4 && scheduleSelection == 1)) {
-    if (activeScheduleId == 0) {
+  if (isUnifiedSchedulesScreen(activeScheduleId)) {
+    if (scheduleSelection == 0) {
       lightMode = constrain(tempHour, 0, 2);
-    } else if (activeScheduleId == 1) {
+    } else if (scheduleSelection == 1) {
       aerationMode = constrain(tempHour, 0, 2);
-    } else if (activeScheduleId == 2) {
+    } else if (scheduleSelection == 2) {
       filterMode = constrain(tempHour, 0, 2);
-    } else if (activeScheduleId == 3) {
+    } else {
+      if (tempHour == 2) {
+        feedFreq = 0;
+      } else if (tempHour == 1) {
+        feedFreq = 1;
+      } else if (feedFreq == 0) {
+        feedFreq = 1;
+      }
+    }
+
+    scheduleChangePending = true;
+    isEditing = false;
+    editState = 0;
+    playConfirmAnimation();
+    return;
+  }
+
+  // One-step edits: target temperature or feeding frequency.
+  if ((isLegacyScheduleScreen(activeScheduleId) && scheduleSelection == 0) ||
+      (isAerationScheduleScreen(activeScheduleId) && scheduleSelection == 0) ||
+      isTemperatureSettingsScreen(activeScheduleId) ||
+      (isFeedingSettingsScreen(activeScheduleId) && scheduleSelection == 1)) {
+    if (isLightScheduleScreen(activeScheduleId)) {
+      lightMode = constrain(tempHour, 0, 2);
+    } else if (isAerationScheduleScreen(activeScheduleId)) {
+      aerationMode = constrain(tempHour, 0, 2);
+    } else if (isFilterScheduleScreen(activeScheduleId)) {
+      filterMode = constrain(tempHour, 0, 2);
+    } else if (isTemperatureSettingsScreen(activeScheduleId)) {
       heaterMode = tempHour == 0 ? static_cast<uint8_t>(HeaterMode::Off)
                                  : static_cast<uint8_t>(HeaterMode::Threshold);
       if (tempHour != 0) {
@@ -923,7 +1046,7 @@ void AquariumAnimation::nextEditStep() {
   }
 
   // Date/time has 3 editing steps.
-  if (activeScheduleId == 5) {
+  if (isDateTimeSettingsScreen(activeScheduleId)) {
     if (editState < 3) {
       editState++;
     } else {
@@ -942,7 +1065,7 @@ void AquariumAnimation::nextEditStep() {
   }
 
   if (editState == 2) {
-    if (activeScheduleId == 0) {
+    if (isLightScheduleScreen(activeScheduleId)) {
       if (scheduleSelection == 1) {
         scheduleHourOn = tempHour;
         scheduleMinOn = tempMinute;
@@ -950,7 +1073,7 @@ void AquariumAnimation::nextEditStep() {
         scheduleHourOff = tempHour;
         scheduleMinOff = tempMinute;
       }
-    } else if (activeScheduleId == 1) {
+    } else if (isAerationScheduleScreen(activeScheduleId)) {
       if (scheduleSelection == 1) {
         aerationHourOn = tempHour;
         aerationMinOn = tempMinute;
@@ -958,7 +1081,7 @@ void AquariumAnimation::nextEditStep() {
         aerationHourOff = tempHour;
         aerationMinOff = tempMinute;
       }
-    } else if (activeScheduleId == 2) {
+    } else if (isFilterScheduleScreen(activeScheduleId)) {
       if (scheduleSelection == 1) {
         filterHourOn = tempHour;
         filterMinOn = tempMinute;
@@ -966,7 +1089,7 @@ void AquariumAnimation::nextEditStep() {
         filterHourOff = tempHour;
         filterMinOff = tempMinute;
       }
-    } else if (activeScheduleId == 4) {
+    } else if (isFeedingSettingsScreen(activeScheduleId)) {
       feedHour = tempHour;
       feedMinute = tempMinute;
     }
@@ -989,7 +1112,7 @@ void AquariumAnimation::resetNavigationState() {
   menuSelection = 0;
   menuScrollOffset = 0;
   scheduleSelection = 0;
-  activeScheduleId = 0;
+  activeScheduleId = screenId(SettingsScreen::NONE);
   logScroll = 0;
   logsCriticalMode = false;
   testSelection = 0;
@@ -1050,14 +1173,50 @@ bool AquariumAnimation::drawConfirmAnimationFrame() {
   if (!confirmAnimActive || !display)
     return false;
 
-  display->setBitmapMode(0);
-  display->drawBitmap(48, 0, 4, 32, frames_save[confirmAnimFrame]);
+  constexpr uint8_t CONFIRM_FRAME_COUNT = 28;
+  constexpr uint8_t CONFIRM_FRAME_DELAY_MS = 28;
+  const uint8_t frame =
+      confirmAnimFrame >= CONFIRM_FRAME_COUNT
+          ? static_cast<uint8_t>(CONFIRM_FRAME_COUNT - 1)
+          : static_cast<uint8_t>(confirmAnimFrame);
+
+  display->setFontMode(1);
+  display->setBitmapMode(1);
+
+  const uint8_t sweep = frame > 18 ? 18 : frame;
+  display->drawFrame(5, 5, 118, 22);
+  display->drawHLine(7, 5, 8 + (sweep * 5));
+  display->drawHLine(7, 26, 108 - (sweep * 3));
+
+  display->drawCircle(19, 16, 7, U8G2_DRAW_ALL);
+  if (frame >= 4) {
+    display->drawLine(15, 16, 18, 19);
+  }
+  if (frame >= 8) {
+    display->drawLine(18, 19, 25, 11);
+  }
+  if (frame >= 12) {
+    display->drawPixel(12, 9);
+    display->drawPixel(27, 22);
+    display->drawPixel(31, 12);
+  }
+
+  display->setFont(u8g2_font_6x13_tr);
+  display->drawStr(36, 18, "ZAPISANO");
+
+  const uint8_t progress =
+      static_cast<uint8_t>((static_cast<uint16_t>(frame) * 72U) /
+                           (CONFIRM_FRAME_COUNT - 1));
+  display->drawHLine(36, 23, 72);
+  if (progress > 0) {
+    display->drawBox(36, 22, progress, 3);
+  }
 
   unsigned long now = millis();
-  if (now - confirmAnimLastStep >= FRAME_DELAY) {
+  if (now - confirmAnimLastStep >= CONFIRM_FRAME_DELAY_MS) {
     confirmAnimLastStep = now;
     confirmAnimFrame++;
-    if (confirmAnimFrame >= SAVE_FRAME_COUNT) {
+    if (confirmAnimFrame >= CONFIRM_FRAME_COUNT) {
       confirmAnimActive = false;
       confirmAnimFrame = 0;
     }
@@ -1333,47 +1492,8 @@ void AquariumAnimation::drawLogs(bool btnBackState, bool btnSelectState,
 // MENU
 void AquariumAnimation::drawMenu(bool btnBackState, bool btnSelectState,
                                  bool btnNextState) {
-  if (!display)
-    return;
-  display->setFontMode(1);
-  display->setBitmapMode(1);
-  display->setFont(u8g2_font_6x10_tr);
-  display->drawStr(3, 7, "M");
-  display->drawStr(3, 15, "E");
-  display->drawStr(3, 23, "N");
-  display->drawStr(3, 32, "U");
-  display->drawLine(10, 0, 10, 32);
-  display->drawLine(0, 0, 0, 31);
-  display->drawLine(10, 10, 127, 10);
-  display->drawLine(10, 21, 127, 21);
-  display->drawLine(127, 1, 127, 32);
-  display->drawLine(114, 0, 114, 31);
-  const char *items[] = {"Harmonogramy", "Logi", "Data i Czas", "Test",
-                         "Kalibracja karmnika", "Wifi"};
-  for (int i = 0; i < 3; i++) {
-    int itemIndex = menuScrollOffset + i;
-    int yPos = 9 + (i * 11);
-    if (itemIndex == 4) {
-      display->setFont(u8g2_font_5x7_tr);
-      display->drawStr(12, yPos, items[itemIndex]);
-      display->setFont(u8g2_font_6x10_tr);
-    } else {
-      display->drawStr(12, yPos, items[itemIndex]);
-    }
-  }
-  int visualCursorPos = menuSelection - menuScrollOffset;
-  if (visualCursorPos == 0)
-    display->drawXBMP(106, 2, 4, 7, image_ButtonLeft_bits);
-  else if (visualCursorPos == 1)
-    display->drawXBMP(106, 13, 4, 7, image_ButtonLeft_copy_bits);
-  else if (visualCursorPos == 2)
-    display->drawXBMP(106, 24, 4, 7, image_ButtonLeft_copy_bits);
-  if (!btnBackState)
-    display->drawXBMP(116, 1, 10, 8, image_Pin_back_arrow_bits);
-  if (!btnSelectState)
-    display->drawXBMP(116, 13, 10, 7, image_MenuCheck_bits);
-  if (!btnNextState)
-    display->drawXBMP(119, 24, 5, 7, image_arrow_down_bits);
+  SettingsRenderer::drawSettingsMenu(this, btnBackState, btnSelectState,
+                                     btnNextState);
 }
 
 // HARMONOGRAM ĹšWIATĹO
@@ -1424,11 +1544,14 @@ void AquariumAnimation::drawSchedule(bool btnBackState, bool btnSelectState,
   char onBuf[8];
   char offBuf[8];
   const uint8_t shownMode =
-      (isEditing && scheduleSelection == 0 && activeScheduleId == 0) ? tempHour
-                                                                      : lightMode;
+      (isEditing && scheduleSelection == 0 &&
+       isLightScheduleScreen(activeScheduleId))
+          ? tempHour
+          : lightMode;
   snprintf(modeBuf, sizeof(modeBuf), "MODE:%s", modeLabelForSchedule(shownMode));
 
-  if (isEditing && scheduleSelection == 1 && activeScheduleId == 0) {
+  if (isEditing && scheduleSelection == 1 &&
+      isLightScheduleScreen(activeScheduleId)) {
     if (editState == 1 && (millis() / 500) % 2 == 0)
       sprintf(onBuf, "  :%02d", tempMinute);
     else if (editState == 2 && (millis() / 500) % 2 == 0)
@@ -1439,7 +1562,8 @@ void AquariumAnimation::drawSchedule(bool btnBackState, bool btnSelectState,
     sprintf(onBuf, "%02d:%02d", scheduleHourOn, scheduleMinOn);
   }
 
-  if (isEditing && scheduleSelection == 2 && activeScheduleId == 0) {
+  if (isEditing && scheduleSelection == 2 &&
+      isLightScheduleScreen(activeScheduleId)) {
     if (editState == 1 && (millis() / 500) % 2 == 0)
       sprintf(offBuf, "  :%02d", tempMinute);
     else if (editState == 2 && (millis() / 500) % 2 == 0)
@@ -1490,11 +1614,14 @@ void AquariumAnimation::drawScheduleAeration(bool btnBackState,
   char bufOn[8];
   char bufOff[8];
   const uint8_t shownMode =
-      (isEditing && scheduleSelection == 0 && activeScheduleId == 1) ? tempHour
-                                                                      : aerationMode;
+      (isEditing && scheduleSelection == 0 &&
+       isAerationScheduleScreen(activeScheduleId))
+          ? tempHour
+          : aerationMode;
   snprintf(modeBuf, sizeof(modeBuf), "MODE:%s", modeLabelForSchedule(shownMode));
 
-  if (isEditing && scheduleSelection == 1 && activeScheduleId == 1) {
+  if (isEditing && scheduleSelection == 1 &&
+      isAerationScheduleScreen(activeScheduleId)) {
     if (editState == 1 && (millis() / 500) % 2 == 0)
       sprintf(bufOn, "  :%02d", tempMinute);
     else if (editState == 2 && (millis() / 500) % 2 == 0)
@@ -1505,7 +1632,8 @@ void AquariumAnimation::drawScheduleAeration(bool btnBackState,
     sprintf(bufOn, "%02d:%02d", aerationHourOn, aerationMinOn);
   }
 
-  if (isEditing && scheduleSelection == 2 && activeScheduleId == 1) {
+  if (isEditing && scheduleSelection == 2 &&
+      isAerationScheduleScreen(activeScheduleId)) {
     if (editState == 1 && (millis() / 500) % 2 == 0)
       sprintf(bufOff, "  :%02d", tempMinute);
     else if (editState == 2 && (millis() / 500) % 2 == 0)
@@ -1554,10 +1682,13 @@ void AquariumAnimation::drawScheduleFilter(bool btnBackState, bool btnSelectStat
   display->drawLine(18, 0, 18, 31);
   char modeBuf[24], bufOn[10], bufOff[10];
   const uint8_t shownMode =
-      (isEditing && scheduleSelection == 0 && activeScheduleId == 2) ? tempHour
-                                                                      : filterMode;
+      (isEditing && scheduleSelection == 0 &&
+       isFilterScheduleScreen(activeScheduleId))
+          ? tempHour
+          : filterMode;
   snprintf(modeBuf, sizeof(modeBuf), "MODE:%s", modeLabelForSchedule(shownMode));
-  if (isEditing && scheduleSelection == 1 && activeScheduleId == 2) {
+  if (isEditing && scheduleSelection == 1 &&
+      isFilterScheduleScreen(activeScheduleId)) {
     if (editState == 1) {
       if ((millis() / 500) % 2 == 0)
         sprintf(bufOn, "  :%02d", tempMinute);
@@ -1572,7 +1703,8 @@ void AquariumAnimation::drawScheduleFilter(bool btnBackState, bool btnSelectStat
   } else {
     sprintf(bufOn, "%02d:%02d", filterHourOn, filterMinOn);
   }
-  if (isEditing && scheduleSelection == 2 && activeScheduleId == 2) {
+  if (isEditing && scheduleSelection == 2 &&
+      isFilterScheduleScreen(activeScheduleId)) {
     if (editState == 1) {
       if ((millis() / 500) % 2 == 0)
         sprintf(bufOff, "  :%02d", tempMinute);
@@ -1615,6 +1747,10 @@ void AquariumAnimation::drawScheduleFilter(bool btnBackState, bool btnSelectStat
 // TEMPERATURA
 void AquariumAnimation::drawScheduleTemp(bool btnBackState, bool btnSelectState,
                                          bool btnNextState) {
+  SettingsRenderer::drawTemperatureAndHeater(this, btnBackState, btnSelectState,
+                                             btnNextState);
+  return;
+
   if (!display)
     return;
   display->setFontMode(1);
@@ -1659,6 +1795,10 @@ void AquariumAnimation::drawScheduleTemp(bool btnBackState, bool btnSelectState,
 void AquariumAnimation::drawScheduleFeeding(bool btnBackState,
                                             bool btnSelectState,
                                             bool btnNextState) {
+  SettingsRenderer::drawFeeding(this, btnBackState, btnSelectState,
+                                btnNextState);
+  return;
+
   if (!display)
     return;
   display->setFontMode(1);
@@ -1873,6 +2013,10 @@ void AquariumAnimation::drawAccessPointScreen(const char *modeLabel,
                                               const char *secondaryLine,
                                               const char *ip,
                                               uint8_t clients) {
+  SettingsRenderer::drawWifi(this, modeLabel, primaryLine, secondaryLine, ip,
+                             clients);
+  return;
+
   if (!display)
     return;
   display->setFontMode(1);
@@ -1990,3 +2134,38 @@ uint8_t AquariumAnimation::getTestAeration() { return testAerationVal; }
 
 // EKRAN GĹĂ“WNY (FRAME)
 void AquariumAnimation::drawFrame() { HomeRenderer::drawFrame(this); }
+
+void AquariumAnimation::drawSettingsMenu(bool btnBackState,
+                                         bool btnSelectState,
+                                         bool btnNextState) {
+  SettingsRenderer::drawSettingsMenu(this, btnBackState, btnSelectState,
+                                     btnNextState);
+}
+
+void AquariumAnimation::drawSettingsSchedules(bool btnBackState,
+                                              bool btnSelectState,
+                                              bool btnNextState) {
+  SettingsRenderer::drawUnifiedSchedules(this, btnBackState, btnSelectState,
+                                         btnNextState);
+}
+
+void AquariumAnimation::drawSettingsAerationCo2(bool btnBackState,
+                                                bool btnSelectState,
+                                                bool btnNextState) {
+  SettingsRenderer::drawAerationCo2(this, btnBackState, btnSelectState,
+                                    btnNextState);
+}
+
+void AquariumAnimation::drawSettingsDisplayPower(bool btnBackState,
+                                                 bool btnSelectState,
+                                                 bool btnNextState) {
+  SettingsRenderer::drawDisplayAndPower(this, btnBackState, btnSelectState,
+                                        btnNextState);
+}
+
+void AquariumAnimation::drawSettingsSystem(bool btnBackState,
+                                           bool btnSelectState,
+                                           bool btnNextState) {
+  SettingsRenderer::drawSystem(this, btnBackState, btnSelectState,
+                               btnNextState);
+}

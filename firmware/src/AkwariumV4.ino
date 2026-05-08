@@ -43,6 +43,8 @@ enum class UiState {
   SCHEDULE_FEEDING,
   LOGS,
   SETTINGS_DATETIME,
+  SETTINGS_DISPLAY_POWER,
+  SETTINGS_SYSTEM,
   TESTS,
   FEEDING,
   ACCESS_POINT
@@ -67,6 +69,7 @@ unsigned long logsDeleteHoldStartMs = 0;
 bool logsDeleteHoldTriggered = false;
 bool logsDeleteHoldActive = false;
 uint8_t logsDeleteHoldProgress = 0;
+unsigned long systemFactoryResetHoldStartMs = 0;
 uint16_t todayFeedingsCount = 0;
 uint8_t feedingsCounterDay = 1;
 uint8_t feedingsCounterMonth = 1;
@@ -92,10 +95,22 @@ uint16_t feedingsCounterYear = 2025;
 #define MANUAL_FEED_SINGLE_GUARD_MS 140UL
 #define UI_IDLE_RETURN_HOME_MS 30000UL
 #define LOGS_DELETE_HOLD_MS 3000UL
+#define SYSTEM_FACTORY_RESET_HOLD_MS 4000UL
 
 static constexpr uint8_t BUTTON_MASK_UP = (1U << 0);
 static constexpr uint8_t BUTTON_MASK_SELECT = (1U << 1);
 static constexpr uint8_t BUTTON_MASK_DOWN = (1U << 2);
+static constexpr uint8_t SYSTEM_MENU_INFO = 0;
+static constexpr uint8_t SYSTEM_MENU_LOGS = 1;
+static constexpr uint8_t SYSTEM_MENU_RESTART = 2;
+static constexpr uint8_t SYSTEM_MENU_FACTORY_RESET = 3;
+static constexpr uint8_t SETTINGS_MENU_SCHEDULES = 0;
+static constexpr uint8_t SETTINGS_MENU_TEMPERATURE = 1;
+static constexpr uint8_t SETTINGS_MENU_AERATION = 2;
+static constexpr uint8_t SETTINGS_MENU_FEEDING = 3;
+static constexpr uint8_t SETTINGS_MENU_WIFI = 4;
+static constexpr uint8_t SETTINGS_MENU_DISPLAY_POWER = 5;
+static constexpr uint8_t SETTINGS_MENU_SYSTEM = 6;
 
 static void clampRelayPinsAtBoot() {
   // Szybkie "usztywnienie" pinow po restarcie, aby ograniczyc przypadkowe
@@ -137,6 +152,10 @@ static void resetLogsDeleteHoldState() {
   logsDeleteHoldTriggered = false;
   logsDeleteHoldActive = false;
   logsDeleteHoldProgress = 0;
+}
+
+static void resetSystemFactoryResetHoldState() {
+  systemFactoryResetHoldStartMs = 0;
 }
 
 static void syncDailyFeedingsCounterDate() {
@@ -195,6 +214,7 @@ static void resetUiStateAfterIdleTimeout() {
   logsViewState = LogsViewState::SELECT_TYPE;
   logsTypeSelection = 0;
   resetLogsDeleteHoldState();
+  resetSystemFactoryResetHoldState();
   if (animation) {
     animation->resetNavigationState();
   }
@@ -366,30 +386,41 @@ void updateUiState() {
     if (downJustPressed)
       animation->menuNext();
     if (selectJustPressed) {
-      uint8_t sel = animation->getMenuSelection();
-      if (sel == 0) {
+      const uint8_t sel = animation->getMenuSelection();
+      switch (sel) {
+      case SETTINGS_MENU_SCHEDULES:
         uiState = UiState::SCHEDULE_LIGHT;
-        animation->setActiveScheduleId(0);
-      } else if (sel == 1) {
-        uiState = UiState::LOGS;
-        logsViewState = LogsViewState::SELECT_TYPE;
-        logsTypeSelection = 0;
-        animation->setLogsCriticalMode(false);
-      }
-      else if (sel == 2) {
-        uiState = UiState::SETTINGS_DATETIME;
-        animation->setActiveScheduleId(5);
-      } else if (sel == 3) {
-        uiState = UiState::TESTS;
-        animation->enterTestMode();
-      } else if (sel == 4) {
-        SystemController::runFeederCalibration(&display);
-        uiState = UiState::MENU;
-      } else if (sel == 5) {
+        animation->setActiveScheduleId(SettingsScreen::HARMONOGRAMY);
+        break;
+      case SETTINGS_MENU_TEMPERATURE:
+        uiState = UiState::SCHEDULE_TEMP;
+        animation->setActiveScheduleId(SettingsScreen::TEMPERATURE_AND_HEATER);
+        break;
+      case SETTINGS_MENU_AERATION:
+        uiState = UiState::SCHEDULE_AERATION;
+        animation->setActiveScheduleId(SettingsScreen::AERATION_CO2);
+        break;
+      case SETTINGS_MENU_FEEDING:
+        uiState = UiState::SCHEDULE_FEEDING;
+        animation->setActiveScheduleId(SettingsScreen::FEEDING);
+        break;
+      case SETTINGS_MENU_WIFI:
+        animation->setActiveScheduleId(SettingsScreen::WIFI);
         AkwariumWifi::startAP();
         LogManager::logInfo(
             "Menu WiFi: start sesji WiFi (STA 6 s, potem fallback do AP).");
         uiState = UiState::ACCESS_POINT;
+        break;
+      case SETTINGS_MENU_DISPLAY_POWER:
+        uiState = UiState::SETTINGS_DISPLAY_POWER;
+        animation->setActiveScheduleId(SettingsScreen::DISPLAY_AND_POWER);
+        break;
+      case SETTINGS_MENU_SYSTEM:
+        uiState = UiState::SETTINGS_SYSTEM;
+        animation->setActiveScheduleId(SettingsScreen::SYSTEM);
+        break;
+      default:
+        break;
       }
     }
     break;
@@ -525,13 +556,9 @@ void updateUiState() {
         animation->nextEditStep();
     }
     if (downJustPressed) {
-      if (!animation->isEditingActive()) {
-        if (animation->getScheduleSelection() == 2) {
-          uiState = UiState::SCHEDULE_FILTER;
-          animation->setActiveScheduleId(2);
-        } else
-          animation->scheduleNext();
-      } else
+      if (!animation->isEditingActive())
+        animation->scheduleNext();
+      else
         animation->scheduleEditIncrement();
     }
     if (upJustPressed) {
@@ -548,13 +575,9 @@ void updateUiState() {
         animation->nextEditStep();
     }
     if (downJustPressed) {
-      if (!animation->isEditingActive()) {
-        if (animation->getScheduleSelection() == 2) {
-          uiState = UiState::SCHEDULE_TEMP;
-          animation->setActiveScheduleId(3);
-        } else
-          animation->scheduleNext();
-      } else
+      if (!animation->isEditingActive())
+        animation->scheduleNext();
+      else
         animation->scheduleEditIncrement();
     }
     if (upJustPressed) {
@@ -574,7 +597,7 @@ void updateUiState() {
       if (!animation->isEditingActive()) {
         if (animation->getScheduleSelection() == 2) {
           uiState = UiState::SCHEDULE_AERATION;
-          animation->setActiveScheduleId(1);
+          animation->setActiveScheduleId(SettingsScreen::AERATION_CO2);
         } else
           animation->scheduleNext();
       } else
@@ -594,10 +617,7 @@ void updateUiState() {
         animation->nextEditStep();
     }
     if (downJustPressed) {
-      if (!animation->isEditingActive()) {
-        uiState = UiState::SCHEDULE_FEEDING;
-        animation->setActiveScheduleId(4);
-      } else
+      if (animation->isEditingActive())
         animation->scheduleEditIncrement();
     }
     if (upJustPressed) {
@@ -614,14 +634,9 @@ void updateUiState() {
         animation->nextEditStep();
     }
     if (downJustPressed) {
-      if (!animation->isEditingActive()) {
-        if (animation->getScheduleSelection() == 0)
-          animation->scheduleNext();
-        else {
-          uiState = UiState::SCHEDULE_LIGHT;
-          animation->setActiveScheduleId(0);
-        }
-      } else
+      if (!animation->isEditingActive())
+        animation->scheduleNext();
+      else
         animation->scheduleEditIncrement();
     }
     if (upJustPressed) {
@@ -629,6 +644,77 @@ void updateUiState() {
         uiState = UiState::MENU;
     }
     break;
+
+  case UiState::SETTINGS_DISPLAY_POWER:
+    if (downJustPressed && !animation->isEditingActive())
+      animation->scheduleNext();
+    if (upJustPressed) {
+      animation->cancelEditing();
+      uiState = UiState::MENU;
+    }
+    break;
+
+  case UiState::SETTINGS_SYSTEM: {
+    const uint8_t sel = animation->getScheduleSelection();
+    const bool factoryResetSelected = sel == SYSTEM_MENU_FACTORY_RESET;
+
+    if (factoryResetSelected && isSelectPressed) {
+      if (!animation->isEditingActive()) {
+        animation->startEditing();
+      }
+      if (systemFactoryResetHoldStartMs == 0) {
+        systemFactoryResetHoldStartMs = nowMs;
+      }
+      if (nowMs - systemFactoryResetHoldStartMs >=
+          SYSTEM_FACTORY_RESET_HOLD_MS) {
+        LogManager::logWarn("Factory reset wywolany z OLED.");
+        ConfigManager::resetToDefault();
+        LogManager::clearCriticalLogs();
+        delay(200);
+        ESP.restart();
+      }
+    } else if (factoryResetSelected &&
+               systemFactoryResetHoldStartMs != 0) {
+      resetSystemFactoryResetHoldState();
+      if (animation->isEditingActive()) {
+        animation->cancelEditing();
+      }
+    }
+
+    if (selectJustPressed && !factoryResetSelected) {
+      if (sel == SYSTEM_MENU_INFO) {
+        logsViewState = LogsViewState::SHOW_STATS;
+        logsTypeSelection = 2;
+        uiState = UiState::LOGS;
+        resetSystemFactoryResetHoldState();
+      } else if (sel == SYSTEM_MENU_LOGS) {
+        logsViewState = LogsViewState::SELECT_TYPE;
+        logsTypeSelection = 0;
+        animation->setLogsCriticalMode(false);
+        uiState = UiState::LOGS;
+        resetSystemFactoryResetHoldState();
+      } else if (!animation->isEditingActive()) {
+        animation->startEditing();
+      } else if (sel == SYSTEM_MENU_RESTART) {
+        LogManager::logWarn("Restart urzadzenia wywolany z OLED.");
+        delay(150);
+        ESP.restart();
+      }
+    }
+    if (downJustPressed && !animation->isEditingActive()) {
+      resetSystemFactoryResetHoldState();
+      animation->scheduleNext();
+    }
+    if (upJustPressed) {
+      resetSystemFactoryResetHoldState();
+      if (animation->isEditingActive()) {
+        animation->cancelEditing();
+      } else {
+        uiState = UiState::MENU;
+      }
+    }
+    break;
+  }
 
   case UiState::FEEDING:
     // exit logic handled elswhere or just exit
@@ -709,10 +795,10 @@ void VideoTask(void *pvParameters) {
           animation->drawMenu(isUp, isSel, isDn);
           break;
         case UiState::SCHEDULE_LIGHT:
-          animation->drawSchedule(isUp, isSel, isDn);
+          animation->drawSettingsSchedules(isUp, isSel, isDn);
           break;
         case UiState::SCHEDULE_AERATION:
-          animation->drawScheduleAeration(isUp, isSel, isDn);
+          animation->drawSettingsAerationCo2(isUp, isSel, isDn);
           break;
         case UiState::SCHEDULE_FILTER:
           animation->drawScheduleFilter(isUp, isSel, isDn);
@@ -740,6 +826,12 @@ void VideoTask(void *pvParameters) {
           break;
         case UiState::SETTINGS_DATETIME:
           animation->drawSettingsDateTime(isUp, isSel, isDn);
+          break;
+        case UiState::SETTINGS_DISPLAY_POWER:
+          animation->drawSettingsDisplayPower(isUp, isSel, isDn);
+          break;
+        case UiState::SETTINGS_SYSTEM:
+          animation->drawSettingsSystem(isUp, isSel, isDn);
           break;
         case UiState::TESTS:
           animation->drawTests(isUp, isSel, isDn);
